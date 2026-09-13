@@ -1,0 +1,33 @@
+{
+  "tracking_id": "SPEVN000000000001",
+  "granular_status": "On Vehicle for Delivery",
+  "events": [
+    {
+      "type": "DELIVERY_FAILURE",
+      "time": "2026-09-11T11:20:00+07:00",
+      "data": {
+        "failure_reason": {
+          "en": "Customer not reachable",
+          "vi": "Không liên lạc được với khách hàng"
+        }
+      }
+    },
+    {
+      "type": "DRIVER_INBOUND_SCAN",
+      "time": "2026-09-11T07:45:00+07:00",
+      "data": {}
+    },
+    {
+      "type": "ARRIVED_AT_DESTINATION_HUB",
+      "time": "2026-09-10T23:10:00+07:00",
+      "data": {
+        "hub_name": "Kho Hồ Chí Minh"
+      }
+    },
+    {
+      "type": "DRIVER_PICKUP_SCAN",
+      "time": "2026-09-10T02:30:00Z",
+      "data": {}
+    }
+  ]
+}

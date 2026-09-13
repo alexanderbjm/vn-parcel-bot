@@ -1,0 +1,58 @@
+{
+  "result": 1,
+  "message": "操作成功",
+  "data": [
+    {
+      "queryCode": "4PX0000000000000001",
+      "serverCode": null,
+      "shipperCode": null,
+      "channelTrackCode": null,
+      "ctStartCode": "CN",
+      "ctEndCode": "VN",
+      "ctEndName": "Vietnam",
+      "ctStartName": "China",
+      "status": 2,
+      "duration": 3.0,
+      "tracks": [
+        {
+          "tkCode": "FPX_D_AAD",
+          "tkDesc": "Arrived at destination country delivery center",
+          "tkLocation": "Ho Chi Minh, VN",
+          "tkTimezone": "GMT+7",
+          "tkDate": "2026-09-11 10:00:00",
+          "tkDateStr": "2026-09-11 10:00:00",
+          "tkCategoryCode": null,
+          "tkCategoryName": null,
+          "tkTranslatedDesc": "Arrived at destination country delivery center"
+        },
+        {
+          "tkCode": "FPX_M_DFA",
+          "tkDesc": "Departed from airport",
+          "tkLocation": "Shenzhen, CN",
+          "tkTimezone": "+08:00",
+          "tkDate": "2026-09-10 18:30:00",
+          "tkDateStr": "2026-09-10 18:30:00",
+          "tkCategoryCode": null,
+          "tkCategoryName": null,
+          "tkTranslatedDesc": "Departed from airport"
+        },
+        {
+          "tkCode": "FPX_C_AAF",
+          "tkDesc": "Shipment arrived at facility",
+          "tkLocation": "Shenzhen, CN",
+          "tkTimezone": "+08:00",
+          "tkDate": "2026-09-09 21:15:00",
+          "tkDateStr": "2026-09-09 21:15:00",
+          "tkCategoryCode": null,
+          "tkCategoryName": null,
+          "tkTranslatedDesc": "Shipment arrived at facility"
+        }
+      ],
+      "hawbCodeSet": [],
+      "mutiPackage": false,
+      "masterOrderNum": null,
+      "returnStatusFlag": null
+    }
+  ],
+  "tag": "2"
+}

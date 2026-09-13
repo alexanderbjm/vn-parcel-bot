@@ -1,0 +1,42 @@
+{
+  "module": [
+    {
+      "mailNo": "LP00000000000002",
+      "mailNoSource": "CAINIAO",
+      "originCountry": "CN",
+      "destCountry": "VN",
+      "status": "SIGN",
+      "statusDesc": "Delivered",
+      "detailList": [
+        {
+          "time": 1789178400000,
+          "timeStr": "2026-09-12 10:00:00",
+          "timeZone": "GMT+8",
+          "desc": "Giao hàng thành công",
+          "standerdDesc": "Delivered",
+          "descTitle": "Delivered",
+          "actionCode": "GTMS_SIGNED"
+        },
+        {
+          "time": 1789173000000,
+          "timeStr": "2026-09-12 08:30:00",
+          "timeZone": "GMT+8",
+          "desc": "Đang giao hàng",
+          "standerdDesc": "Out for delivery",
+          "descTitle": "In transit",
+          "actionCode": "GTMS_DO_DEPART"
+        },
+        {
+          "time": 1789088400000,
+          "timeStr": "2026-09-11 09:00:00",
+          "timeZone": "GMT+8",
+          "desc": "Đã đến trung tâm phân loại tại Việt Nam",
+          "standerdDesc": "Arrived at sorting center in destination country",
+          "descTitle": "In transit",
+          "actionCode": "GTMS_SC_ARRIVE"
+        }
+      ]
+    }
+  ],
+  "success": true
+}

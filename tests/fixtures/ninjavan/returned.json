@@ -1,0 +1,26 @@
+{
+  "trackingId": "SPEVN000000000003",
+  "granularStatus": "Returned to Sender",
+  "events": [
+    {
+      "type": "DELIVERY_SUCCESS",
+      "time": "2026-09-15T10:00:00+07:00",
+      "data": {}
+    },
+    {
+      "type": "RTS",
+      "time": "2026-09-13T09:00:00+07:00",
+      "data": {}
+    },
+    {
+      "type": "DELIVERY_FAILURE",
+      "time": "2026-09-12T15:00:00+07:00",
+      "data": {
+        "failureReason": {
+          "en": "Customer refused delivery",
+          "vi": "Khách hàng từ chối nhận hàng"
+        }
+      }
+    }
+  ]
+}

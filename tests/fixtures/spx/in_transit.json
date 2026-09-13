@@ -1,0 +1,31 @@
+{
+  "retcode": 0,
+  "message": "",
+  "data": {
+    "sls_tracking_number": "SPXVN000000000001",
+    "current_status": "Đang giao hàng",
+    "tracking_list": [
+      {
+        "timestamp": 1789088400,
+        "message": "Đơn hàng đang được giao đến bạn",
+        "code": 4
+      },
+      {
+        "timestamp": 1789066800,
+        "message": "Đơn hàng đang được trung chuyển đến bưu cục Quận 7",
+        "code": 3
+      },
+      {
+        "timestamp": 1789023600,
+        "message": "Đơn hàng đã đến kho\\nSOC Hồ Chí Minh",
+        "code": 2
+      },
+      {
+        "timestamp": 1789002000,
+        "message": "Người bán đã giao hàng cho đơn vị vận chuyển",
+        "code": 1
+      }
+    ],
+    "status_list": []
+  }
+}

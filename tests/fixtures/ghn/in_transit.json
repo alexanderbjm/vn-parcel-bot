@@ -1,0 +1,37 @@
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "order_info": {
+      "order_code": "GA0000000001",
+      "status": "delivering"
+    },
+    "tracking_logs": [
+      {
+        "status": "delivering",
+        "status_name": "Đang giao hàng",
+        "action_at": "2026-09-11T01:30:00Z",
+        "location": {
+          "address": "Bưu cục Quận 1, Hồ Chí Minh",
+          "warehouse_id": 1201
+        }
+      },
+      {
+        "status": "sorting",
+        "action_at": "2026-09-10T15:00:00Z",
+        "location": {
+          "warehouse_id": 1202
+        }
+      },
+      {
+        "status": "picked",
+        "status_name": "Đã lấy hàng",
+        "action_at": "2026-09-10T03:15:00Z",
+        "location": {
+          "address": "Bưu cục Cầu Giấy, Hà Nội",
+          "warehouse_id": 1203
+        }
+      }
+    ]
+  }
+}

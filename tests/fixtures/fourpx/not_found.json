@@ -1,0 +1,26 @@
+{
+  "result": 1,
+  "message": "操作成功",
+  "data": [
+    {
+      "queryCode": "4PX0000000000000000",
+      "serverCode": null,
+      "shipperCode": null,
+      "channelTrackCode": null,
+      "ctStartCode": null,
+      "ctEndCode": null,
+      "ctEndName": "未知",
+      "ctStartName": "未知",
+      "status": 7,
+      "duration": 0.0,
+      "tracks": null,
+      "hawbCodeSet": null,
+      "mutiPackage": null,
+      "masterOrderNum": null,
+      "returnStatusFlag": null,
+      "channelContact": null,
+      "consigneePostcode": ""
+    }
+  ],
+  "tag": "7"
+}

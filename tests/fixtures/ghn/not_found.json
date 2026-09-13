@@ -1,0 +1,6 @@
+{
+  "code": 400,
+  "message": "Thông tin không chính xác",
+  "data": null,
+  "code_message": "PHONE_VERIFY_FAIL"
+}

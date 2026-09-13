@@ -1,0 +1,23 @@
+{
+  "trackingId": "SPEVN000000000002",
+  "granularStatus": "Completed",
+  "events": [
+    {
+      "type": "DELIVERY_SUCCESS",
+      "time": 1789192800000,
+      "data": {}
+    },
+    {
+      "type": "DRIVER_INBOUND_SCAN",
+      "time": 1789174800000,
+      "data": {}
+    },
+    {
+      "type": "HUB_INBOUND_SCAN",
+      "time": 1789131600000,
+      "data": {
+        "hubName": "Kho Hồ Chí Minh"
+      }
+    }
+  ]
+}

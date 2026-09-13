@@ -1,0 +1,39 @@
+{
+  "code": 200,
+  "message": "Success",
+  "data": {
+    "order_info": {
+      "order_code": "GA0000000002",
+      "status": "delivered"
+    },
+    "tracking_logs": [
+      {
+        "status": "delivered",
+        "status_name": "Giao hàng thành công",
+        "action_at": "2026-09-12T07:10:00Z",
+        "location": {
+          "address": "Bưu cục Quận 3, Hồ Chí Minh",
+          "warehouse_id": 1301
+        }
+      },
+      {
+        "status": "delivering",
+        "status_name": "Đang giao hàng",
+        "action_at": "2026-09-12T01:00:00Z",
+        "location": {
+          "address": "Bưu cục Quận 3, Hồ Chí Minh",
+          "warehouse_id": 1301
+        }
+      },
+      {
+        "status": "storing",
+        "status_name": "Lưu kho",
+        "action_at": "2026-09-11T12:00:00Z",
+        "location": {
+          "address": "Kho Hồ Chí Minh",
+          "warehouse_id": 1302
+        }
+      }
+    ]
+  }
+}

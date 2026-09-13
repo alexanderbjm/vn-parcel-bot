@@ -1,0 +1,58 @@
+{
+  "result": 1,
+  "message": "操作成功",
+  "data": [
+    {
+      "queryCode": "4PX0000000000000002",
+      "serverCode": null,
+      "shipperCode": null,
+      "channelTrackCode": null,
+      "ctStartCode": "CN",
+      "ctEndCode": "VN",
+      "ctEndName": "Vietnam",
+      "ctStartName": "China",
+      "status": 5,
+      "duration": 4.0,
+      "tracks": [
+        {
+          "tkCode": "FPX_S_OK",
+          "tkDesc": "Delivered",
+          "tkLocation": "Ho Chi Minh, VN",
+          "tkTimezone": "GMT+7",
+          "tkDate": "2026-09-12 15:40:00",
+          "tkDateStr": "2026-09-12 15:40:00",
+          "tkCategoryCode": null,
+          "tkCategoryName": null,
+          "tkTranslatedDesc": "Delivered"
+        },
+        {
+          "tkCode": "FPX_D_SD",
+          "tkDesc": "Out for delivery",
+          "tkLocation": "Ho Chi Minh, VN",
+          "tkTimezone": "GMT+7",
+          "tkDate": "2026-09-12 08:05:00",
+          "tkDateStr": "2026-09-12 08:05:00",
+          "tkCategoryCode": null,
+          "tkCategoryName": null,
+          "tkTranslatedDesc": "Out for delivery"
+        },
+        {
+          "tkCode": "FPX_D_AAD",
+          "tkDesc": "Arrived at destination country delivery center",
+          "tkLocation": "Ho Chi Minh, VN",
+          "tkTimezone": "GMT+7",
+          "tkDate": "2026-09-11 10:00:00",
+          "tkDateStr": "2026-09-11 10:00:00",
+          "tkCategoryCode": null,
+          "tkCategoryName": null,
+          "tkTranslatedDesc": "Arrived at destination country delivery center"
+        }
+      ],
+      "hawbCodeSet": [],
+      "mutiPackage": false,
+      "masterOrderNum": null,
+      "returnStatusFlag": null
+    }
+  ],
+  "tag": "5"
+}
