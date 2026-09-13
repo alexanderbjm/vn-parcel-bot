@@ -17,7 +17,10 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from vn_parcel_bot.carriers import CARRIERS
 from vn_parcel_bot.carriers.http import make_http_client
+from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.spx import SpxCarrier
 from vn_parcel_bot.config import ConfigError, Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +31,10 @@ NOT_FOUND_MARKER = "Không tìm thấy dữ liệu"
 
 def mask(code: str) -> str:
     return f"{code[:5]}…{code[-3:]}"
+
+
+async def pause() -> None:
+    await asyncio.sleep(3 + random.random() * 2)
 
 
 def load_settings(*, require_token: bool) -> Settings:
@@ -140,6 +147,25 @@ def structural_hint(carrier: str, text: str, kind: str) -> str:
     return f"keys={keys} events={event_count(carrier, payload)}"
 
 
+async def parse_summary(
+    http: httpx.AsyncClient, carrier: str, code: str, last4: str | None, spx_secret: str | None
+) -> str:
+    prefix = f"{carrier:9} {mask(code)} parse"
+    if carrier not in CARRIERS:
+        return f"{prefix} skipped: not a tracked carrier"
+    fetcher = SpxCarrier(secret=spx_secret) if carrier == "spx" else CARRIERS[carrier]
+    try:
+        result = await fetcher.fetch(http, code, last4)
+    except CarrierError as err:
+        return f"{prefix} error={err.reason} detail={err.detail}"
+    except ValueError as err:
+        return f"{prefix} skipped: {err}"
+    return (
+        f"{prefix} found={result.found} events={len(result.events)} "
+        f"delivered={result.delivered} returned={result.returned}"
+    )
+
+
 async def probe_carriers(args: argparse.Namespace) -> None:
     settings = load_settings(require_token=False)
     rows = parse_probe_file(Path(args.file))
@@ -148,7 +174,7 @@ async def probe_carriers(args: argparse.Namespace) -> None:
     async with make_http_client(settings) as http:
         for carrier, code, last4 in rows:
             if carrier == last_carrier:
-                await asyncio.sleep(3 + random.random() * 2)
+                await pause()
             last_carrier = carrier
             method, url, kwargs, kind = build_request(carrier, code, last4, args.spx_secret)
             try:
@@ -164,6 +190,9 @@ async def probe_carriers(args: argparse.Namespace) -> None:
                 f"{carrier:9} {mask(code)} HTTP {response.status_code} "
                 f"{len(response.content)} bytes {hint}"
             )
+            if args.parse:
+                await pause()
+                print(await parse_summary(http, carrier, code, last4, args.spx_secret))
 
 
 async def probe_telegram() -> None:
