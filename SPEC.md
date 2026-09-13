@@ -47,7 +47,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 |---|---|---|
 | `/start` | – | `WELCOME` (with first name) followed by `HELP`. |
 | `/help` | – | `HELP`. |
-| `/track` | `<code> [last4] [carrier]` | Add a parcel (§4.3). The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing carrier alias (§5.2, e.g. `ghn`, `4px`) forces that carrier and skips detection. A trailing 4-digit argument (before the alias, if any) is the phone override only when the remaining code has a candidate that needs a phone (or the forced carrier needs one); otherwise it stays part of the code. No args → `USAGE_TRACK`. |
+| `/track` | `<code> [last4] [carrier]` | Add a parcel (§4.3). The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing carrier alias (§5.2, e.g. `ghn`, `4px`) forces that carrier and skips detection. A trailing 4-digit argument (before the alias, if any) is the phone override only when the forced carrier needs a phone or, without a forced carrier, the remaining code has a candidate that needs one; otherwise it stays part of the code. No args → `USAGE_TRACK`. |
 | *(plain text)* | – | Routed per §4.2. |
 | `/list` | – | Active parcels plus terminal parcels updated within `DELIVERED_VISIBLE_FOR` (3 days), numbered 1..n in `created_at` order. Unresolved parcels show `CARRIER_UNRESOLVED`. Empty → `LIST_EMPTY`. |
 | `/status` | `<ref>` | Full history of one parcel, **newest first**, at most `MAX_EVENTS_IN_HISTORY` (30). `ref` = tracking code or the index shown by `/list`. |
@@ -1126,7 +1126,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: 
 def main() -> int: ...
 ```
 
-`parse_track_args` rules: empty → `None`. If `len(args) >= 2` and `parse_carrier_alias(args[-1])` is not `None` → that is the forced carrier; drop it. Then if at least 2 args remain, the last is 4 digits, and (the forced carrier needs a phone, or `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone) → it is `last4`; drop it. `code = normalize_code("".join(remaining args))`; empty → `None`.
+`parse_track_args` rules: empty → `None`. If `len(args) >= 2` and `parse_carrier_alias(args[-1])` is not `None` → that is the forced carrier; drop it. Then if at least 2 args remain and the last is 4 digits, it is `last4` (drop it) when the forced carrier needs a phone or, without a forced carrier, `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone. `code = normalize_code("".join(remaining args))`; empty → `None`.
 
 Pending phone question: `context.user_data["pending_phone"] = {"code": str, "carrier": CarrierCode | None}`.
 
