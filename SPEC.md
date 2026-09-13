@@ -500,19 +500,20 @@ Every name below is fixed. Later prompts rely on them exactly.
 ```python
 class ConfigError(Exception): ...
 
+
 @dataclass(frozen=True)
 class Settings:
     telegram_bot_token: str
     admin_telegram_id: int
-    poll_interval_minutes: int = 20            # 5..240
-    request_delay_seconds: float = 3.0         # 0..60
-    http_timeout_seconds: float = 15.0         # >0..120
+    poll_interval_minutes: int = 20  # 5..240
+    request_delay_seconds: float = 3.0  # 0..60
+    http_timeout_seconds: float = 15.0  # >0..120
     db_path: Path = Path("data/bot.sqlite3")
     log_dir: Path = Path("logs")
-    log_level: str = "INFO"                    # DEBUG|INFO|WARNING|ERROR
+    log_level: str = "INFO"  # DEBUG|INFO|WARNING|ERROR
     timezone: str = "Asia/Ho_Chi_Minh"
     quiet_hours: tuple[int, int] | None = (22, 7)
-    max_parcels_per_user: int = 30             # 1..200
+    max_parcels_per_user: int = 30  # 1..200
     telegram_proxy_url: str | None = None
 
     @classmethod
@@ -551,7 +552,10 @@ TELEGRAM_TEXT_LIMIT = 4000
 ```python
 class RedactTokenFilter(logging.Filter):
     def __init__(self, secret: str) -> None: ...
-    def filter(self, record: logging.LogRecord) -> bool: ...   # replaces secret in msg/args with "***"
+    def filter(
+        self, record: logging.LogRecord
+    ) -> bool: ...  # replaces secret in msg/args with "***"
+
 
 def setup_logging(settings: Settings) -> None: ...
 ```
@@ -566,43 +570,67 @@ def setup_logging(settings: Settings) -> None: ...
 ```python
 class SingleInstanceError(RuntimeError): ...
 
+
 class SingleInstanceLock:
     def __init__(self, path: Path) -> None: ...
-    def __enter__(self) -> "SingleInstanceLock": ...   # creates parent dir; msvcrt.locking(LK_NBLCK, 1) → SingleInstanceError if held
-    def __exit__(self, *exc) -> None: ...              # unlock + close
+    def __enter__(
+        self,
+    ) -> (
+        "SingleInstanceLock"
+    ): ...  # creates parent dir; msvcrt.locking(LK_NBLCK, 1) → SingleInstanceError if held
+    def __exit__(self, *exc) -> None: ...  # unlock + close
 ```
 
 ### 9.5 `carrier_catalog.py` and `tracking_codes.py` (pure, no I/O)
 
 ```python
 # carrier_catalog.py
-CarrierCode = Literal["spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn",
-                      "best", "yunexpress", "ghtk", "viettelpost", "vnpost", "lex"]
+CarrierCode = Literal[
+    "spx",
+    "jt",
+    "cainiao",
+    "fourpx",
+    "ninjavan",
+    "ghn",
+    "best",
+    "yunexpress",
+    "ghtk",
+    "viettelpost",
+    "vnpost",
+    "lex",
+]
+
 
 @dataclass(frozen=True)
 class CarrierInfo:
     code: CarrierCode
-    display_name: str              # plain text: "SPX", "J&T", "LEX VN"
+    display_name: str  # plain text: "SPX", "J&T", "LEX VN"
     tracked: bool
     needs_phone: bool
-    link_template: str | None      # §5.1; "{code}" placeholder; None for tracked carriers
+    link_template: str | None  # §5.1; "{code}" placeholder; None for tracked carriers
 
-CATALOG: dict[CarrierCode, CarrierInfo]            # insertion order = §5.1 table order
-TRACKED: tuple[CarrierCode, ...]                   # ("spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn")
+
+CATALOG: dict[CarrierCode, CarrierInfo]  # insertion order = §5.1 table order
+TRACKED: tuple[CarrierCode, ...]  # ("spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn")
 SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"
+
+
 def is_tracked(carrier: CarrierCode) -> bool: ...
 def needs_phone(carrier: CarrierCode) -> bool: ...
 def official_url(carrier: CarrierCode, code: str) -> str | None: ...
 def seventeen_track_url(code: str) -> str: ...
 def parse_carrier_alias(text: str) -> CarrierCode | None: ...
 
+
 # tracking_codes.py
 GENERIC_CODE_RE: re.Pattern[str]
+
+
 def normalize_code(raw: str) -> str: ...
 def detect_carriers(code: str) -> list[CarrierCode]: ...
 def extract_codes(text: str) -> list[str]: ...
 def is_valid_last4(value: str) -> bool: ...
-def mask_code(code: str) -> str: ...        # code[:5] + "…" + code[-3:]
+def mask_code(code: str) -> str: ...  # code[:5] + "…" + code[-3:]
 ```
 
 ### 9.6 `carriers/models.py`
@@ -610,39 +638,48 @@ def mask_code(code: str) -> str: ...        # code[:5] + "…" + code[-3:]
 ```python
 ErrorReason = Literal["network", "blocked", "http_status", "parse"]
 
+
 @dataclass(frozen=True)
 class TrackingEvent:
-    time: datetime                 # must be timezone-aware, else ValueError
+    time: datetime  # must be timezone-aware, else ValueError
     description: str
     location: str | None = None
     raw_status: str | None = None
+
     @property
-    def key(self) -> str: ...      # §7 event key
+    def key(self) -> str: ...  # §7 event key
+
 
 @dataclass(frozen=True)
 class TrackingResult:
     carrier: CarrierCode
     tracking_number: str
     found: bool
-    events: tuple[TrackingEvent, ...] = ()   # __post_init__ stores a stable sort ascending by time
+    events: tuple[TrackingEvent, ...] = ()  # __post_init__ stores a stable sort ascending by time
     delivered: bool = False
     returned: bool = False
+
     @property
     def latest(self) -> TrackingEvent | None: ...
 
+
 class CarrierError(Exception):
     def __init__(self, carrier: CarrierCode, reason: ErrorReason, detail: str = "") -> None: ...
+
     carrier: CarrierCode
     reason: ErrorReason
     detail: str
     # str(err) == f"{carrier}:{reason}: {detail}"
 
+
 class Carrier(Protocol):
     code: CarrierCode
-    display_name: str          # "SPX" / "J&T" (plain text; formatting escapes)
+    display_name: str  # "SPX" / "J&T" (plain text; formatting escapes)
     needs_phone: bool
-    async def fetch(self, http: httpx.AsyncClient, tracking_number: str,
-                    phone_last4: str | None = None) -> TrackingResult: ...
+
+    async def fetch(
+        self, http: httpx.AsyncClient, tracking_number: str, phone_last4: str | None = None
+    ) -> TrackingResult: ...
 ```
 
 ### 9.7 `carriers/`
@@ -750,15 +787,20 @@ def get_carrier(code: CarrierCode) -> Carrier: ...
 ```python
 # schema.py
 SCHEMA_VERSION = 1
-MIGRATIONS: list[str]                              # index i = SQL script bringing version i → i+1
+MIGRATIONS: list[str]  # index i = SQL script bringing version i → i+1
+
+
 async def migrate(conn: aiosqlite.Connection) -> None: ...
+
 
 # repo.py
 ParcelState = Literal["pending", "in_transit", "delivered", "returned", "expired", "stale"]
 ACTIVE_STATES: tuple[ParcelState, ...] = ("pending", "in_transit")
 TERMINAL_STATES: tuple[ParcelState, ...] = ("delivered", "returned", "expired", "stale")
 
+
 class DuplicateParcelError(Exception): ...
+
 
 @dataclass(frozen=True)
 class User:
@@ -769,12 +811,13 @@ class User:
     is_allowed: bool
     created_at: datetime
 
+
 @dataclass(frozen=True)
 class Parcel:
     id: int
     user_id: int
-    carrier: CarrierCode | None                 # None = unresolved
-    candidates: tuple[CarrierCode, ...]         # try order; (carrier,) when resolved
+    carrier: CarrierCode | None  # None = unresolved
+    candidates: tuple[CarrierCode, ...]  # try order; (carrier,) when resolved
     tracking_number: str
     phone_last4: str | None
     label: str | None
@@ -786,49 +829,93 @@ class Parcel:
     delivered_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
     @property
     def is_active(self) -> bool: ...
     @property
     def is_resolved(self) -> bool: ...
-    def try_order(self) -> tuple[CarrierCode, ...]: ...   # (carrier,) when resolved, else candidates
+    def try_order(self) -> tuple[CarrierCode, ...]: ...  # (carrier,) when resolved, else candidates
+
 
 class Repository:
     @classmethod
-    async def open(cls, db_path: Path | str) -> "Repository": ...     # creates parent dir, pragmas, migrate
+    async def open(
+        cls, db_path: Path | str
+    ) -> "Repository": ...  # creates parent dir, pragmas, migrate
     async def close(self) -> None: ...
     # users
-    async def upsert_user(self, telegram_id: int, *, now: datetime, name: str | None = None,
-                          is_allowed: bool | None = None, is_admin: bool | None = None) -> User: ...
+    async def upsert_user(
+        self,
+        telegram_id: int,
+        *,
+        now: datetime,
+        name: str | None = None,
+        is_allowed: bool | None = None,
+        is_admin: bool | None = None,
+    ) -> User: ...
     async def get_user(self, telegram_id: int) -> User | None: ...
     async def list_users(self) -> list[User]: ...
     async def set_default_phone(self, telegram_id: int, last4: str | None) -> None: ...
     # parcels
-    async def add_parcel(self, *, user_id: int, carrier: CarrierCode | None,
-                         candidates: Sequence[CarrierCode], tracking_number: str,
-                         phone_last4: str | None, now: datetime, next_check_at: datetime) -> Parcel: ...
+    async def add_parcel(
+        self,
+        *,
+        user_id: int,
+        carrier: CarrierCode | None,
+        candidates: Sequence[CarrierCode],
+        tracking_number: str,
+        phone_last4: str | None,
+        now: datetime,
+        next_check_at: datetime,
+    ) -> Parcel:
+        ...
         # ValueError if candidates is empty, or carrier is not None and tuple(candidates) != (carrier,)
+
     async def get_parcel(self, parcel_id: int) -> Parcel | None: ...
     async def find_parcel(self, user_id: int, tracking_number: str) -> Parcel | None: ...
-    async def list_parcels(self, user_id: int, *, terminal_since: datetime) -> list[Parcel]: ...  # active + terminal with updated_at >= terminal_since; ORDER BY created_at, id
+    async def list_parcels(
+        self, user_id: int, *, terminal_since: datetime
+    ) -> list[
+        Parcel
+    ]: ...  # active + terminal with updated_at >= terminal_since; ORDER BY created_at, id
     async def count_active_parcels(self, user_id: int) -> int: ...
     async def active_parcels_for_user(self, user_id: int) -> list[Parcel]: ...
-    async def due_parcels(self, now: datetime) -> list[Parcel]: ...   # active, owner is_allowed=1, next_check_at <= now; ORDER BY next_check_at, id
-    async def resolve_carrier(self, parcel_id: int, carrier: CarrierCode, now: datetime) -> None: ...  # carrier=?, candidates=carrier
+    async def due_parcels(
+        self, now: datetime
+    ) -> list[
+        Parcel
+    ]: ...  # active, owner is_allowed=1, next_check_at <= now; ORDER BY next_check_at, id
+    async def resolve_carrier(
+        self, parcel_id: int, carrier: CarrierCode, now: datetime
+    ) -> None: ...  # carrier=?, candidates=carrier
     async def set_label(self, parcel_id: int, label: str | None, now: datetime) -> None: ...
     async def delete_parcel(self, parcel_id: int) -> None: ...
-    async def record_check_success(self, parcel_id: int, *, state: ParcelState,
-                                   last_status_text: str | None, last_event_at: datetime | None,
-                                   next_check_at: datetime, now: datetime,
-                                   delivered_at: datetime | None = None) -> None: ...   # resets consecutive_failures; None for last_* / delivered_at keeps existing value
-    async def record_check_failure(self, parcel_id: int, *, next_check_at: datetime,
-                                   now: datetime) -> int: ...                          # returns new consecutive_failures
+    async def record_check_success(
+        self,
+        parcel_id: int,
+        *,
+        state: ParcelState,
+        last_status_text: str | None,
+        last_event_at: datetime | None,
+        next_check_at: datetime,
+        now: datetime,
+        delivered_at: datetime | None = None,
+    ) -> (
+        None
+    ): ...  # resets consecutive_failures; None for last_* / delivered_at keeps existing value
+    async def record_check_failure(
+        self, parcel_id: int, *, next_check_at: datetime, now: datetime
+    ) -> int: ...  # returns new consecutive_failures
     async def set_state(self, parcel_id: int, state: ParcelState, now: datetime) -> None: ...
     async def delete_terminal_before(self, cutoff: datetime) -> int: ...
     async def count_all_active(self) -> int: ...
     # events
-    async def insert_events(self, parcel_id: int, events: Sequence[TrackingEvent],
-                            now: datetime) -> list[TrackingEvent]: ...   # returns newly inserted, ascending
-    async def list_events(self, parcel_id: int, limit: int) -> list[TrackingEvent]: ...  # the `limit` most recent, returned ascending
+    async def insert_events(
+        self, parcel_id: int, events: Sequence[TrackingEvent], now: datetime
+    ) -> list[TrackingEvent]: ...  # returns newly inserted, ascending
+    async def list_events(
+        self, parcel_id: int, limit: int
+    ) -> list[TrackingEvent]: ...  # the `limit` most recent, returned ascending
     async def count_events(self, parcel_id: int) -> int: ...
     # meta
     async def get_meta(self, key: str) -> str | None: ...
@@ -840,56 +927,89 @@ class Repository:
 ### 9.9 `services/formatting.py` (pure, no I/O)
 
 ```python
-def parcel_title(parcel: Parcel) -> str: ...                       # escaped label, else tracking number
-def carrier_name(code: CarrierCode) -> str: ...                    # CARRIER_NAMES (HTML-safe)
-def carrier_names(codes: Sequence[CarrierCode]) -> str: ...        # joined with CARRIER_SEPARATOR
-def parcel_carrier_label(parcel: Parcel) -> str: ...               # resolved → carrier_name; else carrier_names(candidates)
-def format_time(dt: datetime, tz: ZoneInfo) -> str: ...            # TIME_FORMAT in tz
-def format_links(code: str, carriers: Sequence[CarrierCode]) -> str: ...        # §4.4
-def format_link_only(code: str, carriers: Sequence[CarrierCode]) -> str: ...    # LINK_ONLY
-def format_event_update(parcel: Parcel, new_events: Sequence[TrackingEvent], tz: ZoneInfo,
-                        *, delivered: bool, returned: bool,
-                        resolved_carrier: CarrierCode | None = None) -> str: ...
+def parcel_title(parcel: Parcel) -> str: ...  # escaped label, else tracking number
+def carrier_name(code: CarrierCode) -> str: ...  # CARRIER_NAMES (HTML-safe)
+def carrier_names(codes: Sequence[CarrierCode]) -> str: ...  # joined with CARRIER_SEPARATOR
+def parcel_carrier_label(
+    parcel: Parcel,
+) -> str: ...  # resolved → carrier_name; else carrier_names(candidates)
+def format_time(dt: datetime, tz: ZoneInfo) -> str: ...  # TIME_FORMAT in tz
+def format_links(code: str, carriers: Sequence[CarrierCode]) -> str: ...  # §4.4
+def format_link_only(code: str, carriers: Sequence[CarrierCode]) -> str: ...  # LINK_ONLY
+def format_event_update(
+    parcel: Parcel,
+    new_events: Sequence[TrackingEvent],
+    tz: ZoneInfo,
+    *,
+    delivered: bool,
+    returned: bool,
+    resolved_carrier: CarrierCode | None = None,
+) -> str: ...
 def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo) -> str: ...
-def format_history(parcel: Parcel, events: Sequence[TrackingEvent], tz: ZoneInfo) -> str: ...  # newest first
+def format_history(
+    parcel: Parcel, events: Sequence[TrackingEvent], tz: ZoneInfo
+) -> str: ...  # newest first
 def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -> str: ...
 def format_needs_phone_multi(codes: Sequence[str]) -> str: ...
 def format_expired(parcel: Parcel) -> str: ...
 def format_stale(parcel: Parcel) -> str: ...
 def format_carrier_alert(carrier: CarrierCode, count: int, detail: str) -> str: ...
 def format_users(users: Sequence[User], active_counts: Mapping[int, int], admin_id: int) -> str: ...
-def format_health(last_poll_at: datetime | None, report: dict | None, active: int, users: int,
-                  tz: ZoneInfo) -> str: ...
+def format_health(
+    last_poll_at: datetime | None, report: dict | None, active: int, users: int, tz: ZoneInfo
+) -> str: ...
 def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str: ...
 ```
 
 ### 9.10 `services/parcels.py`
 
 ```python
-AddKind = Literal["added", "needs_phone", "link_only", "duplicate", "limit", "invalid_code", "invalid_phone"]
+AddKind = Literal[
+    "added", "needs_phone", "link_only", "duplicate", "limit", "invalid_code", "invalid_phone"
+]
+
 
 @dataclass(frozen=True)
 class AddOutcome:
     kind: AddKind
-    code: str | None = None                          # normalized code when known
-    parcel: Parcel | None = None                     # refreshed after the first fetch
-    result: TrackingResult | None = None             # found result, or the last not-found result
-    error: CarrierError | None = None                # set when every attempted fetch failed
-    candidates: tuple[CarrierCode, ...] = ()         # needs_phone: carriers still missing digits
-    link_carriers: tuple[CarrierCode, ...] = ()      # link-only candidates to mention
+    code: str | None = None  # normalized code when known
+    parcel: Parcel | None = None  # refreshed after the first fetch
+    result: TrackingResult | None = None  # found result, or the last not-found result
+    error: CarrierError | None = None  # set when every attempted fetch failed
+    candidates: tuple[CarrierCode, ...] = ()  # needs_phone: carriers still missing digits
+    link_carriers: tuple[CarrierCode, ...] = ()  # link-only candidates to mention
+
 
 class ParcelService:
-    def __init__(self, repo: Repository, carriers: Mapping[CarrierCode, Carrier],
-                 http: httpx.AsyncClient, settings: Settings,
-                 now: Callable[[], datetime]) -> None: ...
-    async def add(self, user: User, raw_code: str, phone_last4: str | None = None,
-                  carrier: CarrierCode | None = None) -> AddOutcome: ...
+    def __init__(
+        self,
+        repo: Repository,
+        carriers: Mapping[CarrierCode, Carrier],
+        http: httpx.AsyncClient,
+        settings: Settings,
+        now: Callable[[], datetime],
+    ) -> None: ...
+    async def add(
+        self,
+        user: User,
+        raw_code: str,
+        phone_last4: str | None = None,
+        carrier: CarrierCode | None = None,
+    ) -> AddOutcome: ...
     async def list_for(self, user_id: int) -> list[Parcel]: ...
-    async def resolve(self, user_id: int, ref: str) -> Parcel | None: ...     # 1-3 digit ref = 1-based index into list_for; else normalized code
-    async def remove(self, user_id: int, ref: str) -> Parcel | None: ...      # returns the deleted parcel
+    async def resolve(
+        self, user_id: int, ref: str
+    ) -> Parcel | None: ...  # 1-3 digit ref = 1-based index into list_for; else normalized code
+    async def remove(
+        self, user_id: int, ref: str
+    ) -> Parcel | None: ...  # returns the deleted parcel
     async def rename(self, user_id: int, ref: str, label: str | None) -> Parcel | None: ...
-    async def history(self, user_id: int, ref: str) -> tuple[Parcel, list[TrackingEvent]] | None: ...
-    async def set_default_phone(self, user_id: int, last4: str | None) -> None: ...  # ValueError if invalid
+    async def history(
+        self, user_id: int, ref: str
+    ) -> tuple[Parcel, list[TrackingEvent]] | None: ...
+    async def set_default_phone(
+        self, user_id: int, last4: str | None
+    ) -> None: ...  # ValueError if invalid
 ```
 
 ### 9.11 `services/poller.py`
@@ -898,13 +1018,18 @@ class ParcelService:
 class Notifier(Protocol):
     async def send(self, chat_id: int, text: str, *, silent: bool = False) -> None: ...
 
+
 @dataclass(frozen=True)
 class FetchKey:
     carrier: CarrierCode
     tracking_number: str
     phone_last4: str | None
 
-def fetch_keys(parcel: Parcel, carriers: Mapping[CarrierCode, Carrier]) -> list[FetchKey]: ...   # §6.2
+
+def fetch_keys(
+    parcel: Parcel, carriers: Mapping[CarrierCode, Carrier]
+) -> list[FetchKey]: ...  # §6.2
+
 
 @dataclass
 class PollReport:
@@ -916,15 +1041,25 @@ class PollReport:
     new_events: int = 0
     messages_sent: int = 0
     failures: dict[str, int] = field(default_factory=dict)
+
     def to_json(self) -> str: ...
 
+
 class Poller:
-    def __init__(self, repo: Repository, carriers: Mapping[CarrierCode, Carrier],
-                 http: httpx.AsyncClient, notifier: Notifier, settings: Settings,
-                 now: Callable[[], datetime],
-                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-                 rand: Callable[[], float] = random.random) -> None: ...
-    async def run_cycle(self, *, only_user_id: int | None = None, wait: bool = False) -> PollReport: ...
+    def __init__(
+        self,
+        repo: Repository,
+        carriers: Mapping[CarrierCode, Carrier],
+        http: httpx.AsyncClient,
+        notifier: Notifier,
+        settings: Settings,
+        now: Callable[[], datetime],
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        rand: Callable[[], float] = random.random,
+    ) -> None: ...
+    async def run_cycle(
+        self, *, only_user_id: int | None = None, wait: bool = False
+    ) -> PollReport: ...
     def is_quiet(self, at: datetime) -> bool: ...
 ```
 
@@ -932,27 +1067,40 @@ class Poller:
 
 ```python
 # parsing.py
-def parse_track_args(args: Sequence[str]) -> tuple[str, str | None, CarrierCode | None] | None: ...
+def parse_track_args(args: Sequence[str]) -> tuple[str, str | None, CarrierCode | None] | None:
+    ...
     # (code, last4, forced carrier); rules in §4.1
+
+
 def parse_ref_and_text(args: Sequence[str]) -> tuple[str, str | None] | None: ...
+
+
 @dataclass(frozen=True)
 class TextRoute:
     kind: Literal["phone_for_pending", "codes", "invalid_phone", "unknown"]
     codes: tuple[str, ...] = ()
     last4: str | None = None
+
+
 def route_text(text: str, has_pending: bool) -> TextRoute: ...
+
 
 # auth.py
 def is_authorized(user: User | None, telegram_id: int, admin_id: int) -> bool: ...
-async def gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: ...   # TypeHandler group -1; raises ApplicationHandlerStop
-def admin_only(handler): ...                                                      # decorator
+async def gate(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None: ...  # TypeHandler group -1; raises ApplicationHandlerStop
+def admin_only(handler): ...  # decorator
+
 
 # commands.py
 BOT_COMMANDS: list[tuple[str, str]]
 
+
 # notifier.py
-class TelegramNotifier:        # implements Notifier
+class TelegramNotifier:  # implements Notifier
     def __init__(self, bot: Bot) -> None: ...
+
 
 # deps.py  (separate module so auth/handlers/app can import it without cycles)
 @dataclass
@@ -963,12 +1111,16 @@ class Deps:
     parcels: ParcelService
     poller: Poller
     notifier: TelegramNotifier
-def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps: ...     # context.bot_data["deps"]
+
+
+def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps: ...  # context.bot_data["deps"]
+
 
 # app.py
 def build_application(settings: Settings) -> Application: ...
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None: ...
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: ...
+
 
 # __main__.py
 def main() -> int: ...
@@ -980,10 +1132,18 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "car
 
 `BOT_COMMANDS`:
 ```python
-[("start", "Bắt đầu"), ("help", "Hướng dẫn"), ("track", "Theo dõi đơn: /track <mã> [4 số] [hãng]"),
- ("list", "Danh sách đơn"), ("status", "Hành trình đơn"), ("label", "Đặt tên cho đơn"),
- ("remove", "Ngừng theo dõi"), ("phone", "4 số cuối SĐT cho đơn J&T, GHN"), ("check", "Kiểm tra ngay"),
- ("cancel", "Hủy thao tác")]
+[
+    ("start", "Bắt đầu"),
+    ("help", "Hướng dẫn"),
+    ("track", "Theo dõi đơn: /track <mã> [4 số] [hãng]"),
+    ("list", "Danh sách đơn"),
+    ("status", "Hành trình đơn"),
+    ("label", "Đặt tên cho đơn"),
+    ("remove", "Ngừng theo dõi"),
+    ("phone", "4 số cuối SĐT cho đơn J&T, GHN"),
+    ("check", "Kiểm tra ngay"),
+    ("cancel", "Hủy thao tác"),
+]
 ```
 
 ## 10. Configuration
@@ -1107,16 +1267,29 @@ All messages are sent with `parse_mode=HTML`. `{placeholders}` are filled with *
 TIME_FORMAT = "%d/%m %H:%M"
 
 CARRIER_NAMES = {
-    "spx": "SPX", "jt": "J&amp;T", "cainiao": "Cainiao", "fourpx": "4PX",
-    "ninjavan": "Ninja Van", "ghn": "GHN", "best": "BEST Express", "yunexpress": "YunExpress",
-    "ghtk": "GHTK", "viettelpost": "Viettel Post", "vnpost": "VNPost", "lex": "LEX VN",
+    "spx": "SPX",
+    "jt": "J&amp;T",
+    "cainiao": "Cainiao",
+    "fourpx": "4PX",
+    "ninjavan": "Ninja Van",
+    "ghn": "GHN",
+    "best": "BEST Express",
+    "yunexpress": "YunExpress",
+    "ghtk": "GHTK",
+    "viettelpost": "Viettel Post",
+    "vnpost": "VNPost",
+    "lex": "LEX VN",
 }
 CARRIER_UNRESOLVED = "Đang xác định hãng"
 CARRIER_SEPARATOR = " / "
 
 STATE_EMOJI = {
-    "pending": "⏳", "in_transit": "🚚", "delivered": "✅",
-    "returned": "↩️", "expired": "⌛", "stale": "⚠️",
+    "pending": "⏳",
+    "in_transit": "🚚",
+    "delivered": "✅",
+    "returned": "↩️",
+    "expired": "⌛",
+    "stale": "⚠️",
 }
 STATE_TEXT = {
     "pending": "Chưa có thông tin vận chuyển",
@@ -1147,8 +1320,7 @@ HELP = (
     "• /cancel – hủy thao tác đang chờ"
 )
 NOT_ALLOWED = (
-    "🔒 Bạn chưa có quyền dùng bot này.\n"
-    "Hãy gửi ID sau cho người quản lý: <code>{user_id}</code>"
+    "🔒 Bạn chưa có quyền dùng bot này.\nHãy gửi ID sau cho người quản lý: <code>{user_id}</code>"
 )
 ADMIN_ONLY = "🔒 Lệnh này chỉ dành cho người quản lý."
 UNKNOWN_COMMAND = "Mình không hiểu lệnh này. Gõ /help để xem hướng dẫn."

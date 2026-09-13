@@ -1,0 +1,18 @@
+from datetime import timedelta
+
+PENDING_EXPIRY = timedelta(days=7)
+STALE_AFTER = timedelta(days=30)
+DELIVERED_VISIBLE_FOR = timedelta(days=3)
+PURGE_AFTER = timedelta(days=30)
+MAX_BACKOFF = timedelta(hours=6)
+FAILURE_ALERT_THRESHOLD = 5
+CARRIER_ALL_FAILED_MIN_FETCHES = 3
+ALERT_COOLDOWN = timedelta(hours=6)
+ERROR_ALERT_COOLDOWN = timedelta(minutes=30)
+CHECK_COOLDOWN = timedelta(minutes=5)
+JITTER_SECONDS = 2.0
+FIRST_POLL_DELAY_SECONDS = 30
+MAX_LABEL_LENGTH = 40
+MAX_EVENTS_IN_UPDATE = 10
+MAX_EVENTS_IN_HISTORY = 30
+TELEGRAM_TEXT_LIMIT = 4000
