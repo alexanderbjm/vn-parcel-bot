@@ -149,7 +149,10 @@ class Poller:
             if not keys:
                 continue
             processed.append(parcel.id)
-            await self._process(parcel, keys, outcomes, now, report, alerts)
+            try:
+                await self._process(parcel, keys, outcomes, now, report, alerts)
+            except Exception:
+                log.exception("processing failed code=%s", mask_code(parcel.tracking_number))
 
         await self._check_stale(processed, now, report)
         self._add_all_failed_alerts(by_carrier, outcomes, alerts)
@@ -215,10 +218,15 @@ class Poller:
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
     ) -> None:
+        current = await self._repo.get_parcel(parcel.id)
+        if current is None or not current.is_active:
+            return
+        parcel = current
+
         if parcel.is_resolved:
             outcome = outcomes[keys[0]]
             if isinstance(outcome, CarrierError):
-                await self._handle_failure(parcel, outcome, now, alerts)
+                await self._handle_failure(parcel, outcome, now, report, alerts)
             else:
                 await self._handle_result(parcel, outcome, now, report, alerts)
             return
@@ -228,7 +236,8 @@ class Poller:
             if isinstance(outcome, TrackingResult) and outcome.found:
                 await self._repo.resolve_carrier(parcel.id, key.carrier, now)
                 resolved = await self._repo.get_parcel(parcel.id)
-                assert resolved is not None
+                if resolved is None:
+                    return
                 log.info(
                     "carrier resolved carrier=%s code=%s",
                     key.carrier,
@@ -240,7 +249,7 @@ class Poller:
                 return
         errors = [outcome for _, outcome in results if isinstance(outcome, CarrierError)]
         if errors:
-            await self._handle_failure(parcel, errors[0], now, alerts)
+            await self._handle_failure(parcel, errors[0], now, report, alerts)
             return
         first = results[0][1]
         assert isinstance(first, TrackingResult)
@@ -275,7 +284,7 @@ class Poller:
                 delivered_at=latest.time if newly_delivered and latest else None,
             )
             report.new_events += len(new)
-            if new:
+            if new or newly_delivered or newly_returned:
                 text = format_event_update(
                     parcel,
                     new,
@@ -290,12 +299,10 @@ class Poller:
         if parcel.carrier is not None and await self._repo.count_events(parcel.id) > 0:
             report.failures[parcel.carrier] = report.failures.get(parcel.carrier, 0) + 1
             error = CarrierError(parcel.carrier, "parse", "events disappeared")
-            await self._handle_failure(parcel, error, now, alerts)
+            await self._handle_failure(parcel, error, now, report, alerts)
             return
         if now - parcel.created_at > PENDING_EXPIRY:
-            await self._repo.set_state(parcel.id, "expired", now)
-            await self._notify(parcel.user_id, format_expired(parcel), report)
-            log.info("parcel expired code=%s", mask_code(parcel.tracking_number))
+            await self._expire(parcel, now, report)
             return
         await self._repo.record_check_success(
             parcel.id,
@@ -311,8 +318,12 @@ class Poller:
         parcel: Parcel,
         error: CarrierError,
         now: datetime,
+        report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
     ) -> None:
+        if parcel.state == "pending" and now - parcel.created_at > PENDING_EXPIRY:
+            await self._expire(parcel, now, report)
+            return
         delay = min(
             self._settings.poll_interval * 2 ** (parcel.consecutive_failures + 1), MAX_BACKOFF
         )
@@ -321,6 +332,11 @@ class Poller:
         )
         if failures == FAILURE_ALERT_THRESHOLD:
             alerts[error.carrier] = (failures, str(error))
+
+    async def _expire(self, parcel: Parcel, now: datetime, report: PollReport) -> None:
+        await self._repo.set_state(parcel.id, "expired", now)
+        await self._notify(parcel.user_id, format_expired(parcel), report)
+        log.info("parcel expired code=%s", mask_code(parcel.tracking_number))
 
     async def _check_stale(
         self, parcel_ids: Sequence[int], now: datetime, report: PollReport

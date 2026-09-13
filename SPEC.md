@@ -293,7 +293,8 @@ for each carrier concurrently:
         try: outcomes[key] = await carrier.fetch(http, key.tracking_number, key.phone_last4)
         except CarrierError as err: outcomes[key] = err; failures[carrier] += 1
 
-# process phase, parcels in order
+# process phase, parcels in order (each parcel is re-read first and skipped if it was
+# deleted or is no longer active since the cycle started)
 for parcel in parcels:
     keys = fetch_keys(parcel)
     if not keys: continue
@@ -315,7 +316,7 @@ after all parcels: stale check, carrier alerts, purge, save meta "last_poll_repo
    - `new = repo.insert_events(parcel.id, result.events)` (only events whose key is new).
    - `state = delivered if result.delivered else returned if result.returned else in_transit`.
    - `repo.record_check_success(...)`: `last_status_text` = latest event description, `last_event_at` = latest event time, `consecutive_failures=0`, `next_check_at = now + interval`, `delivered_at` = latest event time when newly delivered.
-   - If `new` is non-empty → send **one message per parcel** built by `format_event_update(parcel, new, tz, delivered=…, returned=…, resolved_carrier=…)`; the delivered/returned footer is included only when the state changes in this cycle; `UPDATE_RESOLVED` is included only when the carrier was resolved in this cycle.
+   - If `new` is non-empty, or the state became `delivered`/`returned` in this cycle → send **one message per parcel** built by `format_event_update(parcel, new, tz, delivered=…, returned=…, resolved_carrier=…)`; the delivered/returned footer is included only when the state changes in this cycle; `UPDATE_RESOLVED` is included only when the carrier was resolved in this cycle.
 2. **not found**
    - A resolved parcel that already has stored events → treat as `CarrierError(carrier, "parse", "events disappeared")` (§6.4). Never delete events.
    - Else if `now - created_at > PENDING_EXPIRY` (7 days) → state `expired`, send `EXPIRED`.
@@ -325,6 +326,7 @@ after all parcels: stale check, carrier alerts, purge, save meta "last_poll_repo
 ### 6.4 Failures and backoff
 
 - `n = repo.record_check_failure(parcel.id, next_check_at=…, now=now)` where `next_check_at = now + min(interval × 2ⁿ, MAX_BACKOFF)` using the **new** failure count `n` (`MAX_BACKOFF` = 6 h).
+- A `pending` parcel created more than `PENDING_EXPIRY` ago whose check fails is expired (state `expired`, `EXPIRED` sent) instead of being backed off, so a failing carrier cannot keep it alive.
 - `PollReport.failures[carrier]` counts failed **fetches** per carrier (fetch phase).
 - **Carrier alert** to the admin (`ALERT_CARRIER`) when, in one cycle, a parcel reaches exactly `FAILURE_ALERT_THRESHOLD` (5) consecutive failures (alert for the carrier of the error that caused it), **or** every fetch for a carrier failed and there were ≥ `CARRIER_ALL_FAILED_MIN_FETCHES` (3) fetches. At most one alert per carrier per `ALERT_COOLDOWN` (6 h), stored in meta key `alert:<carrier>` (ISO time).
 - Users are **not** told about transient failures.

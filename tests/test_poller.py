@@ -483,3 +483,64 @@ async def test_resolved_next_cycle_uses_single_key(poller, repo, fakes, clock):
     await poller.run_cycle()
     assert len(fakes["ghn"].calls) == 1
     assert len(fakes["ninjavan"].calls) == 2
+
+
+class DeletingCarrier(FakeCarrier):
+    def __init__(self, code, repo, parcel_ids):
+        super().__init__(code)
+        self._repo = repo
+        self._parcel_ids = parcel_ids
+
+    async def fetch(self, http, tracking_number, phone_last4=None):
+        for parcel_id in self._parcel_ids:
+            await self._repo.delete_parcel(parcel_id)
+        return await super().fetch(http, tracking_number, phone_last4)
+
+
+async def test_delivered_status_without_new_event_notifies(poller, repo, fakes, notifier, clock):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"))
+    await poller.run_cycle()
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"), delivered=True)
+    clock.advance(timedelta(minutes=20))
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).state == "delivered"
+    assert len(notifier.sent) == 2
+    assert notifier.sent[1][1].endswith(texts.UPDATE_DELIVERED)
+
+
+async def test_parcel_removed_during_fetch_is_skipped(poller, repo, fakes, notifier):
+    removed = await add(repo, SPX, "spx")
+    kept_code = "SPXVN000000000002"
+    await add(repo, kept_code, "spx")
+    deleting = DeletingCarrier("spx", repo, [removed.id])
+    deleting.results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"))
+    deleting.results[(kept_code, None)] = found("spx", kept_code, ev(5, "Beta"))
+    fakes["spx"] = deleting
+    await poller.run_cycle()
+    assert await repo.get_parcel(removed.id) is None
+    texts_sent = [text for _, text, _ in notifier.sent]
+    assert not any("Alpha" in text for text in texts_sent)
+    assert any("Beta" in text for text in texts_sent)
+    assert await repo.get_meta("last_poll_report") is not None
+
+
+async def test_unresolved_parcel_removed_during_fetch_is_skipped(poller, repo, fakes, notifier):
+    parcel = await add(repo, GEN, None, candidates=("ghn", "ninjavan"))
+    deleting = DeletingCarrier("ninjavan", repo, [parcel.id])
+    deleting.results[(GEN, None)] = found("ninjavan", GEN, ev(0))
+    fakes["ninjavan"] = deleting
+    await poller.run_cycle()
+    assert await repo.get_parcel(parcel.id) is None
+    assert notifier.sent == []
+
+
+async def test_failing_pending_parcel_expires_after_seven_days(poller, repo, fakes, notifier):
+    parcel = await add(repo, SPX, "spx", created=T0 - timedelta(days=8))
+    fakes["spx"].results[(SPX, None)] = CarrierError("spx", "network", "timeout")
+    await poller.run_cycle()
+    refreshed = await repo.get_parcel(parcel.id)
+    assert refreshed.state == "expired"
+    assert refreshed.consecutive_failures == 0
+    assert len(notifier.sent) == 1
+    assert "Sau 7 ngày" in notifier.sent[0][1]
