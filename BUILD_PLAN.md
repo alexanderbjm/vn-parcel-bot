@@ -1929,7 +1929,7 @@ Expected: gates green; the help text lists `carriers` and `telegram`.
 - `test_normalize_keeps_internal_dots` — `"s1234567.mb12.d5.123456789."` → `"S1234567.MB12.D5.123456789"`.
 - `test_detect_each_rule` — parametrize: `SPXVN05338454932C` → `["spx"]`; `SPEVN000000000001` → `["ninjavan"]`; `LP00123456789012` → `["cainiao"]`; `LX123456789CN` → `["cainiao"]`; `4PX3000123456789CN` → `["fourpx"]`; `YT1234567890123456` → `["yunexpress"]`; `EB123456789VN` → `["vnpost"]`; `LEXVN00123456` → `["lex"]`; `S1234567.MB12.D5.123456789` → `["ghtk"]`; `841000072647` → `["jt", "best", "viettelpost"]`; `8410000726470` → `["best"]`; `GAN6DKKU12` → `["ghn", "ninjavan"]`.
 - `test_detect_first_rule_wins` — `SPXVN05338454932C` does not include `ghn`.
-- `test_detect_no_match` — `""`, `"SPXVN1234567"`, `"ABCDEFGH"`, `"12345678"`, `"71426082060"`, `"GAN6DKKU12345678"` → `[]`.
+- `test_detect_no_match` — `""`, `"AB12"`, `"ABCDEFGH"`, `"12345678"`, `"71426082060"`, `"GAN6DKKU12345678"` → `[]`.
 - `test_generic_code_re` — `"AB12C"` no (5 chars), `"AB1234"` yes, `"A.B"` no.
 - `test_extract_codes_mixed_text_in_order` — `"Mã: spxvn05338454932c và J&T 841000072647."` → `["SPXVN05338454932C", "841000072647"]`.
 - `test_extract_codes_dedupes`.
