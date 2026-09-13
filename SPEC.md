@@ -1,25 +1,21 @@
+<!-- Generated from BUILD_PLAN.md Part 2 (version 1.1). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+
 # vn-parcel-bot — Specification
-
-Version 1.0 · 2026-09-11 · Status: draft for review
-
-Standalone copy of **Part 2** of `BUILD_PLAN.md`, extracted unchanged on 2026-09-11. `BUILD_PLAN.md` stays the canonical copy: its build prompts (Part 3) cite these sections as `§N`. When the spec changes, edit Part 2 of `BUILD_PLAN.md` and re-extract this file so the two never drift apart.
-
-If code and this spec disagree, the spec wins; if the spec is wrong, fix the spec first, then the code.
-
----
 
 ## 1. Overview
 
-A personal Telegram bot, running on a Windows 10 PC in Vietnam, that watches parcels shipped by **SPX Express Vietnam** and **J&T Express Vietnam** and messages the owner of each parcel **every time a new tracking event appears**.
+A personal Telegram bot, running on a Windows 10 PC in Vietnam, that watches parcels bought online and messages the owner of each parcel **every time a new tracking event appears**.
 
-- Users are **buyers** receiving parcels. They add parcels by **pasting a tracking code** into a private chat with the bot.
+- Users are **buyers** receiving parcels. They add parcels by **pasting a tracking code** into a private chat with the bot. The bot works out the carrier itself (§4.3).
+- **Tracked carriers** (polled, notified): SPX Express VN, J&T Express VN, Cainiao, 4PX, Ninja Van VN, GHN.
+- **Link-only carriers** (recognised, answered with tracking links, never polled): BEST Express VN, YunExpress, GHTK, Viettel Post, VNPost/EMS, LEX VN.
 - Used by the **admin (owner) plus a few allowlisted family/friends**. Each person sees and is notified only about their own parcels.
 - The bot **polls the carriers' public tracking endpoints** directly (no paid aggregator) and uses Telegram **long polling** (no public URL, no webhook, no port forwarding).
 
 ## 2. Scope
 
 In scope (v1):
-- Carriers: SPX Express VN, J&T Express VN.
+- The twelve carriers and their tiers in §5.1; automatic carrier detection with auto-try (§4.3, §5.2).
 - Private chats only (groups are ignored).
 - Commands and flows in §4; polling and notifications in §6.
 - Runs as a background process started at Windows logon (§12).
@@ -43,7 +39,7 @@ Rules:
 
 ## 4. Bot UX
 
-All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value inserted into a message is escaped with `html.escape`. Static strings in §17 are already HTML-safe (e.g. `J&amp;T`).
+All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value inserted into a message is escaped with `html.escape`. Static strings in §17 are already HTML-safe (e.g. `J&amp;T`). URLs placed in `href` attributes are built only from the fixed templates in §5.1 plus the percent-encoded tracking code (§4.4).
 
 ### 4.1 Commands
 
@@ -51,15 +47,15 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 |---|---|---|
 | `/start` | – | `WELCOME` (with first name) followed by `HELP`. |
 | `/help` | – | `HELP`. |
-| `/track` | `<code> [last4]` | Add a parcel (§4.3). Code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`); if the last arg is exactly 4 digits and there are ≥2 args, it is the phone override. No args → `USAGE_TRACK`. |
+| `/track` | `<code> [last4] [carrier]` | Add a parcel (§4.3). The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing carrier alias (§5.2, e.g. `ghn`, `4px`) forces that carrier and skips detection. A trailing 4-digit argument (before the alias, if any) is the phone override only when the remaining code has a candidate that needs a phone (or the forced carrier needs one); otherwise it stays part of the code. No args → `USAGE_TRACK`. |
 | *(plain text)* | – | Routed per §4.2. |
-| `/list` | – | Active parcels plus terminal parcels updated within `DELIVERED_VISIBLE_FOR` (3 days), numbered 1..n in `created_at` order. Empty → `LIST_EMPTY`. |
+| `/list` | – | Active parcels plus terminal parcels updated within `DELIVERED_VISIBLE_FOR` (3 days), numbered 1..n in `created_at` order. Unresolved parcels show `CARRIER_UNRESOLVED`. Empty → `LIST_EMPTY`. |
 | `/status` | `<ref>` | Full history of one parcel, **newest first**, at most `MAX_EVENTS_IN_HISTORY` (30). `ref` = tracking code or the index shown by `/list`. |
 | `/label` | `<ref> [name…]` | Set nickname (trimmed, max `MAX_LABEL_LENGTH` = 40 chars). No name → clear label. |
 | `/remove` | `<ref>` | Delete the parcel and its events. |
-| `/phone` | `[last4 \| clear]` | No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
+| `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
 | `/check` | – | Immediately poll **this user's** active parcels, ignoring `next_check_at`. At most once per `CHECK_COOLDOWN` (5 min) per user (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE`. |
-| `/cancel` | – | Clear a pending J&T phone question → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. |
+| `/cancel` | – | Clear a pending phone question → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
 | `/users` *(admin)* | – | All users with role and active parcel count. |
@@ -71,91 +67,206 @@ Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): sta
 ### 4.2 Plain-text routing
 
 `route_text(text, has_pending)`:
-1. If a J&T phone question is pending **and** the stripped text is exactly 4 digits → `phone_for_pending`.
-2. Else extract tracking codes from the text (`extract_codes`). If ≥1 → `codes` (a pending question, if any, is discarded).
+1. If a phone question is pending **and** the stripped text is exactly 4 digits → `phone_for_pending`.
+2. Else extract tracking codes from the text (`extract_codes`, §5.2). If ≥1 → `codes` (a pending question, if any, is discarded).
 3. Else, if pending → reply `INVALID_PHONE` (keep pending). If not pending → `UNKNOWN_CODE`.
 
 With `codes`:
 - **One code** → same as `/track <code>`.
-- **Several codes** → add each. SPX codes and J&T codes that can use the user's default phone are added normally (one reply each). J&T codes with no phone available are not added; list them once in `NEEDS_PHONE_MULTI`. No pending question is created for multi-code messages.
+- **Several codes** → add each with no phone override and no forced carrier. `needs_phone` outcomes are not stored and are listed once in `NEEDS_PHONE_MULTI`; every other outcome gets its own reply. No pending question is created for multi-code messages.
 
 ### 4.3 Adding a parcel (`ParcelService.add`)
 
-1. Normalize the code (§5.3). Unknown carrier → `invalid_code`.
-2. Carrier needs phone (J&T):
-   - explicit `last4` argument wins; must pass `is_valid_last4` else `invalid_phone`;
-   - else user's `default_phone_last4`;
-   - else → `needs_phone` (nothing stored). The handler stores `context.user_data["pending_jt"] = code` and replies `ASK_PHONE`. The next 4-digit message completes the add with that phone.
-3. Same user already tracks `(carrier, code)` → `duplicate`.
-4. User already has `max_parcels_per_user` (30) **active** parcels → `limit`.
-5. Insert parcel: `state=pending`, `next_check_at = now + poll_interval`.
-6. Fetch once, immediately:
-   - **found** → insert all events silently (no per-event notification), set state (`delivered` / `returned` / `in_transit`), reply `ADDED_FOUND` (latest event text + time) or `ADDED_DELIVERED`.
-   - **not found** → stays `pending`, reply `ADDED_PENDING` (+ `ADDED_PENDING_JT_HINT` for J&T).
-   - **CarrierError** → record failure (backoff §6.4), reply `ADDED_ERROR`.
+Inputs: the user, the raw code, an optional phone override, an optional forced carrier. A candidate counts as **tracked** only if it is tracked in §5.1 **and** present in the service's carrier mapping.
 
-Different users may track the same code; each gets their own parcel row. The poller de-duplicates network requests (§6.2).
+1. `code = normalize_code(raw)`. Candidates: forced carrier → `[forced]`, and `code` must match `GENERIC_CODE_RE` (§5.2) else `invalid_code`; otherwise `detect_carriers(code)`. No candidates → `invalid_code`.
+2. Split candidates, preserving order, into `tracked` (tracked in §5.1 and present in the carrier mapping) and `link_only` (link-only in §5.1). Tracked carriers missing from the mapping are dropped. Both lists empty → `invalid_code`.
+3. A phone override that fails `is_valid_last4` → `invalid_phone`.
+4. `tracked` empty → `link_only` outcome with `link_carriers = link_only`. Nothing stored, no request.
+5. The user already has a parcel with this tracking number (any carrier, any state) → `duplicate`. The user already has `max_parcels_per_user` (30) **active** parcels → `limit`.
+6. `last4 = override or user.default_phone_last4`. `tryable` = tracked candidates that do not need a phone, plus those that do when `last4` is set. `phone_missing` = tracked candidates that need a phone while `last4` is `None`.
+7. Fetch the `tryable` candidates **one by one in order**, stopping at the first result with `found=True`. A `CarrierError` is remembered and the next candidate is tried.
+8. **Found** with carrier `c` → insert the parcel with `carrier=c`, `candidates=(c,)`, `phone_last4 = last4 if c needs a phone else None`, `next_check_at = now + poll_interval`; insert all events silently; set state (`delivered` / `returned` / `in_transit`); outcome `added` with the result. Reply `ADDED_FOUND` or `ADDED_DELIVERED`.
+9. **Not found and `phone_missing` non-empty** → `needs_phone` with `candidates = phone_missing` (nothing stored). The handler stores `context.user_data["pending_phone"] = {"code": code, "carrier": forced}` and replies `ASK_PHONE`. The next 4-digit message calls `add` again with those digits (all tryable candidates are fetched again).
+10. **Otherwise** insert a pending parcel: `candidates = tracked`; `carrier = tracked[0]` if there is exactly one tracked candidate, else `None` (unresolved); `phone_last4 = last4` if any tracked candidate needs a phone, else `None`; `next_check_at = now + poll_interval`.
+    - Every attempted fetch raised `CarrierError` → record a failure with backoff (§6.4) and return `added` with `error` = the last error → `ADDED_ERROR`.
+    - Else → `record_check_success(state="pending")` and return `added` with the last not-found result → `ADDED_PENDING` (resolved) or `ADDED_PENDING_AUTO` (unresolved).
+    - Both pending replies append `ADDED_PENDING_PHONE_HINT` when any candidate needs a phone. `ADDED_ERROR` and both pending replies append `LINK_EXTRA` (§4.4) when `link_only` is non-empty (`link_carriers` on the outcome).
+
+`DuplicateParcelError` from the repository (race) → `duplicate`. Different users may track the same code; each gets their own parcel row. The poller de-duplicates network requests (§6.2).
+
+### 4.4 Link lists
+
+`format_links(code, carriers)` returns one `LINK_ITEM` per carrier in `carriers` that has an official link template (§5.1), followed by one `LINK_ITEM` for 17TRACK, joined by `"\n"`.
+- URL = template with `{code}` replaced by `urllib.parse.quote(code, safe="")`; templates without `{code}` are used as-is.
+- The URL is inserted with `html.escape(url, quote=True)`; the name is the HTML-safe `CARRIER_NAMES` value or `LINK_17TRACK_NAME`.
+- `LINK_ONLY` (outcome `link_only`) and `LINK_EXTRA` (pending replies) use `carrier_names(link_carriers)` and `format_links(code, link_carriers)`.
 
 ## 5. Carriers
 
-### 5.1 SPX Express Vietnam
+### 5.1 Catalog
 
-Live probe from this PC on 2026-09-11 (by `agy`):
+Facts probed from this PC on 2026-09-13 with fake codes unless marked otherwise.
+
+| Code | Name | Tier | Needs phone | Evidence | Official link template |
+|---|---|---|---|---|---|
+| `spx` | SPX | tracked | no | JSON API answers without captcha; real-data signing unverified (§5.3) | – |
+| `jt` | J&amp;T | tracked | yes | Server-rendered HTML (§5.4) | – |
+| `cainiao` | Cainiao | tracked | no | JSON API, HTTP 200, no captcha (§5.5) | – |
+| `fourpx` | 4PX | tracked | no | JSON API, HTTP 200, no captcha (§5.6) | – |
+| `ninjavan` | Ninja Van | tracked | no | JSON API, 404 JSON for unknown codes (§5.7) | – |
+| `ghn` | GHN | tracked | yes | JSON API with `phone_verify` hash (§5.8) | – |
+| `best` | BEST Express | link-only | – | Old API path now serves the new site's HTML; site ships a rotate-captcha service. Promote after Prompt 10A only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
+| `yunexpress` | YunExpress | link-only | – | `services.yuntrack.com` returns an Alibaba Cloud firewall page (HTTP 405) | `https://www.yuntrack.com/parcelTracking?id={code}` |
+| `ghtk` | GHTK | link-only | – | Tracking page requires Google reCAPTCHA (`invalid_captcha` error code in its script) | `https://i.ghtk.vn/{code}` |
+| `viettelpost` | Viettel Post | link-only | – | JavaScript cookie challenge (`document.cookie=…; location.reload`) | `https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/` |
+| `vnpost` | VNPost | link-only | – | Tracking tab renders a captcha (`tracuu.js`) | `https://vnpost.vn/vi/ca-nhan/chuyen-phat/chuyen-phat-trong-nuoc#!?tab=tra-cuu-hanh-trinh&code={code}` |
+| `lex` | LEX VN | link-only | – | `tracker.lel.asia` no longer resolves; logistics site loads Lazada anti-bot script | `https://logistics.lazada.vn/` |
+
+Every link list ends with 17TRACK: `https://t.17track.net/vi#nums={code}`.
+
+Link-only carriers are never polled and never stored. The bot does **not** solve captchas, replay cookie challenges, drive headless browsers, or rotate User-Agents.
+
+### 5.2 Code normalization, detection and aliases
+
+- `normalize_code(raw)`: uppercase; remove all whitespace and `-`; strip surrounding `,;:()[]<>"'.`. Internal dots are kept (GHTK codes contain them).
+- `GENERIC_CODE_RE = ^[0-9A-Z][0-9A-Z.]{4,38}[0-9A-Z]$` — the minimum shape of any code, used for forced carriers.
+- `detect_carriers(code)` on a normalized code — the **first** matching rule wins and returns its candidates in order:
+
+| # | Regex | Candidates | Source |
+|---|---|---|---|
+| 1 | `^SPXVN[0-9A-Z]{8,16}$` | spx | observed |
+| 2 | `^SPEVN[0-9A-Z]{6,20}$` | ninjavan | web (Ninja Van codes on Shopee) |
+| 3 | `^LP\d{14}$` | cainiao | open-source trackers |
+| 4 | `^[A-Z]{2}\d{9}CN$` | cainiao | UPU S10 (China Post / AliExpress) |
+| 5 | `^4PX[0-9A-Z]{10,20}$` | fourpx | open-source tracker |
+| 6 | `^YT\d{16}$` | yunexpress | web |
+| 7 | `^[A-Z]{2}\d{9}VN$` | vnpost | UPU S10 |
+| 8 | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | lex | web, unverified |
+| 9 | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | ghtk | web |
+| 10 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
+| 11 | `^\d{13}$` | best | web |
+| 12 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
+
+  No rule matches → `[]`.
+- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)`; normalize each token; keep tokens with a non-empty `detect_carriers`. A token that only matches **rule 12** is kept only when the whole stripped message is that single token. Return in order of appearance, de-duplicated. No joining of space-separated fragments.
+- `is_valid_last4(s)`: `^\d{4}$`.
+- `parse_carrier_alias(text)`: casefold and remove spaces, `-`, `_`, `.`, `&`, then map:
+  `spx`, `shopee`, `shopeeexpress` → spx · `jt`, `jnt`, `jtexpress` → jt · `cainiao` → cainiao · `4px`, `fourpx` → fourpx · `ninjavan`, `ninja`, `nv` → ninjavan · `ghn`, `giaohangnhanh` → ghn · `best`, `bestexpress` → best · `yun`, `yunexpress`, `yuntrack` → yunexpress · `ghtk`, `giaohangtietkiem` → ghtk · `viettelpost`, `viettel`, `vtp` → viettelpost · `vnpost`, `vnp`, `ems` → vnpost · `lex`, `lazada`, `lel` → lex · anything else → `None`.
+- `mask_code(code)`: `code[:5] + "…" + code[-3:]`, used in logs.
+
+Prompt 10A updates this section and `tracking_codes.py` together when real codes contradict a rule.
+
+### 5.3 SPX Express Vietnam
 
 | Item | Value | Confidence |
 |---|---|---|
-| Endpoint | `GET https://spx.vn/api/v2/fleet_order/tracking/search?sls_tracking_number=<CODE>` | Verified (HTTP 200) |
-| Auth / captcha / signature | None observed | Verified for a fake code only |
-| Response envelope | `{"retcode": 0, "message": "", "data": {…}}`; fake code → `data: {}` | Verified |
-| Event list shape | **Unknown.** Hypothesis from the Malaysia sibling endpoint: a list of events under `data` with a Unix timestamp, message text, and a status code | Unverified — confirmed by Prompt 2 |
-| Delivered / returned markers | Unknown — confirmed by Prompt 2 | Unverified |
+| Endpoint | `GET https://spx.vn/api/v2/fleet_order/tracking/search?sls_tracking_number=<VALUE>` | Verified (HTTP 200) |
+| Unknown code | `{"retcode": 0, "message": "", "data": {}}` | Verified |
+| Found response | `data.sls_tracking_number`, `data.current_status` (display text), `data.tracking_list[]` items with `message` (text), `timestamp` (Unix seconds), `code`; also `data.status_list[]` | Field names verified in spx.vn's own page script (2026-09-13); values unverified |
+| Request signing | The SPX Thailand client sends `VALUE = f"{code}\|{ts}{sha256(code + ts + SECRET)}"` (`ts` = Unix seconds as a string, `SECRET` per country). No Vietnamese `SECRET` was found in spx.vn's public scripts. | **Unverified** — decided in Prompt 10A |
+| Delivered / returned | Markers in `current_status` or the latest `message` (§9.7) | Unverified |
+
+- `SPX_SIGNING_SECRET: str | None = None`. `None` → `VALUE = code`. A string → the signed form. Prompt 10A sets it only if real codes need it and records where the value came from.
+- Parsing: `retcode != 0` → `parse` error. `data` empty or `tracking_list` missing/empty → not found. `tracking_list` not a list, or an item without an integer `timestamp` or a string `message` → `parse` error.
+- Event: `time = datetime.fromtimestamp(timestamp, UTC)`; `description` = `message` with literal `\n` sequences replaced by a space, whitespace-collapsed; `raw_status = str(code)` when present; `location = None`.
+- `delivered` = any `DELIVERED_MARKERS` (casefold substring) in `current_status` or the latest description. `returned` = not delivered and any `RETURNED_MARKERS` in `current_status` or the latest description.
 
 Tracking code format: `SPXVN` + 8–16 uppercase alphanumerics (observed examples have 11–14, e.g. `SPXVN05338454932C`).
 
-### 5.2 J&T Express Vietnam
+### 5.4 J&T Express Vietnam
 
 | Item | Value | Confidence |
 |---|---|---|
 | Tracking page | `https://jtexpress.vn/vi/tracking` | Verified |
 | Lookup | Server-rendered HTML. The page's form is `GET https://jtexpress.vn/tracking` with `type=track` and `billcode=<CODE>`; phone digits parameter believed to be `cellphone=<LAST4>` | Form verified; **how the phone digits are actually submitted is unverified** (the hidden `cellphone` input is commented out in the HTML and a separate `tracking_cellphone.js` + verify modal exist) |
 | Not-found marker | Text `Không tìm thấy dữ liệu về vận đơn` and/or an `.empty-vandon` block | Verified for a fake code |
-| Result markup | Believed to be inside `.result-tracking` | Unverified for real data — confirmed by Prompt 2 |
+| Result markup | Believed to be inside `.result-tracking` | Unverified for real data — confirmed by Prompt 10A |
 | Captcha / CSRF / signature on GET | None observed | Verified for fake code |
 | Requires last 4 digits of recipient phone | Yes (page asks for it) | Verified via public sources |
 
 Tracking code format: exactly 12 digits (e.g. `841000072647`).
 
-### 5.3 Code normalization and detection
+### 5.5 Cainiao
 
-- `normalize_code(raw)`: uppercase; remove all whitespace, `-`, `.`; strip surrounding punctuation `,;:()[]<>"'`.
-- `detect_carrier(code)` on a normalized code:
-  - `^SPXVN[0-9A-Z]{8,16}$` → `"spx"`
-  - `^\d{12}$` → `"jt"`
-  - otherwise `None`.
-- `extract_codes(text)`: uppercase the text, find `SPXVN[0-9A-Z]{8,16}` and `(?<!\d)\d{12}(?!\d)` matches, return them in order of appearance, de-duplicated. No space-joining inside free text.
-- `is_valid_last4(s)`: `^\d{4}$`.
+| Item | Value | Confidence |
+|---|---|---|
+| Endpoint | `GET https://global.cainiao.com/global/detail.json?mailNos=<CODE>&lang=en-US&language=en-US` | Verified (HTTP 200 JSON, no captcha, no special headers) |
+| Unknown code | `{"module":[{"mailNo":"<CODE>","mailNoSource":"EXTERNAL","detailList":[]}],"success":true}` | Verified |
+| Found response | `module[0]` with `status`, `statusDesc`, `originCountry`, `destCountry`, `detailList[]` items with `time` (epoch ms), `timeStr` (`yyyy-MM-dd HH:mm:ss`), `timeZone` (e.g. `GMT+8`), `desc`, `standerdDesc`, `descTitle`, `actionCode` | Open-source schema (shlee322/delivery-tracker) |
+| Delivered | Latest `actionCode == "GTMS_SIGNED"` | Open-source |
+| Returned | Latest `actionCode` contains `RETURN` | Unverified |
 
-If Prompt 2 observes formats that contradict these patterns, update this section and `tracking_codes.py` together.
+- Parsing: `success` is not `True`, or `module` is not a non-empty list → `parse` error. `detailList` missing or empty → not found. An item without a usable time or without `desc`/`standerdDesc` → `parse` error.
+- Event time: integer `time` → `datetime.fromtimestamp(time / 1000, UTC)`; else `timeStr` parsed as `%Y-%m-%d %H:%M:%S` in the offset from `timeZone` (default UTC+8). `description = desc` (fallback `standerdDesc`); `raw_status = actionCode`; `location = None`.
 
-### 5.4 Fetch contract (both carriers)
+### 5.6 4PX
+
+| Item | Value | Confidence |
+|---|---|---|
+| Endpoint | `POST https://track.4px.com/track/v2/front/listTrackV3`, JSON body `{"queryCodes": ["<CODE>"], "language": "en-us", "translateLanguage": "en-us"}` | Verified (HTTP 200 JSON, no captcha) |
+| Unknown code | `{"result":1,"message":"操作成功","data":[{"queryCode":"<CODE>","status":7,"tracks":null,…}],"tag":"7"}` | Verified |
+| Found response | `data[0].tracks[]` items with `tkCode`, `tkDesc`, `tkLocation`, `tkTimezone`, `tkDate`, `tkDateStr` (`yyyy-MM-dd HH:mm:ss`), `tkTranslatedDesc` | Open-source (itsvic-dev/deliveries) |
+| Delivered | Latest `tkCode` starts with `FPX_S_OK` | Open-source |
+| Returned | None known | – |
+
+- Parsing: `result != 1` → `parse` error. `data` empty, or `tracks` null/empty → not found. An item without `tkDateStr` or without `tkDesc`/`tkTranslatedDesc` → `parse` error.
+- Event time: `tkDateStr` in the offset parsed from `tkTimezone` (accepts `+08:00`, `GMT+8`, `UTC+8`, `8`); missing or unparseable → UTC+8. `description = tkDesc` (fallback `tkTranslatedDesc`); `location = tkLocation` or `None`; `raw_status = tkCode`.
+
+### 5.7 Ninja Van Vietnam
+
+| Item | Value | Confidence |
+|---|---|---|
+| Endpoint | `GET https://api.ninjavan.co/vn/dash/1.2/public/orders?tracking_id=<CODE>` | Verified |
+| Unknown code | HTTP 404 `{"error":{"code":150002,"title":"Not Found","message":"order by tracking id <CODE> not found."}}` | Verified |
+| Found response | Top-level object with `events[]` (items: `type`, `time`, `data` with `hubName` and `failureReason.{en,vi}`) and a granular status | Names from ninjavan.co's page script, which camel-cases the raw JSON; raw casing unverified |
+| Delivered | Latest event `type` in `DELIVERY_SUCCESS`, `FORCED_SUCCESS`, `FROM_DP_TO_CUSTOMER` and not returned | Page script |
+| Returned | Granular status equals `returned to sender` (casefold) | Page script |
+
+- The API returns event **types**, not texts. `NINJAVAN_EVENT_TEXT` (§9.7) maps types to Vietnamese; an unknown type becomes `type.replace("_", " ").capitalize()`.
+- Accept snake_case and camelCase keys everywhere (`hub_name`/`hubName`, `failure_reason`/`failureReason`, `granular_status`/`granularStatus`).
+- Event: `time` as an ISO-8601 string (`Z` or offset) or epoch milliseconds; `description` = mapped text, plus ` – <reason>` for `DELIVERY_FAILURE` when `failureReason.vi` or `.en` exists; `location` = hub name or `None`; `raw_status = type`.
+- A body without a top-level `events` key whose `data` is an object is unwrapped to `data` first.
+- HTTP 404 with `error.code == 150002` → not found; any other 404 → `http_status`. A 200 body without an `events` list → `parse` error; an empty `events` list → not found.
+
+### 5.8 GHN
+
+| Item | Value | Confidence |
+|---|---|---|
+| Endpoint | `POST https://fe-online-gateway.ghn.vn/order-tracking/public-api/client/tracking-logs`, JSON `{"order_code": "<CODE>", "phone_verify": "<HASH>"}` | Verified |
+| Phone hash | `HASH = sha256(f"{CODE}\|{LAST4}".encode("utf-8")).hexdigest()` — the site keeps a 4-digit input as-is before hashing | Verified in the site script |
+| Missing / wrong digits | HTTP 400 `{"code":400,"message":"phone verify param is missing","data":null,"code_message":"PHONE_VERIFY_REQUIRED"}`; wrong digits → `code_message` `PHONE_VERIFY_FAIL` | REQUIRED verified; FAIL from script |
+| Found response | `{"code":200,"data":{"order_info":{"status":…},"tracking_logs":[{"status","status_name","action_at","location":{…}}]}}` | Field names from the site script |
+| Delivered | `order_info.status == "delivered"` or latest log `status == "delivered"` | Script |
+| Returned | `order_info.status == "returned"` or latest log `status == "returned"` | Script |
+
+- HTTP 400 does not raise by itself: GHN reads the JSON body first. Body `code == 200` → parse `data`; `tracking_logs` missing/empty → not found. Body `code == 400` (any `code_message`, including wrong digits and unknown orders) → not found. Any other body code, or a non-JSON 400 → `http_status`.
+- Event: `time = datetime.fromisoformat(action_at)` (`Z` accepted; naive → Asia/Ho_Chi_Minh); `description = status_name` or `GHN_STATUS_TEXT[status]` or `status`; `location = location["address"]` when it is a string, else `None`; `raw_status = status`.
+- `GHN_STATUS_TEXT` (from the site script): `draft` Đơn nháp · `cancel` Đã hủy · `ready_to_pick` Chờ lấy hàng · `picking` Đang lấy hàng · `money_collect_picking` Đang thu tiền người gửi · `picked` Đã lấy hàng · `storing` Lưu kho · `transporting` Đang luân chuyển hàng · `sorting` Đang phân loại hàng · `delivering` Đang giao hàng · `money_collect_delivering` Đang thu tiền người nhận · `delivery_fail` Giao hàng thất bại · `delivered` Giao hàng thành công · `waiting_to_return` Chờ trả hàng · `return` Trả hàng · `return_transporting` Đang luân chuyển hàng trả · `return_sorting` Đang phân loại hàng trả · `returning` Đang trả hàng · `return_fail` Trả hàng thất bại · `returned` Trả hàng thành công · `exception` Đơn ngoại lệ · `lost` Hàng thất lạc · `damage` Hàng hư hỏng.
+
+### 5.9 Fetch contract (all tracked carriers)
 
 - One shared `httpx.AsyncClient` from `make_http_client(settings)`: timeout `HTTP_TIMEOUT_SECONDS`, `follow_redirects=True`, static headers `DEFAULT_HEADERS` (a normal desktop Chrome `User-Agent`, `Accept-Language: vi-VN,vi;q=0.9,en;q=0.8`). **No User-Agent rotation, no evasion techniques.** Carrier traffic never goes through `TELEGRAM_PROXY_URL` (carriers need the Vietnamese home IP).
-- Error mapping → `CarrierError(carrier, reason, detail)`:
+- All requests go through `carriers/common.py` `request()` (§9.7). Error mapping → `CarrierError(carrier, reason, detail)`:
   - `httpx.TimeoutException`, `httpx.TransportError` → `network`
   - HTTP 403 or 429, or a captcha / JS-challenge page → `blocked`
-  - any other non-200 → `http_status`
-  - unparseable body, unexpected structure → `parse`
+  - any other non-2xx status, unless the carrier section defines it as not-found (Ninja Van 404/150002, GHN 400) → `http_status`
+  - unparseable body, unexpected structure → `parse`; a 200 response that should be JSON but is HTML → `blocked`
 - "Not found" is **not** an error: return `TrackingResult(found=False)`.
-- Event times are carrier-local (Asia/Ho_Chi_Minh) and must become timezone-aware datetimes.
+- `found=True` requires at least one event; an empty event list is reported as not found.
+- Carriers that need a phone raise `ValueError` when `phone_last4` is `None` (a programming error, never a user error).
+- Event times must become timezone-aware datetimes (carrier-local times use the offsets in each section; unspecified local times are Asia/Ho_Chi_Minh).
 - Events are returned **ascending by time** (stable for equal timestamps).
-- `delivered` / `returned` flags come from marker constants in each carrier module, filled from the real fixtures.
+- `delivered` / `returned` flags come from the marker constants in each carrier module.
 
-### 5.5 Politeness
+### 5.10 Politeness
 
 - Poll interval default 20 min, minimum 5 min.
-- Requests to the same carrier are sequential with `REQUEST_DELAY_SECONDS` (3 s) + random 0–`JITTER_SECONDS` (2 s) between them. SPX and J&T are polled concurrently with each other.
-- Identical `(carrier, code, last4)` across users → one request per cycle.
-- Terminal parcels are never polled.
+- Requests to the same carrier are sequential with `REQUEST_DELAY_SECONDS` (3 s) + random 0–`JITTER_SECONDS` (2 s) between them. Different carriers are polled concurrently.
+- Identical `(carrier, code, last4)` fetch keys across parcels and users → one request per cycle.
+- An unresolved parcel costs one request per tryable candidate per cycle (at most two with the rules in §5.2).
+- Terminal parcels are never polled. Link-only carriers are never requested.
+- When adding a parcel (§4.3) candidates are fetched one after another without the delay (at most two requests, triggered by the user).
 
 ## 6. Polling and notifications
 
@@ -170,15 +281,32 @@ If Prompt 2 observes formats that contradict these patterns, update this section
 now = clock()
 parcels = repo.due_parcels(now)                    # active, owner allowed, next_check_at <= now
           or repo.active_parcels_for_user(uid)     # when only_user_id is given
-groups  = group parcels by (carrier, tracking_number, phone_last4)
+fetch_keys(parcel) = [FetchKey(c, parcel.tracking_number, parcel.phone_last4 if needs_phone(c) else None)
+                      for c in parcel.try_order()  # (carrier,) when resolved, else candidates
+                      if c in carriers and (not needs_phone(c) or parcel.phone_last4)]
+
+# fetch phase
+keys = unique fetch keys of all parcels, in first-appearance order, grouped by carrier
 for each carrier concurrently:
-    for i, group in enumerate(groups of this carrier):
+    for i, key in enumerate(keys of this carrier):
         if i > 0: await sleep(REQUEST_DELAY_SECONDS + rand() * JITTER_SECONDS)
-        try: result = await carrier.fetch(http, code, last4)
-        except CarrierError as err: handle_failure(each parcel in group, err); continue
-        for parcel in group: handle_result(parcel, result)
-after all carriers:
-    stale check, carrier alerts, purge, save meta "last_poll_report"
+        try: outcomes[key] = await carrier.fetch(http, key.tracking_number, key.phone_last4)
+        except CarrierError as err: outcomes[key] = err; failures[carrier] += 1
+
+# process phase, parcels in order
+for parcel in parcels:
+    keys = fetch_keys(parcel)
+    if not keys: continue
+    if parcel.is_resolved:
+        outcome = outcomes[keys[0]]
+        CarrierError → handle_failure(parcel, outcome) else handle_result(parcel, outcome)
+    else:
+        found = first key (candidate order) whose outcome is a found result
+        if found: repo.resolve_carrier(parcel.id, found.carrier); handle_result(refreshed parcel, result, resolved_now=True)
+        elif any outcome is a CarrierError: handle_failure(parcel, first error)   # back off while a candidate fails
+        else: handle_result(parcel, the first not-found result)
+
+after all parcels: stale check, carrier alerts, purge, save meta "last_poll_report"
 ```
 
 ### 6.3 Handling a result for one parcel
@@ -187,9 +315,9 @@ after all carriers:
    - `new = repo.insert_events(parcel.id, result.events)` (only events whose key is new).
    - `state = delivered if result.delivered else returned if result.returned else in_transit`.
    - `repo.record_check_success(...)`: `last_status_text` = latest event description, `last_event_at` = latest event time, `consecutive_failures=0`, `next_check_at = now + interval`, `delivered_at` = latest event time when newly delivered.
-   - If `new` is non-empty → send **one message per parcel** built by `format_event_update(parcel, new, tz, delivered=…, returned=…)`; the delivered/returned footer is included only when the state changes in this cycle.
+   - If `new` is non-empty → send **one message per parcel** built by `format_event_update(parcel, new, tz, delivered=…, returned=…, resolved_carrier=…)`; the delivered/returned footer is included only when the state changes in this cycle; `UPDATE_RESOLVED` is included only when the carrier was resolved in this cycle.
 2. **not found**
-   - Parcel already has stored events → treat as `CarrierError(reason="parse", detail="events disappeared")` (§6.4). Never delete events.
+   - A resolved parcel that already has stored events → treat as `CarrierError(carrier, "parse", "events disappeared")` (§6.4). Never delete events.
    - Else if `now - created_at > PENDING_EXPIRY` (7 days) → state `expired`, send `EXPIRED`.
    - Else → `record_check_success(state="pending", …)`; no message.
 3. **Stale** — after processing, any `in_transit` parcel in this cycle with `last_event_at < now - STALE_AFTER` (30 days) → state `stale`, send `STALE`.
@@ -197,8 +325,8 @@ after all carriers:
 ### 6.4 Failures and backoff
 
 - `n = repo.record_check_failure(parcel.id, next_check_at=…, now=now)` where `next_check_at = now + min(interval × 2ⁿ, MAX_BACKOFF)` using the **new** failure count `n` (`MAX_BACKOFF` = 6 h).
-- Count failures per carrier in `PollReport.failures`.
-- **Carrier alert** to the admin (`ALERT_CARRIER`) when, in one cycle, any parcel of that carrier reaches exactly `FAILURE_ALERT_THRESHOLD` (5) consecutive failures, **or** every fetch for that carrier failed and there were ≥3 fetches. At most one alert per carrier per `ALERT_COOLDOWN` (6 h), stored in meta key `alert:<carrier>` (ISO time).
+- `PollReport.failures[carrier]` counts failed **fetches** per carrier (fetch phase).
+- **Carrier alert** to the admin (`ALERT_CARRIER`) when, in one cycle, a parcel reaches exactly `FAILURE_ALERT_THRESHOLD` (5) consecutive failures (alert for the carrier of the error that caused it), **or** every fetch for a carrier failed and there were ≥ `CARRIER_ALL_FAILED_MIN_FETCHES` (3) fetches. At most one alert per carrier per `ALERT_COOLDOWN` (6 h), stored in meta key `alert:<carrier>` (ISO time).
 - Users are **not** told about transient failures.
 
 ### 6.5 Notification delivery
@@ -232,7 +360,9 @@ CREATE TABLE users (
 CREATE TABLE parcels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
-  carrier TEXT NOT NULL CHECK (carrier IN ('spx', 'jt')),
+  carrier TEXT CHECK (carrier IS NULL OR carrier IN ('spx', 'jt', 'cainiao', 'fourpx', 'ninjavan', 'ghn',
+                                                    'best', 'yunexpress', 'ghtk', 'viettelpost', 'vnpost', 'lex')),
+  candidates TEXT NOT NULL CHECK (length(candidates) > 0),
   tracking_number TEXT NOT NULL,
   phone_last4 TEXT CHECK (phone_last4 IS NULL OR phone_last4 GLOB '[0-9][0-9][0-9][0-9]'),
   label TEXT,
@@ -245,7 +375,8 @@ CREATE TABLE parcels (
   delivered_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (user_id, carrier, tracking_number)
+  CHECK (carrier IS NOT NULL OR state IN ('pending', 'expired')),
+  UNIQUE (user_id, tracking_number)
 );
 CREATE INDEX idx_parcels_due ON parcels (state, next_check_at);
 
@@ -269,7 +400,10 @@ CREATE TABLE meta (
 
 States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `expired`, `stale`.
 
-`parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels.
+- `carrier IS NULL` means **unresolved**: the parcel has several candidates and none has returned data yet. Unresolved parcels can only be `pending` or `expired`.
+- `candidates` stores tracked carrier codes in try order, comma-separated (`ghn,ninjavan`). A resolved parcel stores exactly its carrier.
+- The `carrier` CHECK lists all twelve codes so that promoting a link-only carrier needs no migration.
+- `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
 **Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
 
@@ -278,11 +412,13 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 ```
 Telegram ⇄ python-telegram-bot (long polling, JobQueue)
               │
-     bot/ (handlers, auth gate, notifier)      ← thin: parse input, call services, send text
+     bot/ (handlers, auth gate, notifier)            ← thin: parse input, call services, send text
               │
-     services/ (ParcelService, Poller, formatting)  ← all business rules, unit-tested with fakes
+     services/ (ParcelService, Poller, formatting)    ← all business rules, unit-tested with fakes
               │                     │
-     db/ Repository (aiosqlite)   carriers/ (SPX JSON, J&T HTML) ⇄ httpx ⇄ spx.vn / jtexpress.vn
+     db/ Repository (aiosqlite)   carriers/ (SPX, J&T, Cainiao, 4PX, Ninja Van, GHN) ⇄ httpx ⇄ carrier sites
+              │
+     carrier_catalog.py + tracking_codes.py (pure: tiers, links, aliases, detection)
 ```
 
 ### 8.1 Repository layout
@@ -290,6 +426,7 @@ Telegram ⇄ python-telegram-bot (long polling, JobQueue)
 ```
 vn-parcel-bot/
 ├─ BUILD_PLAN.md                spec + build prompts (this document)
+├─ SPEC.md                      generated copy of Part 2
 ├─ README.md                    setup, operations, troubleshooting
 ├─ pyproject.toml
 ├─ requirements.lock.txt        pip freeze of the working environment
@@ -303,13 +440,19 @@ vn-parcel-bot/
 │  ├─ logging_setup.py          setup_logging, RedactTokenFilter
 │  ├─ single_instance.py        SingleInstanceLock, SingleInstanceError
 │  ├─ texts.py                  all user-facing strings (§17)
+│  ├─ carrier_catalog.py        CarrierCode, CarrierInfo, CATALOG, links, aliases
 │  ├─ tracking_codes.py         normalize/detect/extract codes
 │  ├─ carriers/
 │  │  ├─ __init__.py            CARRIERS registry, get_carrier
 │  │  ├─ models.py              TrackingEvent, TrackingResult, CarrierError, Carrier protocol
 │  │  ├─ http.py                DEFAULT_HEADERS, make_http_client
-│  │  ├─ spx.py                 parse_spx_response, SpxCarrier
-│  │  └─ jt.py                  parse_jt_html, JtCarrier
+│  │  ├─ common.py              request, json_body, looks_like_challenge, parse_gmt_offset, clean_text
+│  │  ├─ spx.py                 parse_spx_response, sign_spx_code, SpxCarrier
+│  │  ├─ jt.py                  parse_jt_html, JtCarrier
+│  │  ├─ cainiao.py             parse_cainiao_response, CainiaoCarrier
+│  │  ├─ fourpx.py              parse_fourpx_response, FourPxCarrier
+│  │  ├─ ninjavan.py            parse_ninjavan_response, NinjaVanCarrier
+│  │  └─ ghn.py                 parse_ghn_response, ghn_phone_verify, GhnCarrier
 │  ├─ db/
 │  │  ├─ __init__.py
 │  │  ├─ schema.py              SCHEMA_VERSION, MIGRATIONS, migrate
@@ -318,7 +461,7 @@ vn-parcel-bot/
 │  │  ├─ __init__.py
 │  │  ├─ formatting.py          pure message builders
 │  │  ├─ parcels.py             AddOutcome, ParcelService
-│  │  └─ poller.py              Notifier protocol, PollReport, Poller
+│  │  └─ poller.py              Notifier protocol, FetchKey, PollReport, Poller
 │  └─ bot/
 │     ├─ __init__.py
 │     ├─ deps.py                Deps, get_deps
@@ -334,14 +477,14 @@ vn-parcel-bot/
 │  ├─ dev_replay_last_event.py  dev tool to re-trigger a notification
 │  ├─ run-bot.ps1               foreground run
 │  ├─ install-task.ps1          Task Scheduler (start at logon)
-│  └─ uninstall-task.ps1
+│  ├─ uninstall-task.ps1
+│  └─ status-bot.ps1
 ├─ tests/
 │  ├─ conftest.py
-│  ├─ fakes.py                  FakeCarrier, FakeNotifier, FakeClock
+│  ├─ fakes.py                  FakeCarrier, FakeNotifier, FakeClock, ev
 │  ├─ fixtures/
-│  │  ├─ FIXTURES.md            observed request/response facts
-│  │  ├─ spx/                   in_transit.json, delivered.json, not_found.json [, returned.json]
-│  │  ├─ jt/                    in_transit.html, delivered.html, not_found.html [, returned.html]
+│  │  ├─ FIXTURES.md            provenance and observed request/response facts
+│  │  ├─ spx/ jt/ cainiao/ fourpx/ ninjavan/ ghn/   in_transit, delivered, not_found [, returned]
 │  │  └─ _raw/                  unsanitized captures (gitignored)
 │  └─ test_*.py
 ├─ data/                        runtime DB + lock (gitignored)
@@ -429,15 +572,37 @@ class SingleInstanceLock:
     def __exit__(self, *exc) -> None: ...              # unlock + close
 ```
 
-### 9.5 `tracking_codes.py`
+### 9.5 `carrier_catalog.py` and `tracking_codes.py` (pure, no I/O)
 
 ```python
-CarrierCode = Literal["spx", "jt"]
+# carrier_catalog.py
+CarrierCode = Literal["spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn",
+                      "best", "yunexpress", "ghtk", "viettelpost", "vnpost", "lex"]
+
+@dataclass(frozen=True)
+class CarrierInfo:
+    code: CarrierCode
+    display_name: str              # plain text: "SPX", "J&T", "LEX VN"
+    tracked: bool
+    needs_phone: bool
+    link_template: str | None      # §5.1; "{code}" placeholder; None for tracked carriers
+
+CATALOG: dict[CarrierCode, CarrierInfo]            # insertion order = §5.1 table order
+TRACKED: tuple[CarrierCode, ...]                   # ("spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn")
+SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"
+def is_tracked(carrier: CarrierCode) -> bool: ...
+def needs_phone(carrier: CarrierCode) -> bool: ...
+def official_url(carrier: CarrierCode, code: str) -> str | None: ...
+def seventeen_track_url(code: str) -> str: ...
+def parse_carrier_alias(text: str) -> CarrierCode | None: ...
+
+# tracking_codes.py
+GENERIC_CODE_RE: re.Pattern[str]
 def normalize_code(raw: str) -> str: ...
-def detect_carrier(code: str) -> CarrierCode | None: ...
+def detect_carriers(code: str) -> list[CarrierCode]: ...
 def extract_codes(text: str) -> list[str]: ...
 def is_valid_last4(value: str) -> bool: ...
-def mask_code(code: str) -> str: ...        # code[:5] + "…" + code[-3:], used in logs
+def mask_code(code: str) -> str: ...        # code[:5] + "…" + code[-3:]
 ```
 
 ### 9.6 `carriers/models.py`
@@ -480,33 +645,105 @@ class Carrier(Protocol):
                     phone_last4: str | None = None) -> TrackingResult: ...
 ```
 
-### 9.7 `carriers/http.py`, `spx.py`, `jt.py`, `__init__.py`
+### 9.7 `carriers/`
 
 ```python
 # http.py
 DEFAULT_HEADERS: dict[str, str]
 def make_http_client(settings: Settings) -> httpx.AsyncClient: ...
 
+# common.py
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+async def request(http: httpx.AsyncClient, carrier: CarrierCode, method: str, url: str, *,
+                  not_found_statuses: Collection[int] = (), **kwargs) -> httpx.Response: ...
+    # network errors → "network"; 403/429 → "blocked"; other non-2xx not in not_found_statuses → "http_status";
+    # a 2xx text body that looks_like_challenge → "blocked"
+def json_body(carrier: CarrierCode, response: httpx.Response) -> Any: ...
+    # invalid JSON → "blocked" if the body starts with "<", else "parse"
+def looks_like_challenge(text: str) -> bool: ...
+    # casefold contains "captcha", "cf-challenge", "x5sec" or "punish", or both "document.cookie" and "location.reload"
+def parse_gmt_offset(value: object, default: tzinfo) -> tzinfo: ...
+    # "GMT+8", "UTC-3", "+08:00", "+0530", "8", 8 → fixed offset; None/unparseable → default
+def clean_text(value: object) -> str: ...   # " ".join(str(value).split())
+
 # spx.py
 SPX_TRACKING_URL = "https://spx.vn/api/v2/fleet_order/tracking/search"
-DELIVERED_MARKERS: tuple[str, ...]     # from fixtures
-RETURNED_MARKERS: tuple[str, ...]      # from fixtures
-def parse_spx_response(payload: dict, tracking_number: str) -> TrackingResult: ...
+SPX_SIGNING_SECRET: str | None = None
+DELIVERED_MARKERS = ("delivered", "giao hàng thành công", "giao thành công")
+RETURNED_MARKERS = ("returned", "hoàn hàng thành công", "đã hoàn hàng", "trả hàng thành công")
+def sign_spx_code(code: str, timestamp: int, secret: str) -> str: ...
+    # f"{code}|{timestamp}{sha256(f'{code}{timestamp}{secret}'.encode()).hexdigest()}"
+def parse_spx_response(payload: object, tracking_number: str) -> TrackingResult: ...
 class SpxCarrier:  code = "spx"; display_name = "SPX"; needs_phone = False
+    def __init__(self, *, secret: str | None = SPX_SIGNING_SECRET,
+                 clock: Callable[[], float] = time.time) -> None: ...
 
 # jt.py
-JT_TRACKING_URL = "https://jtexpress.vn/tracking"      # adjust only if Prompt 2 proves otherwise
+JT_TRACKING_URL = "https://jtexpress.vn/tracking"      # adjust only if Prompt 10A proves otherwise
 NOT_FOUND_MARKER = "Không tìm thấy dữ liệu"
 DELIVERED_MARKERS: tuple[str, ...]
 RETURNED_MARKERS: tuple[str, ...]
 def parse_jt_html(html: str, tracking_number: str) -> TrackingResult: ...
 class JtCarrier:   code = "jt"; display_name = "J&T"; needs_phone = True
-                   # fetch raises ValueError if phone_last4 is None
+
+# cainiao.py
+CAINIAO_TRACKING_URL = "https://global.cainiao.com/global/detail.json"
+DELIVERED_ACTION_CODES = ("GTMS_SIGNED",)
+def parse_cainiao_response(payload: object, tracking_number: str) -> TrackingResult: ...
+class CainiaoCarrier: code = "cainiao"; display_name = "Cainiao"; needs_phone = False
+
+# fourpx.py
+FOURPX_TRACKING_URL = "https://track.4px.com/track/v2/front/listTrackV3"
+DELIVERED_CODE_PREFIX = "FPX_S_OK"
+def parse_fourpx_response(payload: object, tracking_number: str) -> TrackingResult: ...
+class FourPxCarrier: code = "fourpx"; display_name = "4PX"; needs_phone = False
+
+# ninjavan.py
+NINJAVAN_TRACKING_URL = "https://api.ninjavan.co/vn/dash/1.2/public/orders"
+NOT_FOUND_ERROR_CODE = 150002
+DELIVERED_TYPES = ("DELIVERY_SUCCESS", "FORCED_SUCCESS", "FROM_DP_TO_CUSTOMER")
+RETURNED_GRANULAR_STATUS = "returned to sender"
+NINJAVAN_EVENT_TEXT: dict[str, str]
+def parse_ninjavan_response(payload: object, tracking_number: str) -> TrackingResult: ...
+class NinjaVanCarrier: code = "ninjavan"; display_name = "Ninja Van"; needs_phone = False
+
+# ghn.py
+GHN_TRACKING_URL = "https://fe-online-gateway.ghn.vn/order-tracking/public-api/client/tracking-logs"
+GHN_STATUS_TEXT: dict[str, str]                        # §5.8
+def ghn_phone_verify(code: str, last4: str) -> str: ...
+def parse_ghn_response(payload: object, tracking_number: str) -> TrackingResult: ...
+class GhnCarrier: code = "ghn"; display_name = "GHN"; needs_phone = True
 
 # __init__.py
-CARRIERS: dict[CarrierCode, Carrier]   # {"spx": SpxCarrier(), "jt": JtCarrier()}
+CARRIERS: dict[CarrierCode, Carrier]   # exactly the TRACKED codes, in TRACKED order
 def get_carrier(code: CarrierCode) -> Carrier: ...
 ```
+
+`NINJAVAN_EVENT_TEXT`:
+
+| Type | Text |
+|---|---|
+| `ADDED_TO_SHIPMENT` | Đã thêm vào chuyến hàng |
+| `ARRIVED_AT_ORIGIN_HUB` | Đã đến kho gửi |
+| `ARRIVED_AT_TRANSIT_HUB` | Đã đến kho trung chuyển |
+| `ARRIVED_AT_DESTINATION_HUB` | Đã đến kho giao |
+| `HUB_INBOUND_SCAN` | Đã nhập kho |
+| `FIRST_HUB_INBOUND_SCAN` | Đã nhập kho đầu tiên |
+| `PARCEL_ROUTING_SCAN` | Đang phân tuyến |
+| `ROUTE_INBOUND_SCAN` | Đã nhận vào tuyến giao |
+| `DRIVER_PICKUP_SCAN` | Tài xế đã lấy hàng |
+| `DRIVER_INBOUND_SCAN` | Tài xế đang đi giao hàng |
+| `DELIVERY_FAILURE` | Giao hàng thất bại |
+| `DELIVERY_SUCCESS` | Giao hàng thành công |
+| `FORCED_SUCCESS` | Giao hàng thành công |
+| `FROM_SHIPPER_TO_DP` | Người gửi đã gửi hàng tại điểm nhận |
+| `FROM_DRIVER_TO_DP` | Hàng đã đến điểm nhận |
+| `FROM_DP_TO_DRIVER` | Điểm nhận đã giao hàng cho tài xế |
+| `FROM_DP_TO_CUSTOMER` | Đã nhận hàng tại điểm nhận |
+| `CANCEL` | Đơn đã bị hủy |
+| `RESCHEDULE` | Đã hẹn lại lịch giao |
+| `RESUME` | Tiếp tục xử lý đơn |
+| `RTS` | Đang hoàn hàng về người gửi |
 
 ### 9.8 `db/schema.py`, `db/repo.py`
 
@@ -536,7 +773,8 @@ class User:
 class Parcel:
     id: int
     user_id: int
-    carrier: CarrierCode
+    carrier: CarrierCode | None                 # None = unresolved
+    candidates: tuple[CarrierCode, ...]         # try order; (carrier,) when resolved
     tracking_number: str
     phone_last4: str | None
     label: str | None
@@ -550,6 +788,9 @@ class Parcel:
     updated_at: datetime
     @property
     def is_active(self) -> bool: ...
+    @property
+    def is_resolved(self) -> bool: ...
+    def try_order(self) -> tuple[CarrierCode, ...]: ...   # (carrier,) when resolved, else candidates
 
 class Repository:
     @classmethod
@@ -562,14 +803,17 @@ class Repository:
     async def list_users(self) -> list[User]: ...
     async def set_default_phone(self, telegram_id: int, last4: str | None) -> None: ...
     # parcels
-    async def add_parcel(self, *, user_id: int, carrier: CarrierCode, tracking_number: str,
+    async def add_parcel(self, *, user_id: int, carrier: CarrierCode | None,
+                         candidates: Sequence[CarrierCode], tracking_number: str,
                          phone_last4: str | None, now: datetime, next_check_at: datetime) -> Parcel: ...
+        # ValueError if candidates is empty, or carrier is not None and tuple(candidates) != (carrier,)
     async def get_parcel(self, parcel_id: int) -> Parcel | None: ...
     async def find_parcel(self, user_id: int, tracking_number: str) -> Parcel | None: ...
     async def list_parcels(self, user_id: int, *, terminal_since: datetime) -> list[Parcel]: ...  # active + terminal with updated_at >= terminal_since; ORDER BY created_at, id
     async def count_active_parcels(self, user_id: int) -> int: ...
     async def active_parcels_for_user(self, user_id: int) -> list[Parcel]: ...
     async def due_parcels(self, now: datetime) -> list[Parcel]: ...   # active, owner is_allowed=1, next_check_at <= now; ORDER BY next_check_at, id
+    async def resolve_carrier(self, parcel_id: int, carrier: CarrierCode, now: datetime) -> None: ...  # carrier=?, candidates=carrier
     async def set_label(self, parcel_id: int, label: str | None, now: datetime) -> None: ...
     async def delete_parcel(self, parcel_id: int) -> None: ...
     async def record_check_success(self, parcel_id: int, *, state: ParcelState,
@@ -598,9 +842,14 @@ class Repository:
 ```python
 def parcel_title(parcel: Parcel) -> str: ...                       # escaped label, else tracking number
 def carrier_name(code: CarrierCode) -> str: ...                    # CARRIER_NAMES (HTML-safe)
+def carrier_names(codes: Sequence[CarrierCode]) -> str: ...        # joined with CARRIER_SEPARATOR
+def parcel_carrier_label(parcel: Parcel) -> str: ...               # resolved → carrier_name; else carrier_names(candidates)
 def format_time(dt: datetime, tz: ZoneInfo) -> str: ...            # TIME_FORMAT in tz
+def format_links(code: str, carriers: Sequence[CarrierCode]) -> str: ...        # §4.4
+def format_link_only(code: str, carriers: Sequence[CarrierCode]) -> str: ...    # LINK_ONLY
 def format_event_update(parcel: Parcel, new_events: Sequence[TrackingEvent], tz: ZoneInfo,
-                        *, delivered: bool, returned: bool) -> str: ...
+                        *, delivered: bool, returned: bool,
+                        resolved_carrier: CarrierCode | None = None) -> str: ...
 def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo) -> str: ...
 def format_history(parcel: Parcel, events: Sequence[TrackingEvent], tz: ZoneInfo) -> str: ...  # newest first
 def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -> str: ...
@@ -617,21 +866,24 @@ def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str: ...
 ### 9.10 `services/parcels.py`
 
 ```python
-AddKind = Literal["added", "needs_phone", "duplicate", "limit", "invalid_code", "invalid_phone"]
+AddKind = Literal["added", "needs_phone", "link_only", "duplicate", "limit", "invalid_code", "invalid_phone"]
 
 @dataclass(frozen=True)
 class AddOutcome:
     kind: AddKind
-    code: str | None = None                  # normalized code when known
-    parcel: Parcel | None = None             # refreshed after the first fetch
-    result: TrackingResult | None = None
-    error: CarrierError | None = None
+    code: str | None = None                          # normalized code when known
+    parcel: Parcel | None = None                     # refreshed after the first fetch
+    result: TrackingResult | None = None             # found result, or the last not-found result
+    error: CarrierError | None = None                # set when every attempted fetch failed
+    candidates: tuple[CarrierCode, ...] = ()         # needs_phone: carriers still missing digits
+    link_carriers: tuple[CarrierCode, ...] = ()      # link-only candidates to mention
 
 class ParcelService:
     def __init__(self, repo: Repository, carriers: Mapping[CarrierCode, Carrier],
                  http: httpx.AsyncClient, settings: Settings,
                  now: Callable[[], datetime]) -> None: ...
-    async def add(self, user: User, raw_code: str, phone_last4: str | None = None) -> AddOutcome: ...
+    async def add(self, user: User, raw_code: str, phone_last4: str | None = None,
+                  carrier: CarrierCode | None = None) -> AddOutcome: ...
     async def list_for(self, user_id: int) -> list[Parcel]: ...
     async def resolve(self, user_id: int, ref: str) -> Parcel | None: ...     # 1-3 digit ref = 1-based index into list_for; else normalized code
     async def remove(self, user_id: int, ref: str) -> Parcel | None: ...      # returns the deleted parcel
@@ -645,6 +897,14 @@ class ParcelService:
 ```python
 class Notifier(Protocol):
     async def send(self, chat_id: int, text: str, *, silent: bool = False) -> None: ...
+
+@dataclass(frozen=True)
+class FetchKey:
+    carrier: CarrierCode
+    tracking_number: str
+    phone_last4: str | None
+
+def fetch_keys(parcel: Parcel, carriers: Mapping[CarrierCode, Carrier]) -> list[FetchKey]: ...   # §6.2
 
 @dataclass
 class PollReport:
@@ -672,7 +932,8 @@ class Poller:
 
 ```python
 # parsing.py
-def parse_track_args(args: Sequence[str]) -> tuple[str, str | None] | None: ...
+def parse_track_args(args: Sequence[str]) -> tuple[str, str | None, CarrierCode | None] | None: ...
+    # (code, last4, forced carrier); rules in §4.1
 def parse_ref_and_text(args: Sequence[str]) -> tuple[str, str | None] | None: ...
 @dataclass(frozen=True)
 class TextRoute:
@@ -713,11 +974,15 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: 
 def main() -> int: ...
 ```
 
+`parse_track_args` rules: empty → `None`. If `len(args) >= 2` and `parse_carrier_alias(args[-1])` is not `None` → that is the forced carrier; drop it. Then if at least 2 args remain, the last is 4 digits, and (the forced carrier needs a phone, or `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone) → it is `last4`; drop it. `code = normalize_code("".join(remaining args))`; empty → `None`.
+
+Pending phone question: `context.user_data["pending_phone"] = {"code": str, "carrier": CarrierCode | None}`.
+
 `BOT_COMMANDS`:
 ```python
-[("start", "Bắt đầu"), ("help", "Hướng dẫn"), ("track", "Theo dõi đơn: /track <mã> [4 số cuối SĐT]"),
+[("start", "Bắt đầu"), ("help", "Hướng dẫn"), ("track", "Theo dõi đơn: /track <mã> [4 số] [hãng]"),
  ("list", "Danh sách đơn"), ("status", "Hành trình đơn"), ("label", "Đặt tên cho đơn"),
- ("remove", "Ngừng theo dõi"), ("phone", "4 số cuối SĐT cho đơn J&T"), ("check", "Kiểm tra ngay"),
+ ("remove", "Ngừng theo dõi"), ("phone", "4 số cuối SĐT cho đơn J&T, GHN"), ("check", "Kiểm tra ngay"),
  ("cancel", "Hủy thao tác")]
 ```
 
@@ -770,15 +1035,16 @@ See §9.2. They are code constants, not env vars.
 ## 13. Testing strategy
 
 - `pytest` + `pytest-asyncio` (`asyncio_mode=auto`), `respx` for HTTP mocking, `pytest-cov`.
-- **No real network in automated tests.** Live checks live only in `scripts/probe_carriers.py` and the manual E2E prompt.
-- Carrier parsers are tested against the sanitized **real** fixtures.
+- **No real network in automated tests.** Live checks live only in `scripts/probe_carriers.py` and the interactive prompts (10A, 11, 13).
+- Carrier parsers are tested against the fixtures in `tests/fixtures/<carrier>/`. `FIXTURES.md` records each file's **provenance**: `synthetic` (hand-built in Prompt 2 from the shapes in §5) or `live YYYY-MM-DD` (sanitized capture from Prompt 10A). Parser tests assert the facts written in FIXTURES.md, so replacing a synthetic fixture with a live one only changes those facts.
+- Parsers accept the documented variants (snake_case/camelCase keys, epoch or ISO times, several timezone spellings) so that a live response within §5 does not break them.
 - Repository tests use a temp-file SQLite DB (`tmp_path`).
 - Services are tested with the real `Repository` plus `tests/fakes.py`:
   - `FakeClock` — `now()` returns a settable aware UTC datetime; `advance(timedelta)`.
-  - `FakeCarrier(code, needs_phone)` — `results: dict[tuple[str, str | None], TrackingResult | CarrierError]`, records `calls: list[tuple[str, str | None]]`; raises the error if the mapped value is a `CarrierError`; unknown key → `TrackingResult(found=False)`.
+  - `FakeCarrier(code, *, needs_phone=None, display_name=None)` — `needs_phone` and `display_name` default to the `CATALOG` values; `results: dict[tuple[str, str | None], TrackingResult | CarrierError]`, records `calls: list[tuple[str, str | None]]`; raises the error if the mapped value is a `CarrierError`; unknown key → `TrackingResult(found=False)`.
   - `FakeNotifier` — records `sent: list[tuple[int, str, bool]]`; optional `fail_with: Exception | None`.
 - Telegram handlers stay thin; their parsing/authorization logic lives in pure functions (`bot/parsing.py`, `bot/auth.py.is_authorized`) that are unit-tested. The handler wiring is verified by a no-network `build_application` smoke test and the manual E2E run.
-- Coverage target: ≥ 85 % for `tracking_codes`, `carriers`, `db`, `services`.
+- Coverage target: ≥ 85 % for `carrier_catalog`, `tracking_codes`, `carriers`, `db`, `services`.
 - Quality gates on every prompt: `pytest -q` green, `ruff check .` clean, `ruff format --check .` clean.
 
 ## 14. Acceptance scenarios (manual E2E)
@@ -794,34 +1060,42 @@ See §9.2. They are code constants, not env vars.
 9. A delivered parcel produces the `UPDATE_DELIVERED` footer once, is no longer polled, stays in `/list` for 3 days.
 10. `/label 1 Áo khoác` → `/list` and future updates show "Áo khoác"; `/label 1` clears it.
 11. `/status 1` → history newest first; `/remove 1` → `REMOVED`, gone from `/list`.
-12. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
-13. Disconnect the network for 15 min → no crash, no user messages about errors, recovery after reconnection; after 5 consecutive failures admin gets one `ALERT_CARRIER`.
-14. Start a second instance manually → it exits immediately with the "another instance" log line.
-15. `Select-String -Path logs\* -Pattern <token>` → no matches.
+12. Paste a real Cainiao (`LP…`) or 4PX (`4PX…`) code → `ADDED_FOUND` naming Cainiao / 4PX.
+13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 12 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
+14. Paste a VNPost-shaped code (`EB123456789VN`) → `LINK_ONLY` with a VNPost link and a 17TRACK link; `/list` unchanged.
+15. `/track <real GHN code> <4 digits> ghn` → added as GHN without detection; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
+16. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
+17. Disconnect the network for 15 min → no crash, no user messages about errors, recovery after reconnection; after 5 consecutive failures admin gets one `ALERT_CARRIER`.
+18. Start a second instance manually → it exits immediately with the "another instance" log line.
+19. `Select-String -Path logs\* -Pattern <token>` → no matches.
 
 ## 15. Risks
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | SPX endpoint needs extra headers/tokens for real data (only a fake code was tested) | Medium | High | Prompt 2 is a hard gate with real codes; if blocked, stop and choose: browser-copied headers, headless browser, or paid aggregator |
-| R2 | J&T phone-digit submission differs from the assumed `cellphone` GET param | Medium | High | Prompt 2 inspects `tracking_cellphone.js` and the verify modal and tests with a real code + digits |
+| R1 | SPX real data needs a signed request whose Vietnamese secret is unknown | High | High | Prompt 10A with real codes; find the secret via DevTools; otherwise the human chooses (headers copy, headless browser, aggregator, or SPX link-only) |
+| R2 | J&T phone-digit submission differs from the assumed `cellphone` GET param | Medium | High | Prompt 10A inspects `tracking_cellphone.js` and the verify modal and tests with a real code + digits |
 | R3 | Carriers change markup/API or add anti-bot | Medium (over months) | High | Parser errors → backoff + admin alert; fixtures make fixes quick; conservative polling |
 | R4 | Telegram blocked by the ISP | Medium | High | Pre-flight check; `TELEGRAM_PROXY_URL` |
 | R5 | PC off or asleep | High | Low–Medium | Catch-up cycle on start; auto-start task; power settings |
-| R6 | Wrong J&T phone digits look like "not found" | Medium | Low | Hint on add; `EXPIRED` after 7 days tells the user to check digits |
-| R7 | Token leak via logs or commits | Low | High | httpx log level, redact filter, gitignore, acceptance check 15 |
-| R8 | Terms-of-use concerns with automated lookups | Low | Medium | Personal, low-volume, honest client, no evasion, no resale |
+| R6 | Wrong J&T/GHN phone digits look like "not found" | Medium | Low | Hint on add; `EXPIRED` after 7 days tells the user to check digits |
+| R7 | Token leak via logs or commits | Low | High | httpx log level, redact filter, gitignore, acceptance check 19 |
+| R8 | Terms-of-use concerns with automated lookups | Low | Medium | Personal, low-volume, honest client, no evasion, no resale; link-only for carriers that deploy anti-bot measures |
 | R9 | Duplicate bot instances | Low | Medium | Lock file + `MultipleInstances IgnoreNew` + `Conflict` handling |
 | R10 | Timezone errors on Windows | Medium | Low | `tzdata` dependency, aware datetimes enforced by `TrackingEvent` |
+| R11 | Synthetic fixtures differ from real responses (SPX found data, J&T markup, Cainiao, 4PX, Ninja Van, GHN) | High | Medium | Parsers accept documented variants; Prompt 10A replaces fixtures with live captures and fixes parsers test-first |
+| R12 | Detection rules misattribute a code (several formats come from web sources) | Medium | Medium | Auto-try across candidates; forced carrier alias in `/track`; Prompt 10A corrects §5.2 |
+| R13 | Unresolved parcels double the requests for their code | Low | Low | At most two candidates per rule; 7-day pending expiry |
+| R14 | A link-only carrier's link template stops working | Medium | Low | Every link list also carries a 17TRACK link |
 
 ## 16. Out of scope for v1 (future ideas)
 
-- Auto-import codes from Gmail (Shopee/TikTok/Lazada emails) or a Shopee account.
-- More carriers (GHN, GHTK, Viettel Post, Ninja Van, BEST Express, VNPost).
-- Batched J&T lookups (the page accepts up to 10 codes) — only worth it at larger volumes.
+- Auto-import codes from Gmail (Shopee/TikTok/Lazada emails) or a marketplace account.
+- Polling link-only carriers (BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN): would need captcha solving, headless browsers, or a paid aggregator (17TRACK API). A carrier moves to tracked only when an open endpoint is found (Appendix B).
+- Following a cross-border parcel's hand-off to a Vietnamese last-mile code automatically (Cainiao/4PX → SPX/J&T/Ninja Van).
+- Batched lookups (J&T accepts up to 10 codes; 4PX and Cainiao accept lists) — only worth it at larger volumes.
 - Inline buttons on notifications (remove/label), per-user "milestones only" mode, English UI.
 - Group-chat mode, web dashboard, VPS/cloud hosting, DB backups (data is short-lived).
-- Paid aggregator fallback (17TRACK/TrackingMore) if direct endpoints become unusable.
 
 ---
 
@@ -832,7 +1106,13 @@ All messages are sent with `parse_mode=HTML`. `{placeholders}` are filled with *
 ```python
 TIME_FORMAT = "%d/%m %H:%M"
 
-CARRIER_NAMES = {"spx": "SPX", "jt": "J&amp;T"}
+CARRIER_NAMES = {
+    "spx": "SPX", "jt": "J&amp;T", "cainiao": "Cainiao", "fourpx": "4PX",
+    "ninjavan": "Ninja Van", "ghn": "GHN", "best": "BEST Express", "yunexpress": "YunExpress",
+    "ghtk": "GHTK", "viettelpost": "Viettel Post", "vnpost": "VNPost", "lex": "LEX VN",
+}
+CARRIER_UNRESOLVED = "Đang xác định hãng"
+CARRIER_SEPARATOR = " / "
 
 STATE_EMOJI = {
     "pending": "⏳", "in_transit": "🚚", "delivered": "✅",
@@ -849,18 +1129,20 @@ STATE_TEXT = {
 
 WELCOME = (
     "Xin chào {name}! 👋\n"
-    "Mình sẽ nhắn cho bạn mỗi khi đơn SPX hoặc J&amp;T có cập nhật mới.\n"
-    "Gửi mã vận đơn để bắt đầu."
+    "Mình sẽ nhắn cho bạn mỗi khi đơn hàng có cập nhật mới.\n"
+    "Gửi mã vận đơn để bắt đầu, mình sẽ tự nhận diện hãng vận chuyển."
 )
 HELP = (
     "<b>📦 Hướng dẫn</b>\n"
-    "• Gửi mã vận đơn để theo dõi (SPX: bắt đầu bằng SPXVN · J&amp;T: 12 chữ số)\n"
-    "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
+    "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
+    "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
+    "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN\n"
+    "• /track &lt;mã&gt; [4 số cuối SĐT] [hãng] – theo dõi đơn (hãng: spx, jt, cainiao, 4px, ninjavan, ghn)\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
     "• /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; – đặt tên cho đơn\n"
     "• /remove &lt;mã hoặc số thứ tự&gt; – ngừng theo dõi\n"
-    "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T (/phone clear để xóa)\n"
+    "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
     "• /check – kiểm tra ngay\n"
     "• /cancel – hủy thao tác đang chờ"
 )
@@ -872,21 +1154,21 @@ ADMIN_ONLY = "🔒 Lệnh này chỉ dành cho người quản lý."
 UNKNOWN_COMMAND = "Mình không hiểu lệnh này. Gõ /help để xem hướng dẫn."
 UNKNOWN_CODE = (
     "🤔 Mình không nhận ra mã vận đơn nào.\n"
-    "Mã SPX bắt đầu bằng SPXVN, mã J&amp;T gồm 12 chữ số. Gõ /help để xem hướng dẫn."
+    "Gõ /help để xem các hãng được hỗ trợ, hoặc dùng /track &lt;mã&gt; &lt;hãng&gt;."
 )
 ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
-USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
+USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT] [hãng]"
 USAGE_REF = "Cách dùng: /{command} &lt;mã hoặc số thứ tự trong /list&gt;"
 USAGE_LABEL = "Cách dùng: /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; (bỏ trống tên để xóa)"
 
 ASK_PHONE = (
-    "📱 Đơn J&amp;T <code>{code}</code> cần 4 số cuối SĐT người nhận.\n"
+    "📱 Mã <code>{code}</code> ({carriers}) cần 4 số cuối SĐT người nhận.\n"
     "Gửi 4 số đó, hoặc /cancel để hủy."
 )
 INVALID_PHONE = "Vui lòng nhập đúng 4 chữ số."
 NEEDS_PHONE_MULTI = (
-    "📱 Các đơn J&amp;T sau cần 4 số cuối SĐT. "
+    "📱 Các đơn sau cần 4 số cuối SĐT người nhận. "
     "Hãy thêm từng đơn bằng /track &lt;mã&gt; &lt;4 số&gt;:\n{codes}"
 )
 
@@ -896,13 +1178,25 @@ ADDED_PENDING = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa có thông tin vận chuyển, mình sẽ kiểm tra lại định kỳ."
 )
-ADDED_PENDING_JT_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
+ADDED_PENDING_AUTO = (
+    "✅ Đã thêm <b>{title}</b>\n"
+    "Hiện chưa có thông tin vận chuyển. Mình sẽ tự kiểm tra mã này ở {carriers}."
+)
+ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
 ADDED_ERROR = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa kết nối được với {carrier}, mình sẽ thử lại sau."
 )
 DUPLICATE = "Bạn đã theo dõi đơn <code>{code}</code> rồi."
 LIMIT_REACHED = "Bạn đang theo dõi tối đa {max} đơn. Hãy /remove bớt đơn cũ nhé."
+
+LINK_ONLY = (
+    "🔗 Mã <code>{code}</code> có thể là đơn {carriers}.\n"
+    "Mình chưa tự theo dõi được hãng này, bạn xem hành trình tại:\n{links}"
+)
+LINK_EXTRA = "\n\nNếu đây là đơn {carriers}, xem tại:\n{links}"
+LINK_ITEM = '• <a href="{url}">{name}</a>'
+LINK_17TRACK_NAME = "17TRACK"
 
 LIST_HEADER = "<b>📋 Đơn của bạn</b>"
 LIST_EMPTY = "Bạn chưa theo dõi đơn nào. Gửi mã vận đơn để bắt đầu."
@@ -930,6 +1224,7 @@ CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
 CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn, có {new_events} cập nhật mới."
 
 UPDATE_HEADER = "📦 <b>{title}</b> · {carrier}"
+UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>"
 UPDATE_LINE = "• {time} — {description}"
 UPDATE_LOCATION = " ({location})"
 UPDATE_MORE = "… và {count} cập nhật trước đó"
@@ -938,7 +1233,7 @@ UPDATE_RETURNED = "↩️ <b>Đơn đang được hoàn về người gửi.</b>
 
 EXPIRED = (
     "⌛ Sau 7 ngày vẫn chưa có dữ liệu cho <code>{code}</code>, mình đã ngừng theo dõi.\n"
-    "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T)."
+    "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T hoặc GHN)."
 )
 STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày, mình đã ngừng theo dõi."
 
