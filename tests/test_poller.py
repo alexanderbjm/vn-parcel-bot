@@ -548,7 +548,6 @@ async def test_failing_pending_parcel_expires_after_seven_days(poller, repo, fak
     assert "Sau 7 ngày" in notifier.sent[0][1]
 
 
-@pytest.mark.skip(reason="needs schema v2, Task 4")
 async def test_parcel_without_loaded_module_is_skipped_with_warning(poller, repo, caplog):
     caplog.set_level("WARNING")
     await add(repo, "XX0000000001", "oldcarrier")

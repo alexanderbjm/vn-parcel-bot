@@ -1,10 +1,13 @@
+import asyncio
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from tests.fakes import ev
 from vn_parcel_bot.db.repo import DuplicateParcelError, Repository
+from vn_parcel_bot.db.schema import MIGRATIONS
 
 T0 = datetime(2026, 9, 1, 1, 0, tzinfo=UTC)
 
@@ -50,7 +53,7 @@ async def test_migrate_sets_user_version_and_is_idempotent(tmp_path):
     await first.close()
     second = await Repository.open(path)
     async with second._conn.execute("PRAGMA user_version") as cursor:
-        assert (await cursor.fetchone())[0] == 1
+        assert (await cursor.fetchone())[0] == 2
     await second.close()
 
 
@@ -128,11 +131,12 @@ async def test_unresolved_cannot_be_in_transit(repo):
         await repo._conn.execute("UPDATE parcels SET state='in_transit' WHERE id=?", (parcel.id,))
 
 
-async def test_carrier_check_constraint(repo):
+async def test_carrier_accepts_any_module_code(repo):
     await make_user(repo)
     parcel = await add(repo)
-    with pytest.raises(sqlite3.IntegrityError):
-        await repo._conn.execute("UPDATE parcels SET carrier='dhl' WHERE id=?", (parcel.id,))
+    await repo._conn.execute("UPDATE parcels SET carrier='newcarrier' WHERE id=?", (parcel.id,))
+    await repo._conn.commit()
+    assert (await repo.get_parcel(parcel.id)).carrier == "newcarrier"
 
 
 async def test_add_parcel_duplicate_raises_even_with_other_carrier(repo):
@@ -303,3 +307,72 @@ async def test_naive_datetime_rejected(repo):
     await make_user(repo)
     with pytest.raises(ValueError):
         await add(repo, now=datetime(2026, 9, 1), next_check_at=T0)
+
+
+def make_v1_database(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    conn.executescript(MIGRATIONS[0])
+    conn.execute("PRAGMA user_version = 1")
+    conn.execute(
+        "INSERT INTO users (telegram_id, name, is_admin, is_allowed, created_at) "
+        "VALUES (1, 'A', 0, 1, '2026-09-01T00:00:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO parcels (id, user_id, carrier, candidates, tracking_number, state, "
+        "next_check_at, created_at, updated_at) VALUES (7, 1, 'cainiao', 'cainiao', "
+        "'LP00000000000001', 'in_transit', '2026-09-01T00:20:00+00:00', "
+        "'2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO events (parcel_id, event_key, event_time, description, created_at) "
+        "VALUES (7, 'k1', '2026-09-01T00:05:00+00:00', 'Picked up', '2026-09-01T00:06:00+00:00')"
+    )
+    conn.commit()
+    conn.close()
+
+
+async def test_migration_2_keeps_rows_and_events(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    await asyncio.to_thread(make_v1_database, path)
+    repo = await Repository.open(path)
+    try:
+        async with repo._conn.execute("PRAGMA user_version") as cursor:
+            assert (await cursor.fetchone())[0] == 2
+        parcel = await repo.get_parcel(7)
+        assert (parcel.carrier, parcel.tracking_number, parcel.state) == (
+            "cainiao",
+            "LP00000000000001",
+            "in_transit",
+        )
+        assert [event.description for event in await repo.list_events(7, 10)] == ["Picked up"]
+        added = await repo.add_parcel(
+            user_id=1,
+            carrier="sf",
+            candidates=("sf",),
+            tracking_number="SF0000000000001",
+            phone_last4=None,
+            now=T0,
+            next_check_at=T0,
+        )
+        assert added.id == 8
+        async with repo._conn.execute("PRAGMA foreign_keys") as cursor:
+            assert (await cursor.fetchone())[0] == 1
+    finally:
+        await repo.close()
+    assert await asyncio.to_thread((tmp_path / "old.sqlite3.bak-v1").exists)
+
+
+async def test_backup_is_not_overwritten(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    await asyncio.to_thread(make_v1_database, path)
+    backup = tmp_path / "old.sqlite3.bak-v1"
+    await asyncio.to_thread(backup.write_bytes, b"keep")
+    repo = await Repository.open(path)
+    await repo.close()
+    assert await asyncio.to_thread(backup.read_bytes) == b"keep"
+
+
+async def test_fresh_database_has_no_backup(tmp_path):
+    repo = await Repository.open(tmp_path / "new.sqlite3")
+    await repo.close()
+    assert not await asyncio.to_thread((tmp_path / "new.sqlite3.bak-v1").exists)
