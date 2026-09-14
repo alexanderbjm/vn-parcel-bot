@@ -1,11 +1,11 @@
 # Carrier modules with hot reload, BEST through 17TRACK, 15-digit Cainiao codes — design
 
-Date: 2026-09-14 · Branch: `main` · Status: design approved in chat, not built
+Date: 2026-09-14 · Branch: `main` · Status: approved 2026-09-14; Part C (BEST through 17TRACK) dropped by the user; not built
 
 ## 1. Why
 
 - **Fixing one carrier touches shared files.** A carrier is spread over `carrier_catalog.py` (tier, phone, link), the first-match rule table in `tracking_codes.py`, `texts.CARRIER_NAMES`, special cases in `services/formatting.py` (JNTX and Lazada notes) and a client in `carriers/<code>.py`. The database pins the carrier list with a CHECK. The user wants each carrier to be one module that can be fixed on its own while the bot keeps running.
-- **BEST Express is link-only.** Its track page (`best-inc.vn/track`) shows a slider captcha (checked in Chrome on 2026-09-14). The user chose the official 17TRACK Tracking API with their own key.
+- **BEST Express is link-only.** Its track page (`best-inc.vn/track`) shows a slider captcha (checked in Chrome on 2026-09-14). The user first chose the official 17TRACK Tracking API, then dropped BEST from this work: it stays link-only.
 - **15-digit Cainiao codes were rejected.** A Cainiao waybill `77344…898` (15 digits) was answered as an order number. The user wants no carrier words and no extra reply lines: every 15-digit number is tracked as Cainiao.
 - **insane-search was not installed.** The user asked for `fivetaku/insane-search`. Its README describes getting past CAPTCHAs, WAF blocks and anti-bot challenges (browser TLS impersonation, headless browsers). Using it on BEST's captcha is captcha bypass, which this project does not do, so it is not part of this design.
 
@@ -15,12 +15,12 @@ Date: 2026-09-14 · Branch: `main` · Status: design approved in chat, not built
 |---|---|
 | "Without interrupting" | Hot reload: a changed carrier module is reloaded by the running bot after a self-check; a failing module keeps its last working version and the admin is told. No restart. |
 | Structure | Approach A: one Python file per carrier under `carriers/modules/`, holding everything about that carrier. (Rejected: YAML data files with code clients that still need restarts; a supervisor that restarts the bot on file change.) |
-| BEST source | 17TRACK Tracking API v2.4 with the user's key in `.env` (`SEVENTEENTRACK_API_KEY`). Without the key BEST stays link-only. |
+| BEST | Not in this work (dropped 2026-09-14). BEST stays link-only; the 17TRACK Tracking API (key `101194`, "BEST Inc (VN)") remains a later option. |
 | Typed or read 15-digit numbers | Always added as pending Cainiao parcels. Order numbers that get no Cainiao data expire after `PENDING_EXPIRY` (7 days) with the usual expiry message. |
 | Carrier words / hint lines | None. Users never name the carrier; no new reply lines. The existing JNTX and Lazada pending notes stay. |
 | Screenshot order numbers | Codes the reader returns under `order_ids` keep today's order-only reply. |
 
-Out of scope: captcha or anti-bot tooling of any kind (including insane-search), hot reload of shared code (contract, registry, providers, `carriers/common.py`, services, bot), SF Express or JNTX through 17TRACK (possible later by editing only their module files; 17TRACK keys `100012` and `100295`), 17TRACK `stoptrack`/webhooks, per-user carrier settings.
+Out of scope: captcha or anti-bot tooling of any kind (including insane-search), BEST Express tracking and any 17TRACK client, hot reload of shared code (contract, registry, `carriers/common.py`, services, bot), SF Express or JNTX through 17TRACK (possible later by editing only their module files; 17TRACK keys `100012` and `100295`), 17TRACK `stoptrack`/webhooks, per-user carrier settings.
 
 ## 3. Part A — carrier modules and the registry
 
@@ -37,7 +37,6 @@ class Rule:
 @dataclass(frozen=True)
 class ModuleContext:
     settings: Settings
-    seventeentrack: SeventeenTrackClient | None   # None when no key is configured
 
 @dataclass(frozen=True)
 class CarrierModule:
@@ -111,22 +110,9 @@ Rules, reproducing today's detection except the new 15-digit rule:
 - A new valid file adds a carrier. A deleted file keeps its last working version with one WARNING per file hash (`carrier module file missing code=%s, keeping last version`). At startup every file must load; a module that fails at startup is skipped with the same WARNING and admin message, and the bot still starts.
 - Only `modules/*.py` reloads. Changes to any other file still need the safe restart.
 
-## 5. Part C — 17TRACK client and BEST
+## 5. Part C — BEST through 17TRACK (dropped)
 
-### 5.1 `carriers/providers/seventeentrack.py`
-
-- `SeventeenTrackClient(api_key: str)`; base `https://api.17track.net/track/v2.4`; header `17token`; JSON POST bodies are arrays of `{"number": ..., "carrier": <int>}`; all calls go through `carriers/common.request()` (existing timeout, network and HTTP-status handling).
-- `track(http, carrier_code: str, carrier_key: int, number: str) -> TrackingResult`:
-  1. `POST /gettrackinfo`. If `data.rejected[0].error.code == -18019902` (not registered): `POST /register`; accepted or `-18019901` (already registered) counts as success; return `found=False`.
-  2. From `data.accepted[0].track_info`: events from every `tracking.providers[].events[]` with `time_utc` (fallback `time_iso`), `description` (cleaned), `location`; events without a parseable time or description are skipped. `latest_status.status == "NotFound"` or no events → `found=False`. `Delivered` → `delivered`. `sub_status` `Exception_Returning` or `Exception_Returned` → `returned`. `raw_status` = `sub_status`.
-- Errors → `CarrierError(carrier_code, ...)`: HTTP 401 or `-18010002`/`-18010004` → `blocked` (`17track auth`); `-18019908` → `blocked` (`17track quota`); HTTP 429 → `network` (normal backoff); any other rejection → `http_status` with the code. These reach the admin through the poller's existing alert after `FAILURE_ALERT_THRESHOLD` failures with `ALERT_COOLDOWN`.
-- The key is never logged; log lines carry masked codes only. Only the tracking number is sent to 17TRACK.
-- Quota: one per newly registered number (200 free, one-time, for accounts created after 2026-01-07). `gettrackinfo` is free. 17TRACK stops tracking after 30 days without events or 15 days after delivery. Limit 3 requests/s; the bot already waits `REQUEST_DELAY_SECONDS` (3 s) between requests.
-
-### 5.2 BEST module and config
-
-- `modules/best.py`: `build_client` returns a client wrapping `ctx.seventeentrack.track(http, "best", 101194, code)` when `ctx.seventeentrack` is set (17TRACK key `101194` = "BEST Inc (VN)"), else `None` (link-only with today's `https://www.best-inc.vn/track?bills={code}`).
-- `Settings.seventeentrack_api_key` from `SEVENTEENTRACK_API_KEY` (optional); `.env.example` and README document it; `ModuleContext.seventeentrack` is built once at startup (changing the key needs a restart).
+Dropped by the user on 2026-09-14. `modules/best.py` is link-only with today's rules and link. Notes kept for later: 17TRACK v2.4 charges one quota per registered number, `gettrackinfo` is free, error `-18019902` means not registered, `-18019901` already registered, `-18019908` quota used up.
 
 ## 6. Testing
 
@@ -134,12 +120,10 @@ Rules, reproducing today's detection except the new 15-digit rule:
 - **Registry (tmp module directories):** loads all; `detect` priority/rank/standalone behaviour; rejected module keeps the old version and alerts once per hash; debounce needs two equal hashes; an example conflict between two modules is rejected; deleted file kept; new file added; startup with one broken module still starts.
 - **Hot reload end to end:** a Poller with a registry over a tmp copy of a module; the module file is edited between two cycles; the second cycle uses the new parser without recreating the Poller.
 - **Migration:** a version-1 file database with parcels and events migrates to version 2 with identical rows and events, accepts a carrier outside the old list, writes the backup once; `:memory:` skips the backup.
-- **17TRACK (respx, synthetic numbers):** not registered → register → not found; already registered; in transit with events from two providers; delivered; returned; NotFound; quota; 401; 429; key absent → BEST link-only.
 - Existing gates: ruff check, ruff format, full pytest; no real codes or keys in tests or fixtures.
 
 ## 7. Build order
 
 1. Part A: contract, modules, registry (static load), core wiring, migration 2 — behaviour unchanged except 15-digit numbers.
 2. Part B: refresh job, debounce, validation, admin alert.
-3. Part C: 17TRACK client, BEST module, settings. The user registers at 17track.net and puts the key in `.env`; the bot then restarts once.
-4. Docs: BUILD_PLAN 2.0 (§5 carrier modules, §9 contract, schema v2, reload runbook), regenerated SPEC, README (how to fix a carrier module live, `SEVENTEENTRACK_API_KEY`).
+3. Docs: BUILD_PLAN 2.0 (§5 carrier modules, §9 contract, schema v2, reload runbook), regenerated SPEC, README (how to fix a carrier module live).
