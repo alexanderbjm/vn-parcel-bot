@@ -20,7 +20,21 @@ def test_minimal_env_uses_defaults(valid_env):
     assert s.quiet_hours == (22, 7)
     assert s.max_parcels_per_user == 30
     assert s.telegram_proxy_url is None
+    assert s.anthropic_api_key is None
+    assert s.anthropic_model == "claude-3-5-haiku-20241022"
     assert s.poll_interval == timedelta(minutes=20)
+
+
+def test_anthropic_settings_configured(valid_env):
+    s = Settings.from_env(
+        {
+            **valid_env,
+            "ANTHROPIC_API_KEY": "sk-ant-key-123",
+            "ANTHROPIC_MODEL": "claude-3-5-sonnet-20241022",
+        }
+    )
+    assert s.anthropic_api_key == "sk-ant-key-123"
+    assert s.anthropic_model == "claude-3-5-sonnet-20241022"
 
 
 def test_missing_required_reports_both():

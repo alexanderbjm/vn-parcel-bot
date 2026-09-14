@@ -8,6 +8,7 @@ from vn_parcel_bot.config import Settings
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
+from vn_parcel_bot.services.vision import VisionService
 
 
 @dataclass
@@ -18,6 +19,7 @@ class Deps:
     parcels: ParcelService
     poller: Poller
     notifier: TelegramNotifier
+    vision: VisionService | None = None
 
 
 def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps:

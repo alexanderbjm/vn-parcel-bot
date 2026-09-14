@@ -78,6 +78,8 @@ class Settings:
     quiet_hours: tuple[int, int] | None = (22, 7)
     max_parcels_per_user: int = 30
     telegram_proxy_url: str | None = None
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-3-5-haiku-20241022"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Self:
@@ -155,6 +157,8 @@ class Settings:
             quiet_hours=quiet_hours,
             max_parcels_per_user=max_parcels,
             telegram_proxy_url=proxy,
+            anthropic_api_key=_get(env, "ANTHROPIC_API_KEY"),
+            anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-3-5-haiku-20241022",
         )
 
     @property

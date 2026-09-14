@@ -180,3 +180,24 @@ ALERT_CARRIER = (
     "Có thể trang tra cứu đã thay đổi hoặc đang chặn. Lỗi gần nhất: <code>{detail}</code>"
 )
 ALERT_ERROR = "⚠️ Bot gặp lỗi: <code>{detail}</code>"
+
+VISION_NOT_CONFIGURED = (
+    "📷 Tính năng nhận diện hình ảnh qua Claude Vision chưa được cấu hình.\n"
+    "Vui lòng thêm <code>ANTHROPIC_API_KEY</code> vào file <code>.env</code>."
+)
+VISION_NO_DATA = (
+    "🤔 Claude không nhận diện được mã vận đơn hay mã đơn hàng nào trong hình ảnh này.\n"
+    "Bạn hãy thử chụp lại góc rõ hơn hoặc nhập mã trực tiếp nhé."
+)
+VISION_DETECTED_HEADER = "📷 <b>Nhận diện từ hình ảnh:</b>"
+VISION_DETECTED_ITEM = "• Mã vận đơn: <code>{code}</code>{carrier_suffix}"
+VISION_DETECTED_PHONE = "• SĐT người nhận: <code>***{phone}</code>"
+VISION_DETECTED_ORDER_ONLY = (
+    "🧾 Tìm thấy mã đơn hàng: <code>{order_id}</code>\n"
+    "Đây là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
+    "Trong app (Shopee, Lazada, TikTok Shop…) mở đơn → <b>Thông tin vận chuyển</b> "
+    "để lấy mã vận đơn rồi gửi cho mình nhé! Hoặc thử tra cứu tại:\n{links}"
+)
+VISION_ERROR = (
+    "⚠️ Không thể phân tích hình ảnh ({detail}). Bạn vui lòng thử lại sau hoặc nhập mã trực tiếp."
+)

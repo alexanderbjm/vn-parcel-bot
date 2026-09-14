@@ -26,6 +26,7 @@ from vn_parcel_bot.bot.handlers_user import (
     label_cmd,
     list_cmd,
     phone_cmd,
+    photo_message,
     remove_cmd,
     start,
     status_cmd,
@@ -41,6 +42,7 @@ from vn_parcel_bot.constants import ERROR_ALERT_COOLDOWN, FIRST_POLL_DELAY_SECON
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
+from vn_parcel_bot.services.vision import VisionService
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +83,8 @@ def build_application(settings: Settings) -> Application:
         ("health", health_cmd),
     ]:
         app.add_handler(CommandHandler(name, callback, filters=private))
+    app.add_handler(MessageHandler(filters.PHOTO & private, photo_message))
+    app.add_handler(MessageHandler(filters.Document.IMAGE & private, photo_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & private, text_message))
     app.add_handler(MessageHandler(filters.COMMAND & private, unknown_command))
     app.add_error_handler(on_error)
@@ -97,7 +101,8 @@ async def _post_init(app: Application) -> None:
     notifier = TelegramNotifier(app.bot)
     parcels = ParcelService(repo, CARRIERS, http, settings, _utc_now)
     poller = Poller(repo, CARRIERS, http, notifier, settings, _utc_now)
-    app.bot_data["deps"] = Deps(settings, repo, http, parcels, poller, notifier)
+    vision = VisionService(settings, http)
+    app.bot_data["deps"] = Deps(settings, repo, http, parcels, poller, notifier, vision=vision)
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     app.job_queue.run_repeating(
         poll_job, interval=settings.poll_interval, first=FIRST_POLL_DELAY_SECONDS, name="poll"

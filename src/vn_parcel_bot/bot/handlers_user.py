@@ -1,9 +1,11 @@
+import contextlib
+import logging
 import math
 from datetime import UTC, datetime
 from html import escape
 
 from telegram import LinkPreviewOptions, Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
 from vn_parcel_bot import texts
@@ -233,3 +235,98 @@ async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update, texts.UNKNOWN_COMMAND)
+
+
+log = logging.getLogger(__name__)
+
+
+async def photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is None:
+        return
+
+    deps = get_deps(context)
+    if deps.vision is None or not deps.vision.is_configured:
+        await reply(update, texts.VISION_NOT_CONFIGURED)
+        return
+
+    file_id = None
+    media_type = "image/jpeg"
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        media_type = "image/jpeg"
+    elif (
+        message.document
+        and message.document.mime_type
+        and message.document.mime_type.startswith("image/")
+    ):
+        file_id = message.document.file_id
+        media_type = message.document.mime_type
+
+    if file_id is None:
+        return
+
+    if update.effective_chat:
+        with contextlib.suppress(Exception):
+            await update.effective_chat.send_action(action=ChatAction.TYPING)
+
+    try:
+        tg_file = await context.bot.get_file(file_id)
+        image_bytes = bytes(await tg_file.download_as_bytearray())
+    except Exception as exc:
+        log.exception("Failed to download photo from Telegram: %s", exc)
+        await reply(update, texts.VISION_ERROR.format(detail="không thể tải ảnh từ Telegram"))
+        return
+
+    result = await deps.vision.analyze_image(image_bytes, media_type=media_type)
+    if result.error:
+        await reply(update, texts.VISION_ERROR.format(detail=escape(result.error)))
+        return
+
+    phone_last4 = result.phone_last4
+    if phone_last4 is None and message.caption:
+        for word in message.caption.split():
+            clean_word = word.strip(" ,;.:()[]")
+            if is_valid_last4(clean_word):
+                phone_last4 = clean_word
+                break
+
+    user = await current_user(update, deps)
+
+    if result.tracking_codes:
+        for code in result.tracking_codes:
+            outcome = await deps.parcels.add(user, code, phone_last4)
+            if outcome.kind == "needs_phone":
+                user_data(context)[PENDING_PHONE] = {"code": outcome.code}
+            else:
+                user_data(context).pop(PENDING_PHONE, None)
+
+            header_parts = [texts.VISION_DETECTED_HEADER]
+            carrier_suffix = f" ({result.carrier})" if result.carrier else ""
+            header_parts.append(
+                texts.VISION_DETECTED_ITEM.format(
+                    code=escape(code), carrier_suffix=escape(carrier_suffix)
+                )
+            )
+            if phone_last4:
+                header_parts.append(texts.VISION_DETECTED_PHONE.format(phone=escape(phone_last4)))
+            header = "\n".join(header_parts)
+            formatted = format_add_outcome(
+                outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
+            )
+            await reply(update, f"{header}\n\n{formatted}")
+        return
+
+    if result.order_ids:
+        for order_id in result.order_ids:
+            outcome = await deps.parcels.add(user, order_id)
+            header = (
+                f"{texts.VISION_DETECTED_HEADER}\n• Mã đơn hàng: <code>{escape(order_id)}</code>"
+            )
+            formatted = format_add_outcome(
+                outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
+            )
+            await reply(update, f"{header}\n\n{formatted}")
+        return
+
+    await reply(update, texts.VISION_NO_DATA)

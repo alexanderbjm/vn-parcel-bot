@@ -44,6 +44,8 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `QUIET_HOURS` | no | `22-7` | Local hours when messages arrive silently; empty disables |
    | `MAX_PARCELS_PER_USER` | no | `30` | Active parcels per person |
    | `TELEGRAM_PROXY_URL` | no | – | e.g. `socks5h://127.0.0.1:1080` if Telegram is blocked |
+   | `ANTHROPIC_API_KEY` | no | – | Claude Vision key to extract tracking info from photos/screenshots |
+   | `ANTHROPIC_MODEL` | no | `claude-3-5-haiku-20241022` | Claude model for vision analysis |
 
 5. **Check Telegram and carriers** (optional but recommended before the first run):
    ```powershell
@@ -68,9 +70,10 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 
 ## Using the bot
 
-| Command | What it does |
+| Command / Action | What it does |
 |---|---|
 | paste a code | Start tracking; the bot detects the carrier |
+| send a photo/screenshot | Claude Vision extracts tracking code, carrier & phone digits and tracks it |
 | `/track <mã> [4 số] [hãng]` | Track with phone digits and/or a forced carrier (`spx`, `jt`, `cainiao`, `4px`, `ninjavan`, `ghn`) |
 | `/list` | Your parcels |
 | `/status <mã hoặc số>` | Full history, newest first |
