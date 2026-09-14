@@ -1,3 +1,5 @@
+import os
+
 from vn_parcel_bot.carriers.api import (
     PRIORITY_NUMERIC,
     PRIORITY_PREFIXED,
@@ -5,6 +7,21 @@ from vn_parcel_bot.carriers.api import (
     CarrierModule,
     Rule,
 )
+from vn_parcel_bot.carriers.models import Carrier
+from vn_parcel_bot.carriers.seventeen_track import SeventeenTrackCarrier
+
+
+def build_best_client() -> Carrier | None:
+    api_key = os.environ.get("SEVENTEEN_TRACK_KEY")
+    if not api_key or not api_key.strip():
+        return None
+    return SeventeenTrackCarrier(
+        carrier_code="best",
+        display_name="BEST Express",
+        seventeen_carrier_id=101194,
+        api_key=api_key.strip(),
+    )
+
 
 MODULE = CarrierModule(
     code="best",
@@ -17,4 +34,5 @@ MODULE = CarrierModule(
     ),
     link_template="https://www.best-inc.vn/track?bills={code}",
     examples=(("BESTMP0000000001VNA", True), ("8410000726470", True), ("841000072647", True)),
+    build_client=build_best_client,
 )

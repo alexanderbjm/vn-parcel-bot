@@ -117,6 +117,7 @@ class Settings:
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
     anthropic_workspace_id: str | None = None
+    seventeen_track_key: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Self:
@@ -208,6 +209,7 @@ class Settings:
             anthropic_api_key=_get(env, "ANTHROPIC_API_KEY"),
             anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001",
             anthropic_workspace_id=_get(env, "ANTHROPIC_WORKSPACE_ID"),
+            seventeen_track_key=_get(env, "SEVENTEEN_TRACK_KEY"),
         )
 
     @property

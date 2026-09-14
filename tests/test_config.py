@@ -28,6 +28,7 @@ def test_minimal_env_uses_defaults(valid_env):
     assert s.anthropic_api_key is None
     assert s.anthropic_model == "claude-haiku-4-5-20251001"
     assert s.anthropic_workspace_id is None
+    assert s.seventeen_track_key is None
     assert s.poll_interval == timedelta(minutes=20)
 
 
@@ -54,6 +55,11 @@ def test_anthropic_settings_configured(valid_env):
     )
     assert s.anthropic_api_key == "sk-ant-key-123"
     assert s.anthropic_model == "claude-3-5-sonnet-20241022"
+
+
+def test_seventeen_track_settings_from_env(valid_env):
+    s = Settings.from_env({**valid_env, "SEVENTEEN_TRACK_KEY": "test-17track-token"})
+    assert s.seventeen_track_key == "test-17track-token"
 
 
 def test_vision_settings_from_env(valid_env):

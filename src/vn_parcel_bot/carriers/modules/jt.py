@@ -1,3 +1,4 @@
+import os
 import re
 from dataclasses import replace
 from datetime import datetime
@@ -13,11 +14,17 @@ from vn_parcel_bot.carriers.api import (
 )
 from vn_parcel_bot.carriers.common import VN_TZ, clean_text, request
 from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.seventeen_track import SeventeenTrackCarrier
 
 JT_TRACKING_URL = "https://jtexpress.vn/tracking"
 NOT_FOUND_MARKER = "Không tìm thấy dữ liệu"
 DELIVERED_MARKERS = ("giao hàng thành công", "đã ký nhận")
 RETURNED_MARKERS = ("hoàn hàng thành công", "đã hoàn hàng", "đã trả hàng cho người gửi")
+CROSS_BORDER = re.compile(r"JNTX[A-Z]?\d{8,12}", re.ASCII)
+CROSS_BORDER_HINT = (
+    "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
+    "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
+)
 
 RESULT_SELECTOR = ".result-tracking"
 BILL_SELECTOR = "[data-billcode]"
@@ -97,31 +104,104 @@ def parse_jt_html(html: str, tracking_number: str) -> TrackingResult:
     return replace(result, delivered=delivered, returned=returned)
 
 
+def _merge_results(domestic: TrackingResult, overseas: TrackingResult) -> TrackingResult:
+    seen_keys: set[str] = set()
+    merged_events: list[TrackingEvent] = []
+    for ev in list(overseas.events) + list(domestic.events):
+        if ev.key not in seen_keys:
+            seen_keys.add(ev.key)
+            merged_events.append(ev)
+    merged_events.sort(key=lambda e: e.time)
+    delivered = domestic.delivered or overseas.delivered
+    returned = domestic.returned or overseas.returned
+    return TrackingResult(
+        carrier="jt",
+        tracking_number=domestic.tracking_number,
+        found=True,
+        events=tuple(merged_events),
+        delivered=delivered,
+        returned=returned,
+    )
+
+
 class JtCarrier:
     code: CarrierCode = "jt"
     display_name = "J&T"
     needs_phone = True
 
+    def __init__(self, seventeen_key: str | None = None) -> None:
+        self._seventeen_key = seventeen_key
+
+    def _get_seventeen_carrier(self) -> SeventeenTrackCarrier | None:
+        key = self._seventeen_key or os.environ.get("SEVENTEEN_TRACK_KEY")
+        if not key or not key.strip():
+            return None
+        return SeventeenTrackCarrier(
+            carrier_code="jt",
+            display_name="J&T",
+            seventeen_carrier_id=100295,
+            api_key=key.strip(),
+        )
+
     async def fetch(
         self, http: httpx.AsyncClient, tracking_number: str, phone_last4: str | None = None
     ) -> TrackingResult:
-        if phone_last4 is None:
+        is_cross_border = bool(CROSS_BORDER.fullmatch(tracking_number))
+        seventeen = self._get_seventeen_carrier() if is_cross_border else None
+
+        if not is_cross_border and phone_last4 is None:
             raise ValueError("J&T requires phone_last4")
-        response = await request(
-            http,
-            "jt",
-            "GET",
-            JT_TRACKING_URL,
-            params={"type": "track", "billcode": tracking_number, "cellphone": phone_last4},
-        )
-        return parse_jt_html(response.text, tracking_number)
 
+        # Phase 1: If phone is provided, try domestic tracking on jtexpress.vn
+        domestic_result: TrackingResult | None = None
+        domestic_error: CarrierError | None = None
+        if phone_last4 is not None:
+            try:
+                response = await request(
+                    http,
+                    "jt",
+                    "GET",
+                    JT_TRACKING_URL,
+                    params={"type": "track", "billcode": tracking_number, "cellphone": phone_last4},
+                )
+                domestic_result = parse_jt_html(response.text, tracking_number)
+            except CarrierError as err:
+                domestic_error = err
 
-CROSS_BORDER = re.compile(r"JNTX[A-Z]?\d{8,12}", re.ASCII)
-CROSS_BORDER_HINT = (
-    "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
-    "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
-)
+        # If domestic is found
+        if domestic_result is not None and domestic_result.found:
+            # If cross-border and 17TRACK is available, check if overseas events already exist
+            # (free query, 0 quota consumed)
+            if seventeen is not None:
+                try:
+                    overseas_result = await seventeen.fetch(
+                        http, tracking_number, auto_register=False
+                    )
+                    if overseas_result.found and overseas_result.events:
+                        return _merge_results(domestic_result, overseas_result)
+                except CarrierError:
+                    pass
+            return domestic_result
+
+        # Phase 2: If cross-border and 17TRACK is available, query/register on 17TRACK
+        if seventeen is not None:
+            try:
+                overseas_result = await seventeen.fetch(http, tracking_number, auto_register=True)
+                if overseas_result.found:
+                    return overseas_result
+            except CarrierError as err:
+                if domestic_error is None:
+                    raise err
+
+        # If domestic tracking had an error (e.g. network/blocked), propagate it
+        if domestic_error is not None:
+            raise domestic_error
+
+        # If domestic not-found (or phone was None for cross-border without 17TRACK events)
+        if phone_last4 is None and seventeen is None:
+            raise ValueError("J&T requires phone_last4")
+
+        return TrackingResult(carrier="jt", tracking_number=tracking_number, found=False)
 
 
 def cross_border_hint(tracking_number: str) -> str | None:

@@ -158,3 +158,149 @@ async def test_fetch_challenge_page_blocked():
 def test_carrier_attributes():
     carrier = JtCarrier()
     assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("jt", "J&T", True)
+
+
+JNTX_CODE = "JNTXB0000000001"
+
+
+async def test_fetch_cross_border_without_phone_and_no_key_raises():
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ValueError):
+            await JtCarrier().fetch(http, JNTX_CODE, None)
+
+
+async def test_fetch_standard_code_without_phone_raises_even_with_key():
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ValueError):
+            await JtCarrier(seventeen_key="key123").fetch(http, CODE, None)
+
+
+@respx.mock
+async def test_fetch_cross_border_without_phone_uses_17track():
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL
+
+    respx.post(GET_TRACK_INFO_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "accepted": [
+                        {
+                            "number": JNTX_CODE,
+                            "carrier": 100295,
+                            "latest_status": {"status": "InTransit"},
+                            "track_info": {
+                                "events": [
+                                    {
+                                        "time_utc": "2026-09-10T12:00:00Z",
+                                        "description": "Rời kho Thâm Quyến",
+                                        "location": "Shenzhen",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                    "rejected": [],
+                },
+            },
+        )
+    )
+
+    carrier = JtCarrier(seventeen_key="key123")
+    async with httpx.AsyncClient() as http:
+        result = await carrier.fetch(http, JNTX_CODE, None)
+
+    assert result.found is True
+    assert result.carrier == "jt"
+    assert result.tracking_number == JNTX_CODE
+    assert len(result.events) == 1
+    assert result.latest.description == "Rời kho Thâm Quyến"
+
+
+@respx.mock
+async def test_fetch_cross_border_domestic_not_found_falls_back_to_17track():
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL
+
+    respx.get(url__startswith=JT_TRACKING_URL).mock(
+        return_value=httpx.Response(200, text=load_html("not_found"))
+    )
+    respx.post(GET_TRACK_INFO_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "accepted": [
+                        {
+                            "number": JNTX_CODE,
+                            "carrier": 100295,
+                            "latest_status": {"status": "InTransit"},
+                            "track_info": {
+                                "events": [
+                                    {
+                                        "time_utc": "2026-09-11T04:00:00Z",
+                                        "description": "Đến cảng hàng không quốc tế",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                    "rejected": [],
+                },
+            },
+        )
+    )
+
+    carrier = JtCarrier(seventeen_key="key123")
+    async with httpx.AsyncClient() as http:
+        result = await carrier.fetch(http, JNTX_CODE, "1234")
+
+    assert result.found is True
+    assert result.latest.description == "Đến cảng hàng không quốc tế"
+
+
+@respx.mock
+async def test_fetch_cross_border_merges_domestic_and_overseas():
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL
+
+    jntx_sample = "JNTX1234567890"
+    html = load_html("in_transit").replace("840000000001", jntx_sample)
+    respx.get(url__startswith=JT_TRACKING_URL).mock(return_value=httpx.Response(200, text=html))
+    respx.post(GET_TRACK_INFO_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "accepted": [
+                        {
+                            "number": jntx_sample,
+                            "carrier": 100295,
+                            "latest_status": {"status": "InTransit"},
+                            "track_info": {
+                                "events": [
+                                    {
+                                        "time_utc": "2026-09-08T10:00:00Z",
+                                        "description": "Xuất hàng từ Thâm Quyến",
+                                        "location": "Shenzhen",
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                    "rejected": [],
+                },
+            },
+        )
+    )
+
+    carrier = JtCarrier(seventeen_key="key123")
+    async with httpx.AsyncClient() as http:
+        result = await carrier.fetch(http, jntx_sample, "1234")
+
+    assert result.found is True
+    # Has 4 domestic events + 1 overseas event = 5 events
+    assert len(result.events) == 5
+    assert result.events[0].description == "Xuất hàng từ Thâm Quyến"
+    assert result.latest.description == "Đơn hàng đang được giao đến bạn"

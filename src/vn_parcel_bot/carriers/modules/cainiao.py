@@ -10,6 +10,7 @@ from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEve
 
 CAINIAO_TRACKING_URL = "https://global.cainiao.com/global/detail.json"
 DELIVERED_ACTION_CODES = ("GTMS_SIGNED",)
+RETURNED_ACTION_CODES = ("GTMS_RETURN_SIGNED", "GTMS_RETURN_INBOUND")
 _DEFAULT_TZ = timezone(timedelta(hours=8))
 
 
@@ -37,7 +38,12 @@ def parse_cainiao_response(payload: object, tracking_number: str) -> TrackingRes
     module = payload.get("module")
     if not isinstance(module, list) or not module or not isinstance(module[0], dict):
         raise _parse_error("missing module")
-    details = module[0].get("detailList")
+    mod = module[0]
+    dest_mail_no = clean_text(str(mod.get("destMailNo") or ""))
+    dest_cp_name = clean_text(str(mod.get("destCpName") or ""))
+    dest_cp_code = clean_text(str(mod.get("destCpCode") or ""))
+
+    details = mod.get("detailList")
     if details is None or details == []:
         return TrackingResult(carrier="cainiao", tracking_number=tracking_number, found=False)
     if not isinstance(details, list):
@@ -64,9 +70,22 @@ def parse_cainiao_response(payload: object, tracking_number: str) -> TrackingRes
     result = TrackingResult(
         carrier="cainiao", tracking_number=tracking_number, found=True, events=tuple(events)
     )
+    if dest_mail_no and dest_mail_no != tracking_number and result.events:
+        # A separate event dated just before the oldest one keeps the same key on every poll,
+        # so the last-mile code is announced once and never becomes the latest event.
+        dest_name = dest_cp_name or dest_cp_code or "nội địa"
+        handoff = TrackingEvent(
+            time=result.events[0].time - timedelta(seconds=1),
+            description=f"Chặng cuối {dest_name}: {dest_mail_no}",
+            raw_status="DEST_HANDOFF",
+        )
+        result = replace(result, events=(handoff, *result.events))
+
     latest_code = result.latest.raw_status or ""
     delivered = latest_code in DELIVERED_ACTION_CODES
-    returned = not delivered and "RETURN" in latest_code.upper()
+    returned = not delivered and (
+        latest_code in RETURNED_ACTION_CODES or "RETURN" in latest_code.upper()
+    )
     return replace(result, delivered=delivered, returned=returned)
 
 

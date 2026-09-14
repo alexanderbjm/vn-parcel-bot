@@ -57,6 +57,45 @@ def test_parse_returned_action_code():
     assert result.delivered is False
 
 
+def test_parse_returned_action_code_inbound():
+    payload = load_json("in_transit")
+    payload["module"][0]["detailList"][0]["actionCode"] = "GTMS_RETURN_INBOUND"
+    result = parse_cainiao_response(payload, CODE)
+    assert result.returned is True
+    assert result.delivered is False
+
+
+def test_parse_dest_mail_no_adds_a_stable_handoff_event():
+    payload = load_json("in_transit")
+    module = payload["module"][0]
+    module["destMailNo"] = "SPXVN000000000009"
+    module["destCpName"] = "SPX Express Vietnam"
+    module["detailList"] = [
+        {
+            "time": 1756900000000,
+            "desc": "Đã đến trung tâm phân loại",
+            "actionCode": "GTMS_SC_ARRIVE",
+        },
+        {"time": 1756800000000, "desc": "Đã nhận hàng tại kho", "actionCode": "GTMS_ACCEPT"},
+    ]
+    first = parse_cainiao_response(payload, CODE)
+    [handoff] = [event for event in first.events if "SPXVN000000000009" in event.description]
+    assert handoff.description == "Chặng cuối SPX Express Vietnam: SPXVN000000000009"
+    assert handoff.time < first.events[1].time
+    assert first.latest.description == "Đã đến trung tâm phân loại"
+    assert first.latest.raw_status == "GTMS_SC_ARRIVE"
+
+    module["detailList"].insert(
+        0, {"time": 1757000000000, "desc": "Đang giao hàng", "actionCode": "GTMS_DELIVERING"}
+    )
+    second = parse_cainiao_response(payload, CODE)
+    [again] = [event for event in second.events if "SPXVN000000000009" in event.description]
+    assert again.key == handoff.key
+    assert second.latest.description == "Đang giao hàng"
+    old_keys = {event.key for event in first.events}
+    assert [e.description for e in second.events if e.key not in old_keys] == ["Đang giao hàng"]
+
+
 def test_parse_not_found_verified_body():
     result = parse_cainiao_response(load_json("not_found"), "LP00000000000000")
     assert result.found is False

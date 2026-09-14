@@ -119,3 +119,24 @@ def test_clients_match_their_modules(snapshot):
             module.display_name,
             module.needs_phone,
         )
+
+
+def test_best_and_sf_clients_with_and_without_key(monkeypatch):
+    from vn_parcel_bot.carriers.modules.best import build_best_client
+    from vn_parcel_bot.carriers.modules.sf import build_sf_client
+    from vn_parcel_bot.carriers.seventeen_track import SeventeenTrackCarrier
+
+    monkeypatch.delenv("SEVENTEEN_TRACK_KEY", raising=False)
+    assert build_best_client() is None
+    assert build_sf_client() is None
+
+    monkeypatch.setenv("SEVENTEEN_TRACK_KEY", "test-token")
+    best_client = build_best_client()
+    assert isinstance(best_client, SeventeenTrackCarrier)
+    assert best_client.code == "best"
+    assert best_client.seventeen_carrier_id == 101194
+
+    sf_client = build_sf_client()
+    assert isinstance(sf_client, SeventeenTrackCarrier)
+    assert sf_client.code == "sf"
+    assert sf_client.seventeen_carrier_id == 100012
