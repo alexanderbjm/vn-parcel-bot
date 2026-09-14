@@ -14,7 +14,7 @@ from vn_parcel_bot.carriers.models import TrackingEvent
 from vn_parcel_bot.constants import MAX_EVENTS_IN_HISTORY, MAX_EVENTS_IN_UPDATE, TELEGRAM_TEXT_LIMIT
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
-from vn_parcel_bot.tracking_codes import is_jt_cross_border
+from vn_parcel_bot.tracking_codes import is_jt_cross_border, is_lazada_cainiao
 
 
 def _escape(value: object) -> str:
@@ -193,6 +193,8 @@ def _format_added(outcome: AddOutcome, tz: ZoneInfo) -> str:
         text += texts.ADDED_PENDING_PHONE_HINT
     if is_jt_cross_border(parcel.tracking_number):
         text += texts.JT_CROSS_BORDER_HINT
+    elif is_lazada_cainiao(parcel.tracking_number):
+        text += texts.LAZADA_CAINIAO_HINT
     return text + _link_extra(outcome)
 
 

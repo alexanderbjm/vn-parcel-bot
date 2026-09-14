@@ -5,6 +5,7 @@ from vn_parcel_bot.tracking_codes import (
     extract_codes,
     is_code_like,
     is_jt_cross_border,
+    is_lazada_cainiao,
     is_order_number,
     is_seller_fleet,
     is_valid_last4,
@@ -25,6 +26,25 @@ def test_normalize_keeps_internal_dots():
     assert normalize_code("s1234567.mb12.d5.123456789.") == "S1234567.MB12.D5.123456789"
 
 
+def test_normalize_drops_lazada_order_number_prefix():
+    assert normalize_code("500000000000001_YT0000000000001") == "YT0000000000001"
+    assert normalize_code(" 500000000000001_yt0000000000001 ") == "YT0000000000001"
+    assert normalize_code("ABC_DEF") == "ABC_DEF"
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [("YT0000000000001", True), ("YT1234567890123456", False), ("LP00123456789012", False)],
+)
+def test_is_lazada_cainiao(code, expected):
+    assert is_lazada_cainiao(code) is expected
+
+
+def test_extract_codes_splits_lazada_cainiao_code_in_text():
+    text = "Cainiao: Giao tiêu chuẩn 500000000000001_YT0000000000001"
+    assert extract_codes(text) == ["YT0000000000001"]
+
+
 @pytest.mark.parametrize(
     ("code", "expected"),
     [
@@ -34,6 +54,7 @@ def test_normalize_keeps_internal_dots():
         ("LX123456789CN", ["cainiao"]),
         ("4PX3000123456789CN", ["fourpx"]),
         ("YT1234567890123456", ["yunexpress"]),
+        ("YT0000000000001", ["cainiao"]),
         ("EB123456789VN", ["vnpost"]),
         ("LEXVN00123456", ["lex"]),
         ("S1234567.MB12.D5.123456789", ["ghtk"]),

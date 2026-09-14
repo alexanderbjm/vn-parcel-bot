@@ -105,6 +105,10 @@ JT_CROSS_BORDER_HINT = (
     "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
     "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
 )
+LAZADA_CAINIAO_HINT = (
+    "\n🌏 Đơn quốc tế Lazada qua Cainiao: Cainiao có thể chưa công bố hành trình ngay. "
+    "Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
+)
 ADDED_ERROR = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa kết nối được với {carrier}, mình sẽ thử lại sau."

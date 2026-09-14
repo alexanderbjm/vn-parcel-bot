@@ -376,3 +376,12 @@ async def test_add_jt_cross_border_code_is_tracked_as_jt(service, repo, fakes):
     assert outcome.parcel.state == "pending"
     assert outcome.parcel.phone_last4 == "1111"
     assert fakes["jt"].calls == [("JNTXB0000000001", "1111")]
+
+
+async def test_add_lazada_cainiao_code_tracks_the_waybill(service, user, fakes, repo):
+    outcome = await service.add(user, "500000000000001_YT0000000000001")
+    assert outcome.kind == "added"
+    assert outcome.parcel.carrier == "cainiao"
+    assert outcome.parcel.tracking_number == "YT0000000000001"
+    assert fakes["cainiao"].calls == [("YT0000000000001", None)]
+    assert await repo.find_parcel(1, "500000000000001") is None

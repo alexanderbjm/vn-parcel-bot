@@ -212,6 +212,30 @@ def test_add_outcome_jt_cross_border_hint():
     assert "app Lazada" not in plain
 
 
+def test_add_outcome_lazada_cainiao_hint():
+    code = "YT0000000000001"
+    pending = make_parcel(
+        carrier="cainiao", candidates=("cainiao",), tracking_number=code, state="pending"
+    )
+    text = outcome_text(
+        AddOutcome(
+            "added", code=code, parcel=pending, result=TrackingResult("cainiao", code, False)
+        )
+    )
+    assert "app Lazada" in text
+
+    lp_code = "LP00000000000001"
+    other = make_parcel(
+        carrier="cainiao", candidates=("cainiao",), tracking_number=lp_code, state="pending"
+    )
+    plain = outcome_text(
+        AddOutcome(
+            "added", code=lp_code, parcel=other, result=TrackingResult("cainiao", lp_code, False)
+        )
+    )
+    assert "app Lazada" not in plain
+
+
 def test_add_outcome_found_and_delivered():
     result = found("spx", SPX, ev(0, "Đang giao hàng"))
     text = outcome_text(AddOutcome("added", code=SPX, parcel=make_parcel(), result=result))

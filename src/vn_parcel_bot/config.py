@@ -112,7 +112,7 @@ class Settings:
     digest_times: tuple[time, ...] = DEFAULT_DIGEST_TIMES
     vision_engine: str = "claude_code"
     claude_code_path: str | None = None
-    vision_model: str = "haiku"
+    vision_model: str = "sonnet"
     vision_timeout_seconds: int = 90
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
@@ -203,7 +203,7 @@ class Settings:
             digest_times=digest_times,
             vision_engine=vision_engine,
             claude_code_path=_get(env, "CLAUDE_CODE_PATH") or default_claude_code_path(),
-            vision_model=_get(env, "VISION_MODEL") or "haiku",
+            vision_model=_get(env, "VISION_MODEL") or "sonnet",
             vision_timeout_seconds=vision_timeout,
             anthropic_api_key=_get(env, "ANTHROPIC_API_KEY"),
             anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001",

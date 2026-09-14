@@ -23,7 +23,7 @@ def test_minimal_env_uses_defaults(valid_env):
     assert s.telegram_proxy_url is None
     assert s.digest_times == (time(7), time(12), time(19), time(22))
     assert s.vision_engine == "claude_code"
-    assert s.vision_model == "haiku"
+    assert s.vision_model == "sonnet"
     assert s.vision_timeout_seconds == 90
     assert s.anthropic_api_key is None
     assert s.anthropic_model == "claude-haiku-4-5-20251001"

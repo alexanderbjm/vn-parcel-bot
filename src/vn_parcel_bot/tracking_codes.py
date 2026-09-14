@@ -3,6 +3,7 @@ import re
 from vn_parcel_bot.carrier_catalog import CarrierCode
 
 _JT_CROSS_BORDER = r"JNTX[A-Z]?\d{8,12}"
+_LAZADA_CAINIAO = r"YT\d{13}"
 
 _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tuple(
     (re.compile(pattern, re.ASCII), candidates, standalone_only)
@@ -17,6 +18,7 @@ _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tupl
         (r"(LEXVN|LXVN|LVS)[0-9A-Z]{6,20}", ("lex",), False),
         (r"S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}", ("ghtk",), False),
         (_JT_CROSS_BORDER, ("jt",), False),
+        (_LAZADA_CAINIAO, ("cainiao",), False),
         (r"BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}", ("best",), False),
         (r"\d{12}", ("jt", "best", "viettelpost"), False),
         (r"\d{13}", ("best",), False),
@@ -24,11 +26,13 @@ _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tupl
     )
 )
 _JT_CROSS_BORDER_RE = re.compile(_JT_CROSS_BORDER, re.ASCII)
+_LAZADA_CAINIAO_RE = re.compile(_LAZADA_CAINIAO, re.ASCII)
+_LAZADA_ORDER_PREFIX = re.compile(r"^\d{15}_(?=[0-9A-Z]{8,30}$)", re.ASCII)
 _ORDER_NUMBER = re.compile(r"\d{15}", re.ASCII)
 _SELLER_FLEET = re.compile(r"84\d{12}", re.ASCII)
 _CODE_LIKE = re.compile(r"[0-9A-Z]{8,40}", re.ASCII)
 _CODE_LIKE_MIN_DIGITS = 6
-_TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]")
+_TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z._\-]*[0-9A-Za-z]")
 _SEPARATORS = re.compile(r"[\s\-]")
 _STRIP_CHARS = ",;:()[]<>\"'."
 _LAST4 = re.compile(r"\d{4}", re.ASCII)
@@ -42,7 +46,8 @@ def _match(code: str) -> tuple[tuple[CarrierCode, ...], bool] | None:
 
 
 def normalize_code(raw: str) -> str:
-    return _SEPARATORS.sub("", raw.upper()).strip(_STRIP_CHARS)
+    code = _SEPARATORS.sub("", raw.upper()).strip(_STRIP_CHARS)
+    return _LAZADA_ORDER_PREFIX.sub("", code)
 
 
 def detect_carriers(code: str) -> list[CarrierCode]:
@@ -52,6 +57,10 @@ def detect_carriers(code: str) -> list[CarrierCode]:
 
 def is_jt_cross_border(code: str) -> bool:
     return _JT_CROSS_BORDER_RE.fullmatch(code) is not None
+
+
+def is_lazada_cainiao(code: str) -> bool:
+    return _LAZADA_CAINIAO_RE.fullmatch(code) is not None
 
 
 def is_order_number(code: str) -> bool:
