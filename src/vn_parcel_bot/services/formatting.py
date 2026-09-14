@@ -66,7 +66,7 @@ _PROGRESS_STATES = ("in_transit", "delivered")
 
 def progress_bar(percent: int, width: int = 10) -> str:
     filled = max(0, min(width, percent * width // 100))
-    return "▓" * filled + "░" * (width - filled)
+    return "🟩" * filled + "🟥" * (width - filled)
 
 
 def _progress_parts(progress: int | None, state: str) -> tuple[str, str]:

@@ -563,4 +563,4 @@ async def test_found_result_stores_progress_and_update_shows_bar(poller, repo, f
     assert (await repo.get_parcel(parcel.id)).progress == 95
     text = notifier.sent[0][1]
     assert text.split("\n")[0].endswith(" · 95%")
-    assert "▓▓▓▓▓▓▓▓▓░" in text
+    assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥" in text

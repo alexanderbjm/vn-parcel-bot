@@ -426,7 +426,10 @@ def test_ref_text_blurs_codes_but_not_list_numbers():
 def test_list_item_shows_progress_and_bar():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=80)
     text = format_parcel_list([parcel], TZ)
-    assert "1. 🚚 <b>Áo</b> · SPX · 80%\n    Đã đến kho · 🕒 01/09 08:30\n    ▓▓▓▓▓▓▓▓░░" in text
+    assert (
+        "1. 🚚 <b>Áo</b> · SPX · 80%\n    Đã đến kho · 🕒 01/09 08:30\n    🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥"
+        in text
+    )
 
 
 def test_list_item_hides_progress_for_returned_and_unknown():
@@ -446,10 +449,10 @@ def test_event_update_header_shows_progress_and_bar():
     )
     lines = text.split("\n")
     assert lines[0] == "📦 <b>Áo</b> · SPX · 95%"
-    assert lines[1] == "▓▓▓▓▓▓▓▓▓░"
+    assert lines[1] == "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥"
 
 
 def test_delivered_parcel_shows_full_bar_without_stored_progress():
     text = format_parcel_list([make_parcel(label="Áo", state="delivered")], TZ)
     assert "<b>Áo</b> · SPX · 100%" in text
-    assert "▓▓▓▓▓▓▓▓▓▓" in text
+    assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩" in text

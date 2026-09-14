@@ -57,7 +57,7 @@ def test_snapshot_progress_handles_delivered_returned_and_missing():
 
 
 def test_progress_bar():
-    assert progress_bar(0) == "░" * 10
-    assert progress_bar(80) == "▓" * 8 + "░" * 2
-    assert progress_bar(95) == "▓" * 9 + "░"
-    assert progress_bar(100) == "▓" * 10
+    assert progress_bar(0) == "🟥" * 10
+    assert progress_bar(80) == "🟩" * 8 + "🟥" * 2
+    assert progress_bar(95) == "🟩" * 9 + "🟥"
+    assert progress_bar(100) == "🟩" * 10
