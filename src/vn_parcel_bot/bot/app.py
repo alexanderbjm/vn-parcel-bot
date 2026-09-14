@@ -8,6 +8,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    JobQueue,
     MessageHandler,
     TypeHandler,
     filters,
@@ -40,6 +41,7 @@ from vn_parcel_bot.carriers.http import make_http_client
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import ERROR_ALERT_COOLDOWN, FIRST_POLL_DELAY_SECONDS
 from vn_parcel_bot.db.repo import Repository
+from vn_parcel_bot.services.digest import DigestService
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
 from vn_parcel_bot.services.vision_engines import build_vision_engine
@@ -102,11 +104,12 @@ async def _post_init(app: Application) -> None:
     parcels = ParcelService(repo, CARRIERS, http, settings, _utc_now)
     poller = Poller(repo, CARRIERS, http, notifier, settings, _utc_now)
     vision = build_vision_engine(settings, http)
-    app.bot_data["deps"] = Deps(settings, repo, http, parcels, poller, notifier, vision=vision)
-    assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
-    app.job_queue.run_repeating(
-        poll_job, interval=settings.poll_interval, first=FIRST_POLL_DELAY_SECONDS, name="poll"
+    digests = DigestService(repo, notifier, settings, _utc_now)
+    app.bot_data["deps"] = Deps(
+        settings, repo, http, parcels, poller, notifier, vision=vision, digests=digests
     )
+    assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
+    schedule_jobs(app.job_queue, settings)
     await app.bot.set_my_commands(BOT_COMMANDS)
     log.info("bot started as @%s", app.bot.username)
 
@@ -121,6 +124,29 @@ async def _post_shutdown(app: Application) -> None:
 
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     await get_deps(context).poller.run_cycle()
+
+
+async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    digests = get_deps(context).digests
+    if digests is not None:
+        await digests.send_all()
+
+
+def schedule_jobs(job_queue: JobQueue, settings: Settings) -> None:
+    job_queue.run_repeating(
+        poll_job, interval=settings.poll_interval, first=FIRST_POLL_DELAY_SECONDS, name="poll"
+    )
+    for slot in settings.digest_times:
+        job_queue.run_daily(
+            digest_job,
+            time=slot.replace(tzinfo=settings.tz),
+            name=f"digest {slot.strftime('%H:%M')}",
+        )
+    if settings.digest_times:
+        log.info(
+            "digests scheduled at %s",
+            ", ".join(slot.strftime("%H:%M") for slot in settings.digest_times),
+        )
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

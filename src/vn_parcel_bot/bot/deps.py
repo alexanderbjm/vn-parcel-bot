@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 from vn_parcel_bot.bot.notifier import TelegramNotifier
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.db.repo import Repository
+from vn_parcel_bot.services.digest import DigestService
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
 from vn_parcel_bot.services.vision import VisionEngine
@@ -20,6 +21,7 @@ class Deps:
     poller: Poller
     notifier: TelegramNotifier
     vision: VisionEngine | None = None
+    digests: DigestService | None = None
 
 
 def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps:
