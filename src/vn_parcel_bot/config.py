@@ -2,7 +2,7 @@ import re
 import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import time, timedelta
 from pathlib import Path
 from typing import Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -12,6 +12,8 @@ _QUIET_HOURS_RE = re.compile(r"^(\d{1,2})-(\d{1,2})$")
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 _PROXY_SCHEMES = ("http://", "https://", "socks5://", "socks5h://")
 _VISION_ENGINES = ("claude_code", "api")
+_DIGEST_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+DEFAULT_DIGEST_TIMES = (time(7), time(12), time(19), time(22))
 
 
 class ConfigError(Exception):
@@ -74,6 +76,25 @@ def default_claude_code_path() -> str | None:
     return str(fallback) if fallback.is_file() else None
 
 
+def _digest_times(env: Mapping[str, str], errors: list[str]) -> tuple[time, ...]:
+    if "DIGEST_TIMES" not in env:
+        return DEFAULT_DIGEST_TIMES
+    raw = env["DIGEST_TIMES"].strip()
+    if not raw:
+        return ()
+    slots: set[time] = set()
+    for part in raw.split(","):
+        match = _DIGEST_TIME_RE.match(part.strip())
+        hour, minute = (int(match.group(1)), int(match.group(2))) if match else (-1, -1)
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            errors.append(
+                "DIGEST_TIMES must be comma-separated HH:MM times (00:00..23:59) or empty"
+            )
+            return DEFAULT_DIGEST_TIMES
+        slots.add(time(hour, minute))
+    return tuple(sorted(slots))
+
+
 @dataclass(frozen=True)
 class Settings:
     telegram_bot_token: str
@@ -88,6 +109,7 @@ class Settings:
     quiet_hours: tuple[int, int] | None = (22, 7)
     max_parcels_per_user: int = 30
     telegram_proxy_url: str | None = None
+    digest_times: tuple[time, ...] = DEFAULT_DIGEST_TIMES
     vision_engine: str = "claude_code"
     claude_code_path: str | None = None
     vision_model: str = "haiku"
@@ -160,6 +182,7 @@ class Settings:
         if vision_engine not in _VISION_ENGINES:
             errors.append(f"VISION_ENGINE must be one of {', '.join(_VISION_ENGINES)}")
         vision_timeout = _int(env, "VISION_TIMEOUT_SECONDS", 90, 10, 300, errors)
+        digest_times = _digest_times(env, errors)
 
         if errors:
             raise ConfigError("Invalid configuration:\n- " + "\n- ".join(errors))
@@ -177,6 +200,7 @@ class Settings:
             quiet_hours=quiet_hours,
             max_parcels_per_user=max_parcels,
             telegram_proxy_url=proxy,
+            digest_times=digest_times,
             vision_engine=vision_engine,
             claude_code_path=_get(env, "CLAUDE_CODE_PATH") or default_claude_code_path(),
             vision_model=_get(env, "VISION_MODEL") or "haiku",

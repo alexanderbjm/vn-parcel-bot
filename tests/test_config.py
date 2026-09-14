@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import time, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,6 +21,7 @@ def test_minimal_env_uses_defaults(valid_env):
     assert s.quiet_hours == (22, 7)
     assert s.max_parcels_per_user == 30
     assert s.telegram_proxy_url is None
+    assert s.digest_times == (time(7), time(12), time(19), time(22))
     assert s.vision_engine == "claude_code"
     assert s.vision_model == "haiku"
     assert s.vision_timeout_seconds == 90
@@ -28,6 +29,19 @@ def test_minimal_env_uses_defaults(valid_env):
     assert s.anthropic_model == "claude-haiku-4-5-20251001"
     assert s.anthropic_workspace_id is None
     assert s.poll_interval == timedelta(minutes=20)
+
+
+def test_digest_times_custom_and_empty(valid_env):
+    custom = Settings.from_env({**valid_env, "DIGEST_TIMES": "22:00, 7:30,12:00,07:30"})
+    assert custom.digest_times == (time(7, 30), time(12), time(22))
+    assert Settings.from_env({**valid_env, "DIGEST_TIMES": "  "}).digest_times == ()
+
+
+@pytest.mark.parametrize("value", ["25:00", "7", "07:60", "abc", "07:00,"])
+def test_digest_times_rejected(valid_env, value):
+    with pytest.raises(ConfigError) as exc:
+        Settings.from_env({**valid_env, "DIGEST_TIMES": value})
+    assert "DIGEST_TIMES" in str(exc.value)
 
 
 def test_anthropic_settings_configured(valid_env):
