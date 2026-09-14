@@ -1,4 +1,5 @@
 import html
+import re
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -12,13 +13,23 @@ from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.tracking_codes import mask_code
 
+_INDEX_REF = re.compile(r"\d{1,3}", re.ASCII)
+
 
 def _escape(value: object) -> str:
     return html.escape(str(value), quote=False)
 
 
+def spoiler(value: object) -> str:
+    return f'<span class="tg-spoiler">{_escape(value)}</span>'
+
+
+def ref_text(ref: str) -> str:
+    return _escape(ref) if _INDEX_REF.fullmatch(ref.strip()) else spoiler(ref)
+
+
 def parcel_title(parcel: Parcel) -> str:
-    return _escape(parcel.label) if parcel.label else _escape(parcel.tracking_number)
+    return _escape(parcel.label) if parcel.label else spoiler(parcel.tracking_number)
 
 
 def masked_title(parcel: Parcel) -> str:
@@ -77,7 +88,7 @@ def format_help() -> str:
 
 def format_link_only(code: str, carriers: Sequence[CarrierCode]) -> str:
     return texts.LINK_ONLY.format(
-        code=_escape(code), carriers=carrier_names(carriers), links=format_links(code, carriers)
+        code=spoiler(code), carriers=carrier_names(carriers), links=format_links(code, carriers)
     )
 
 
@@ -165,7 +176,7 @@ def format_history(parcel: Parcel, events: Sequence[TrackingEvent], tz: ZoneInfo
     header = texts.HISTORY_HEADER.format(
         title=parcel_title(parcel),
         carrier=parcel_carrier_label(parcel),
-        code=_escape(parcel.tracking_number),
+        code=spoiler(parcel.tracking_number),
     )
     if not events:
         return header + "\n" + texts.HISTORY_EMPTY
@@ -217,7 +228,7 @@ def _format_added(outcome: AddOutcome, tz: ZoneInfo) -> str:
 
 
 def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -> str:
-    code = _escape(outcome.code or "")
+    code = spoiler(outcome.code or "")
     match outcome.kind:
         case "added":
             return _format_added(outcome, tz)
@@ -244,13 +255,11 @@ def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -
 
 
 def format_needs_phone_multi(codes: Sequence[str]) -> str:
-    return texts.NEEDS_PHONE_MULTI.format(
-        codes="\n".join(f"<code>{_escape(code)}</code>" for code in codes)
-    )
+    return texts.NEEDS_PHONE_MULTI.format(codes="\n".join(spoiler(code) for code in codes))
 
 
 def format_expired(parcel: Parcel) -> str:
-    return texts.EXPIRED.format(code=_escape(parcel.tracking_number))
+    return texts.EXPIRED.format(code=spoiler(parcel.tracking_number))
 
 
 def format_stale(parcel: Parcel) -> str:

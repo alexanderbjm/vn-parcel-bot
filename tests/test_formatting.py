@@ -24,7 +24,9 @@ from vn_parcel_bot.services.formatting import (
     format_users,
     parcel_carrier_label,
     parcel_title,
+    ref_text,
     seventeen_track_url,
+    spoiler,
     truncate_message,
 )
 from vn_parcel_bot.services.parcels import AddOutcome
@@ -32,6 +34,10 @@ from vn_parcel_bot.services.parcels import AddOutcome
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 T0 = datetime(2026, 9, 1, 1, 30, tzinfo=UTC)
 SPX = "SPXVN000000000001"
+
+
+def blurred(code: str) -> str:
+    return f'<span class="tg-spoiler">{code}</span>'
 
 
 def make_parcel(**overrides) -> Parcel:
@@ -72,7 +78,7 @@ def bullet_lines(text: str) -> list[str]:
 
 def test_title_prefers_escaped_label():
     assert parcel_title(make_parcel(label="<Áo & quần>")) == "&lt;Áo &amp; quần&gt;"
-    assert parcel_title(make_parcel()) == SPX
+    assert parcel_title(make_parcel()) == blurred(SPX)
 
 
 def test_carrier_labels():
@@ -103,7 +109,7 @@ def test_format_links_template_without_code_and_tracked_skipped():
 
 def test_format_link_only():
     text = format_link_only("EB123456789VN", ["vnpost"])
-    assert "<code>EB123456789VN</code>" in text
+    assert blurred("EB123456789VN") in text
     assert "Mình chưa tự theo dõi được hãng này" in text
     assert "VNPost" in text
     assert "17TRACK" in text
@@ -117,7 +123,7 @@ def test_event_update_lines_and_location():
         delivered=False,
         returned=False,
     )
-    assert text.split("\n")[0] == f"📦 <b>{SPX}</b> · SPX"
+    assert text.split("\n")[0] == f"📦 <b>{blurred(SPX)}</b> · SPX"
     assert bullet_lines(text) == ["• 01/09 15:00 — A (Kho HCM)", "• 01/09 15:10 — B"]
 
 
@@ -156,7 +162,7 @@ def test_event_update_resolved_note():
     text = format_event_update(
         unresolved(), [ev(0)], TZ, delivered=False, returned=False, resolved_carrier="ninjavan"
     )
-    assert text.split("\n")[0] == "📦 <b>GA0000000001</b> · Ninja Van"
+    assert text.split("\n")[0] == f"📦 <b>{blurred('GA0000000001')}</b> · Ninja Van"
     assert "🔎 Đã xác định hãng vận chuyển: <b>Ninja Van</b>" in text
 
 
@@ -173,13 +179,14 @@ def test_parcel_list_items():
     assert text.startswith(texts.LIST_HEADER + "\n\n")
     assert "1. 🚚 <b>Áo</b> · SPX\n    Đang giao · 🕒 01/09 08:30" in text
     assert (
-        "2. ⏳ <b>GA0000000001</b> · Đang xác định hãng\n    Chưa có thông tin vận chuyển" in text
+        f"2. ⏳ <b>{blurred('GA0000000001')}</b> · Đang xác định hãng\n"
+        "    Chưa có thông tin vận chuyển" in text
     )
 
 
 def test_history_newest_first_and_empty():
     text = format_history(make_parcel(), [ev(0, "A"), ev(5, "B")], TZ)
-    assert text.startswith(f"<b>📦 {SPX}</b> · SPX · <code>{SPX}</code>")
+    assert text.startswith(f"<b>📦 {blurred(SPX)}</b> · SPX · {blurred(SPX)}")
     assert text.index("B") < text.index("— A")
     assert texts.HISTORY_EMPTY in format_history(make_parcel(), [], TZ)
 
@@ -308,10 +315,12 @@ def test_add_outcome_pending_variants():
 
 def test_add_outcome_other_kinds():
     ask = outcome_text(AddOutcome("needs_phone", code="841000072647", candidates=("jt",)))
-    assert "<code>841000072647</code> (J&amp;T) cần 4 số cuối SĐT" in ask
+    assert f"{blurred('841000072647')} (J&amp;T) cần 4 số cuối SĐT" in ask
     link = outcome_text(AddOutcome("link_only", code="EB123456789VN", link_carriers=("vnpost",)))
     assert "Mình chưa tự theo dõi được hãng này" in link
-    assert "Bạn đã theo dõi đơn" in outcome_text(AddOutcome("duplicate", code=SPX))
+    duplicate = outcome_text(AddOutcome("duplicate", code=SPX))
+    assert "Bạn đã theo dõi đơn" in duplicate
+    assert blurred(SPX) in duplicate
     assert "tối đa 30 đơn" in outcome_text(AddOutcome("limit", code=SPX))
     assert outcome_text(AddOutcome("invalid_code")) == texts.UNKNOWN_CODE
     assert outcome_text(AddOutcome("invalid_phone", code=SPX)) == texts.INVALID_PHONE
@@ -320,13 +329,14 @@ def test_add_outcome_other_kinds():
 def test_add_outcome_unknown_carrier():
     unknown = outcome_text(AddOutcome("unknown_carrier", code="ABC1234567890DEF"))
     assert "chưa nhận ra hãng vận chuyển" in unknown
+    assert blurred("ABC1234567890DEF") in unknown
     assert 'href="https://t.17track.net/vi#nums=ABC1234567890DEF"' in unknown
     assert texts.UNKNOWN_CODE not in unknown
 
 
 def test_add_outcome_seller_fleet():
     text = outcome_text(AddOutcome("seller_fleet", code="84000000000001"))
-    assert "<code>84000000000001</code>" in text
+    assert blurred("84000000000001") in text
     assert "người bán tự giao" in text
     assert "TikTok Shop" in text
     assert 'href="https://t.17track.net/vi#nums=84000000000001"' in text
@@ -341,9 +351,9 @@ def test_help_and_usage_do_not_mention_carrier_names_argument():
 
 def test_needs_phone_multi_expired_and_stale():
     multi = format_needs_phone_multi(["840000000001", "GA0000000001"])
-    assert "<code>840000000001</code>\n<code>GA0000000001</code>" in multi
-    assert "<code>SPXVN000000000001</code>" in format_expired(make_parcel())
-    assert f"<b>{SPX}</b>" in format_stale(make_parcel())
+    assert f"{blurred('840000000001')}\n{blurred('GA0000000001')}" in multi
+    assert blurred(SPX) in format_expired(make_parcel())
+    assert f"<b>{blurred(SPX)}</b>" in format_stale(make_parcel())
 
 
 def test_carrier_alert_escapes_and_cuts():
@@ -399,3 +409,14 @@ def test_help_lists_carriers_from_modules():
         "Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
         "SF Express\n"
     ) in text
+
+
+def test_spoiler_escapes_and_labels_stay_readable():
+    assert spoiler("<a&b>") == '<span class="tg-spoiler">&lt;a&amp;b&gt;</span>'
+    assert parcel_title(make_parcel(label="Áo")) == "Áo"
+
+
+def test_ref_text_blurs_codes_but_not_list_numbers():
+    assert ref_text("12") == "12"
+    assert ref_text(SPX) == blurred(SPX)
+    assert ref_text("<x>") == blurred("&lt;x&gt;")

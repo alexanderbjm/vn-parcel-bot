@@ -51,13 +51,12 @@ ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
 USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
 SELLER_FLEET = (
-    "🛵 <code>{code}</code> có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
+    "🛵 {code} có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
     "không có trang tra cứu công khai.\n"
     "Hãy xem hành trình trong app nơi bạn đặt hàng. Hoặc thử tra cứu tại:\n{links}"
 )
 UNKNOWN_CARRIER = (
-    "🔍 Mình chưa nhận ra hãng vận chuyển của mã <code>{code}</code>.\n"
-    "Bạn có thể tra cứu tại:\n{links}"
+    "🔍 Mình chưa nhận ra hãng vận chuyển của mã {code}.\nBạn có thể tra cứu tại:\n{links}"
 )
 USAGE_REF = "Cách dùng: /{command} &lt;mã hoặc số thứ tự trong /list&gt;"
 USAGE_LABEL = (
@@ -66,8 +65,7 @@ USAGE_LABEL = (
 )
 
 ASK_PHONE = (
-    "📱 Mã <code>{code}</code> ({carriers}) cần 4 số cuối SĐT người nhận.\n"
-    "Gửi 4 số đó, hoặc /cancel để hủy."
+    "📱 Mã {code} ({carriers}) cần 4 số cuối SĐT người nhận.\nGửi 4 số đó, hoặc /cancel để hủy."
 )
 INVALID_PHONE = "Vui lòng nhập đúng 4 chữ số."
 NEEDS_PHONE_MULTI = (
@@ -90,11 +88,11 @@ ADDED_ERROR = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa kết nối được với {carrier}, mình sẽ thử lại sau."
 )
-DUPLICATE = "Bạn đã theo dõi đơn <code>{code}</code> rồi."
+DUPLICATE = "Bạn đã theo dõi đơn {code} rồi."
 LIMIT_REACHED = "Bạn đang theo dõi tối đa {max} đơn. Hãy /remove bớt đơn cũ nhé."
 
 LINK_ONLY = (
-    "🔗 Mã <code>{code}</code> có thể là đơn {carriers}.\n"
+    "🔗 Mã {code} có thể là đơn {carriers}.\n"
     "Mình chưa tự theo dõi được hãng này, bạn xem hành trình tại:\n{links}"
 )
 LINK_EXTRA = "\n\nNếu đây là đơn {carriers}, xem tại:\n{links}"
@@ -106,9 +104,9 @@ LIST_EMPTY = "Bạn chưa theo dõi đơn nào. Gửi mã vận đơn để bắ
 LIST_ITEM = "{index}. {emoji} <b>{title}</b> · {carrier}\n    {status}{time_suffix}"
 LIST_TIME_SUFFIX = " · 🕒 {time}"
 
-HISTORY_HEADER = "<b>📦 {title}</b> · {carrier} · <code>{code}</code>"
+HISTORY_HEADER = "<b>📦 {title}</b> · {carrier} · {code}"
 HISTORY_EMPTY = "Chưa có thông tin vận chuyển."
-PARCEL_NOT_FOUND = "Không tìm thấy đơn <code>{ref}</code> trong danh sách của bạn."
+PARCEL_NOT_FOUND = "Không tìm thấy đơn {ref} trong danh sách của bạn."
 
 REMOVED = "🗑 Đã ngừng theo dõi <b>{title}</b>."
 LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b> · <code>{code}</code>"
@@ -142,7 +140,7 @@ UPDATE_DELIVERED = "✅ <b>Đã giao thành công!</b>"
 UPDATE_RETURNED = "↩️ <b>Đơn đang được hoàn về người gửi.</b>"
 
 EXPIRED = (
-    "⌛ Sau 7 ngày vẫn chưa có dữ liệu cho <code>{code}</code>, mình đã ngừng theo dõi.\n"
+    "⌛ Sau 7 ngày vẫn chưa có dữ liệu cho {code}, mình đã ngừng theo dõi.\n"
     "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T hoặc GHN)."
 )
 STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày, mình đã ngừng theo dõi."
@@ -184,10 +182,10 @@ VISION_NO_DATA = (
 )
 VISION_DETECTED_HEADER = "📷 <b>Nhận diện từ hình ảnh:</b>"
 VISION_PRODUCT = "• Sản phẩm: <b>{name}</b>"
-VISION_DETECTED_ITEM = "• Mã vận đơn: <code>{code}</code>{carrier_suffix}"
+VISION_DETECTED_ITEM = "• Mã vận đơn: {code}{carrier_suffix}"
 VISION_DETECTED_PHONE = "• SĐT người nhận: <code>***{phone}</code>"
 VISION_ORDER_ONLY = (
-    "🧾 Tìm thấy mã đơn hàng: <code>{order_id}</code>\n"
+    "🧾 Tìm thấy mã đơn hàng: {order_id}\n"
     "Đây là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
     "Trong app (Shopee, Lazada, TikTok Shop…) mở đơn → <b>Thông tin vận chuyển</b> "
     "rồi gửi ảnh chụp hoặc mã vận đơn cho mình nhé! Hoặc thử tra cứu tại:\n{links}"

@@ -25,6 +25,8 @@ from vn_parcel_bot.services.formatting import (
     format_needs_phone_multi,
     format_parcel_list,
     masked_title,
+    ref_text,
+    spoiler,
     truncate_message,
 )
 from vn_parcel_bot.services.vision import VisionResult
@@ -229,7 +231,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     ref = " ".join(context.args)
     found = await deps.parcels.history(user.telegram_id, ref)
     if found is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(ref)))
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
         return
     parcel, events = found
     await reply(update, format_history(parcel, events, deps.settings.tz))
@@ -316,7 +318,7 @@ async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ref, name = parsed
         found = await deps.parcels.resolve(user.telegram_id, ref)
         if found is None:
-            await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(ref)))
+            await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
             return
         parcel = found
         target = None
@@ -346,7 +348,7 @@ async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     ref = " ".join(context.args)
     parcel = await deps.parcels.resolve(user.telegram_id, ref)
     if parcel is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(ref)))
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
         return
     _drop_pending(context)
     prompt = await reply(update, texts.REMOVE_CONFIRM.format(title=masked_title(parcel)))
@@ -454,7 +456,7 @@ def _vision_header(result: VisionResult, code: str | None, phone_last4: str | No
         carrier_suffix = f" ({result.carrier})" if result.carrier else ""
         parts.append(
             texts.VISION_DETECTED_ITEM.format(
-                code=escape(code), carrier_suffix=escape(carrier_suffix)
+                code=spoiler(code), carrier_suffix=escape(carrier_suffix)
             )
         )
     if phone_last4:
@@ -520,7 +522,7 @@ async def _reply_to_vision_result(
     if result.order_ids:
         order_id = result.order_ids[0]
         body = texts.VISION_ORDER_ONLY.format(
-            order_id=escape(order_id), links=format_links(order_id, ())
+            order_id=spoiler(order_id), links=format_links(order_id, ())
         )
         await reply(update, f"{_vision_header(result, None, None)}\n\n{body}")
         return

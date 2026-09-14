@@ -181,7 +181,7 @@ async def test_photo_code_added_with_product_label(deps):
     reply = msg.texts[0]
     assert "Nhận diện từ hình ảnh" in reply
     assert "Tai nghe Bluetooth +1" in reply
-    assert SPX in reply
+    assert f'<span class="tg-spoiler">{SPX}</span>' in reply
     parcel = await deps.repo.find_parcel(111, SPX)
     assert parcel.label == "Tai nghe Bluetooth +1"
 
