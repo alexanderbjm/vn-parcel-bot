@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from vn_parcel_bot import config
 from vn_parcel_bot.config import ConfigError, Settings
 
 
@@ -20,8 +21,12 @@ def test_minimal_env_uses_defaults(valid_env):
     assert s.quiet_hours == (22, 7)
     assert s.max_parcels_per_user == 30
     assert s.telegram_proxy_url is None
+    assert s.vision_engine == "claude_code"
+    assert s.vision_model == "haiku"
+    assert s.vision_timeout_seconds == 90
     assert s.anthropic_api_key is None
-    assert s.anthropic_model == "claude-3-5-haiku-20241022"
+    assert s.anthropic_model == "claude-haiku-4-5-20251001"
+    assert s.anthropic_workspace_id is None
     assert s.poll_interval == timedelta(minutes=20)
 
 
@@ -35,6 +40,55 @@ def test_anthropic_settings_configured(valid_env):
     )
     assert s.anthropic_api_key == "sk-ant-key-123"
     assert s.anthropic_model == "claude-3-5-sonnet-20241022"
+
+
+def test_vision_settings_from_env(valid_env):
+    s = Settings.from_env(
+        {
+            **valid_env,
+            "VISION_ENGINE": "API",
+            "CLAUDE_CODE_PATH": r"D:\tools\claude.exe",
+            "VISION_MODEL": "sonnet",
+            "VISION_TIMEOUT_SECONDS": "120",
+            "ANTHROPIC_WORKSPACE_ID": "wrkspc_123",
+        }
+    )
+    assert s.vision_engine == "api"
+    assert s.claude_code_path == r"D:\tools\claude.exe"
+    assert s.vision_model == "sonnet"
+    assert s.vision_timeout_seconds == 120
+    assert s.anthropic_workspace_id == "wrkspc_123"
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("VISION_ENGINE", "gemini"),
+        ("VISION_TIMEOUT_SECONDS", "5"),
+        ("VISION_TIMEOUT_SECONDS", "301"),
+    ],
+)
+def test_vision_settings_rejected(valid_env, key, value):
+    with pytest.raises(ConfigError) as exc:
+        Settings.from_env({**valid_env, key: value})
+    assert key in str(exc.value)
+
+
+def test_claude_code_path_prefers_path_lookup(monkeypatch):
+    monkeypatch.setattr(
+        config.shutil, "which", lambda name: r"C:\bin\claude.exe" if name == "claude" else None
+    )
+    assert config.default_claude_code_path() == r"C:\bin\claude.exe"
+
+
+def test_claude_code_path_falls_back_to_local_bin(monkeypatch, tmp_path):
+    monkeypatch.setattr(config.shutil, "which", lambda name: None)
+    monkeypatch.setattr(config.Path, "home", lambda: tmp_path)
+    assert config.default_claude_code_path() is None
+    exe = tmp_path / ".local" / "bin" / "claude.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    assert config.default_claude_code_path() == str(exe)
 
 
 def test_missing_required_reports_both():

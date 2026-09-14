@@ -1,4 +1,5 @@
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
@@ -10,6 +11,7 @@ _TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 _QUIET_HOURS_RE = re.compile(r"^(\d{1,2})-(\d{1,2})$")
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 _PROXY_SCHEMES = ("http://", "https://", "socks5://", "socks5h://")
+_VISION_ENGINES = ("claude_code", "api")
 
 
 class ConfigError(Exception):
@@ -64,6 +66,14 @@ def _float(
     return value
 
 
+def default_claude_code_path() -> str | None:
+    found = shutil.which("claude")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "claude.exe"
+    return str(fallback) if fallback.is_file() else None
+
+
 @dataclass(frozen=True)
 class Settings:
     telegram_bot_token: str
@@ -78,8 +88,13 @@ class Settings:
     quiet_hours: tuple[int, int] | None = (22, 7)
     max_parcels_per_user: int = 30
     telegram_proxy_url: str | None = None
+    vision_engine: str = "claude_code"
+    claude_code_path: str | None = None
+    vision_model: str = "haiku"
+    vision_timeout_seconds: int = 90
     anthropic_api_key: str | None = None
-    anthropic_model: str = "claude-3-5-haiku-20241022"
+    anthropic_model: str = "claude-haiku-4-5-20251001"
+    anthropic_workspace_id: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Self:
@@ -141,6 +156,11 @@ class Settings:
                 "TELEGRAM_PROXY_URL must start with http://, https://, socks5:// or socks5h://"
             )
 
+        vision_engine = (_get(env, "VISION_ENGINE") or "claude_code").lower()
+        if vision_engine not in _VISION_ENGINES:
+            errors.append(f"VISION_ENGINE must be one of {', '.join(_VISION_ENGINES)}")
+        vision_timeout = _int(env, "VISION_TIMEOUT_SECONDS", 90, 10, 300, errors)
+
         if errors:
             raise ConfigError("Invalid configuration:\n- " + "\n- ".join(errors))
 
@@ -157,8 +177,13 @@ class Settings:
             quiet_hours=quiet_hours,
             max_parcels_per_user=max_parcels,
             telegram_proxy_url=proxy,
+            vision_engine=vision_engine,
+            claude_code_path=_get(env, "CLAUDE_CODE_PATH") or default_claude_code_path(),
+            vision_model=_get(env, "VISION_MODEL") or "haiku",
+            vision_timeout_seconds=vision_timeout,
             anthropic_api_key=_get(env, "ANTHROPIC_API_KEY"),
-            anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-3-5-haiku-20241022",
+            anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001",
+            anthropic_workspace_id=_get(env, "ANTHROPIC_WORKSPACE_ID"),
         )
 
     @property
