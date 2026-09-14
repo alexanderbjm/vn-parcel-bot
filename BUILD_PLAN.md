@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.4 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
+Version 1.5 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,10 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 1.5 (2026-09-14)
+
+- **Daily digests** (§6, §10, §17): at each `DIGEST_TIMES` slot every allowed user with parcels gets a summary with 🆕 on parcels that changed since their previous digest. Details and tests: `docs/superpowers/specs/2026-09-14-spx-browser-vision-digests-design.md` §5.
 
 ## Changes in 1.4 (2026-09-14)
 
@@ -481,6 +485,13 @@ after all parcels: stale check, carrier alerts, purge, save meta "last_poll_repo
 
 - `repo.delete_terminal_before(now - PURGE_AFTER)` (30 days) deletes terminal parcels (and events via cascade) whose `updated_at` is older.
 - `meta["last_poll_report"] = report.to_json()`; `meta["last_poll_at"] = finished_at ISO`.
+
+### Daily digests (`services/digest.py`)
+
+- `schedule_jobs` registers one `JobQueue.run_daily(digest_job, time=<slot with TIMEZONE>)` per `DIGEST_TIMES` slot (default `07:00,12:00,19:00,22:00`; empty disables) next to the poll job and logs `digests scheduled at …`. A slot missed while the bot is down is skipped.
+- `DigestService.send_all`: `cutoff = now()` once, before any query; for every user with `is_allowed`, `build(user_id, cutoff)` and send with sound (`silent=False`). After a successful send `meta["digest:last:<user_id>"] = cutoff`; a failed send leaves it unchanged; a `Forbidden` handled by the notifier counts as sent.
+- `build`: `since` = the stored cutoff or `cutoff - FIRST_DIGEST_WINDOW` (24 h); parcels = `list_parcels(user_id, terminal_since=since)`; none → no message. Lines use the `/list` layout (`LIST_ITEM`) with `DIGEST_NEW_MARK` when the parcel has events saved since `since` (`parcel_ids_with_events_since`) or is terminal. Header `DIGEST_HEADER` with the local `HH:MM`, footer `DIGEST_FOOTER` plus `DIGEST_FOOTER_FINISHED` when parcels finished.
+- Instant update messages and quiet hours are unchanged.
 
 ## 7. Data model (SQLite)
 
@@ -1318,6 +1329,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
 | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
+| `DIGEST_TIMES` | no | `07:00,12:00,19:00,22:00` | comma-separated local HH:MM; empty disables |
 
 Note: `QUIET_HOURS` unset → default `(22, 7)`; set to empty → `None`. Relative paths are relative to the working directory (the repo root when run via the scripts).
 
@@ -1625,6 +1637,11 @@ VISION_ERROR = (
 VISION_UNSUPPORTED_IMAGE = (
     "📷 Ảnh này quá lớn hoặc không đúng định dạng. Bạn gửi lại dưới dạng ảnh (không phải tệp) nhé."
 )
+
+DIGEST_HEADER = "🗓 <b>Tóm tắt đơn hàng</b> · {time}"
+DIGEST_NEW_MARK = " 🆕"
+DIGEST_FOOTER = "Đang theo dõi {active} đơn"
+DIGEST_FOOTER_FINISHED = " · {finished} đơn vừa kết thúc"
 ```
 
 ---

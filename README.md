@@ -44,6 +44,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `QUIET_HOURS` | no | `22-7` | Local hours when messages arrive silently; empty disables |
    | `MAX_PARCELS_PER_USER` | no | `30` | Active parcels per person |
    | `TELEGRAM_PROXY_URL` | no | – | e.g. `socks5h://127.0.0.1:1080` if Telegram is blocked |
+   | `DIGEST_TIMES` | no | `07:00,12:00,19:00,22:00` | Local times for the daily digest; empty disables it |
    | `VISION_ENGINE` | no | `claude_code` | `claude_code` reads screenshots with Claude Code on this PC (your Claude plan); `api` uses Anthropic API credit |
    | `CLAUDE_CODE_PATH` | no | found automatically | Path to `claude.exe` if it is not on `PATH` or in `%USERPROFILE%\.local\bin` |
    | `VISION_MODEL` | no | `haiku` | Claude Code model for screenshots |
@@ -96,6 +97,10 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 ### Screenshots
 
 Send a screenshot of an order (the shop app's shipping details screen works best). The bot reads the shipping code, carrier and product name with Claude Code on this PC, adds the parcel with the product name as its label, and replies. Screenshots are processed in memory and never saved. Claude Code must stay installed and logged in; each screenshot counts toward your Claude plan's usage limits and takes about 10–30 seconds. If the screenshot only shows an order number, the bot asks for the shipping details screen instead.
+
+### Daily digests
+
+At 07:00, 12:00, 19:00 and 22:00 every allowed user who has parcels gets one summary message with sound. It lists active parcels with 🆕 on the ones that changed since the previous digest, and parcels that were delivered, returned or stopped since then are shown once. Instant updates still arrive as before. To change the times, set `DIGEST_TIMES` in `.env` (for example `DIGEST_TIMES=08:00,20:00`, or leave it empty to turn digests off) and restart the bot. A digest time missed while the PC was off is skipped; the next digest covers everything since the last one.
 
 ## Adding family and friends
 

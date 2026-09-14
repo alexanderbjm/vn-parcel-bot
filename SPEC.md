@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 1.4). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 1.5). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -352,6 +352,13 @@ after all parcels: stale check, carrier alerts, purge, save meta "last_poll_repo
 
 - `repo.delete_terminal_before(now - PURGE_AFTER)` (30 days) deletes terminal parcels (and events via cascade) whose `updated_at` is older.
 - `meta["last_poll_report"] = report.to_json()`; `meta["last_poll_at"] = finished_at ISO`.
+
+### Daily digests (`services/digest.py`)
+
+- `schedule_jobs` registers one `JobQueue.run_daily(digest_job, time=<slot with TIMEZONE>)` per `DIGEST_TIMES` slot (default `07:00,12:00,19:00,22:00`; empty disables) next to the poll job and logs `digests scheduled at …`. A slot missed while the bot is down is skipped.
+- `DigestService.send_all`: `cutoff = now()` once, before any query; for every user with `is_allowed`, `build(user_id, cutoff)` and send with sound (`silent=False`). After a successful send `meta["digest:last:<user_id>"] = cutoff`; a failed send leaves it unchanged; a `Forbidden` handled by the notifier counts as sent.
+- `build`: `since` = the stored cutoff or `cutoff - FIRST_DIGEST_WINDOW` (24 h); parcels = `list_parcels(user_id, terminal_since=since)`; none → no message. Lines use the `/list` layout (`LIST_ITEM`) with `DIGEST_NEW_MARK` when the parcel has events saved since `since` (`parcel_ids_with_events_since`) or is terminal. Header `DIGEST_HEADER` with the local `HH:MM`, footer `DIGEST_FOOTER` plus `DIGEST_FOOTER_FINISHED` when parcels finished.
+- Instant update messages and quiet hours are unchanged.
 
 ## 7. Data model (SQLite)
 
@@ -1189,6 +1196,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
 | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
+| `DIGEST_TIMES` | no | `07:00,12:00,19:00,22:00` | comma-separated local HH:MM; empty disables |
 
 Note: `QUIET_HOURS` unset → default `(22, 7)`; set to empty → `None`. Relative paths are relative to the working directory (the repo root when run via the scripts).
 
@@ -1496,4 +1504,9 @@ VISION_ERROR = (
 VISION_UNSUPPORTED_IMAGE = (
     "📷 Ảnh này quá lớn hoặc không đúng định dạng. Bạn gửi lại dưới dạng ảnh (không phải tệp) nhé."
 )
+
+DIGEST_HEADER = "🗓 <b>Tóm tắt đơn hàng</b> · {time}"
+DIGEST_NEW_MARK = " 🆕"
+DIGEST_FOOTER = "Đang theo dõi {active} đơn"
+DIGEST_FOOTER_FINISHED = " · {finished} đơn vừa kết thúc"
 ```

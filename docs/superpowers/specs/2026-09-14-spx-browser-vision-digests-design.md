@@ -1,6 +1,6 @@
 # SPX order-info endpoint, screenshot → parcel, daily digests — design
 
-Date: 2026-09-14 · Branch: `build/v1` · Status: Part C built and verified live (`3c4c617`, `d69de90`); Part B revised to Claude Code (approved in chat); Part A approved
+Date: 2026-09-14 · Branch: `build/v1` · Status: Part C built and verified live (`3c4c617`, `d69de90`); Part B built (`a07a1cc`…`13d8ca2`); Part A built (`1a554e7`…)
 
 ## 1. Why
 
