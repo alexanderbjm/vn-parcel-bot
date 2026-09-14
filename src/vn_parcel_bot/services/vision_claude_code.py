@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,15 +24,22 @@ class ProcessOutput:
     stderr: bytes
 
 
-Runner = Callable[[Sequence[str], bytes, str, float], Awaitable[ProcessOutput]]
+Runner = Callable[
+    [Sequence[str], bytes, str, float, Mapping[str, str] | None], Awaitable[ProcessOutput]
+]
 
 
 async def run_process(
-    args: Sequence[str], stdin: bytes, cwd: str, time_limit: float
+    args: Sequence[str],
+    stdin: bytes,
+    cwd: str,
+    time_limit: float,
+    env: Mapping[str, str] | None = None,
 ) -> ProcessOutput:
     process = await asyncio.create_subprocess_exec(
         *args,
         cwd=cwd,
+        env=dict(env) if env is not None else None,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -45,6 +53,17 @@ async def run_process(
         raise
     returncode = process.returncode if process.returncode is not None else -1
     return ProcessOutput(returncode, stdout, stderr)
+
+
+def claude_code_environment() -> dict[str, str]:
+    """The bot's environment without ANTHROPIC_* variables.
+
+    The bot loads .env into os.environ; an inherited ANTHROPIC_API_KEY would make Claude Code bill
+    the API account instead of using the user's claude.ai login.
+    """
+    return {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("ANTHROPIC_")
+    }
 
 
 def build_args(executable: str, model: str) -> list[str]:
@@ -114,7 +133,11 @@ class ClaudeCodeVisionEngine:
             ) as workdir:
                 try:
                     output = await self._runner(
-                        args, stdin, workdir, self._settings.vision_timeout_seconds
+                        args,
+                        stdin,
+                        workdir,
+                        self._settings.vision_timeout_seconds,
+                        claude_code_environment(),
                     )
                 except TimeoutError:
                     log.warning(

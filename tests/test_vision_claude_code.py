@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -65,7 +66,7 @@ class FakeRunner:
         self.active = 0
         self.max_active = 0
 
-    async def __call__(self, args, stdin, cwd, time_limit):
+    async def __call__(self, args, stdin, cwd, time_limit, env=None):
         was_dir, entries = _dir_snapshot(cwd)
         self.calls.append(
             SimpleNamespace(
@@ -73,6 +74,7 @@ class FakeRunner:
                 stdin=stdin,
                 cwd=cwd,
                 timeout=time_limit,
+                env=env,
                 cwd_was_dir=was_dir,
                 cwd_entries=entries,
             )
@@ -267,3 +269,27 @@ def test_build_vision_engine_picks_engine(settings, cc_settings):
     assert isinstance(build_vision_engine(cc_settings, None), ClaudeCodeVisionEngine)
     api = replace(settings, vision_engine="api")
     assert isinstance(build_vision_engine(api, None), AnthropicVisionEngine)
+
+
+async def test_claude_code_runs_without_anthropic_variables(cc_settings, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022")
+    monkeypatch.setenv("VN_PARCEL_MARKER", "keep-me")
+    runner = FakeRunner()
+    await ClaudeCodeVisionEngine(cc_settings, runner).analyze_image(b"img")
+    env = runner.calls[0].env
+    assert env is not None
+    assert not [key for key in env if key.upper().startswith("ANTHROPIC_")]
+    assert env["VN_PARCEL_MARKER"] == "keep-me"
+
+
+async def test_run_process_uses_the_given_environment(tmp_path):
+    env = {**os.environ, "VN_PARCEL_MARKER": "from-env"}
+    output = await run_process(
+        [sys.executable, "-c", "import os, sys; sys.stdout.write(os.environ['VN_PARCEL_MARKER'])"],
+        b"",
+        str(tmp_path),
+        30,
+        env,
+    )
+    assert output.stdout == b"from-env"
