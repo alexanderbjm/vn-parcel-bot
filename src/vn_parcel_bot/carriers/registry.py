@@ -10,7 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 from vn_parcel_bot.carriers.api import CarrierModule
-from vn_parcel_bot.carriers.models import Carrier
+from vn_parcel_bot.carriers.models import Carrier, TrackingResult
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +112,19 @@ class CarrierSnapshot:
         if module is None or module.link_template is None:
             return None
         return module.link_template.replace("{code}", urllib.parse.quote(tracking_number, safe=""))
+
+    def progress(self, carrier: str, result: TrackingResult) -> int | None:
+        module = self.get(carrier)
+        if module is None or not result.found or result.returned:
+            return None
+        if result.delivered:
+            return 100
+        try:
+            value = module.progress(result)
+        except Exception as exc:
+            log.warning("carrier progress failed carrier=%s type=%s", carrier, type(exc).__name__)
+            return None
+        return None if value is None else max(0, min(100, int(value)))
 
     def pending_hint(self, carriers: Iterable[str], tracking_number: str) -> str | None:
         for code in carriers:

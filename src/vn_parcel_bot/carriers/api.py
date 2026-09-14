@@ -8,7 +8,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from vn_parcel_bot.carriers.models import Carrier
+from vn_parcel_bot.carriers.models import Carrier, TrackingResult
+from vn_parcel_bot.carriers.progress import stage_progress
 
 PRIORITY_PREFIXED = 100
 PRIORITY_NUMERIC = 60
@@ -50,3 +51,4 @@ class CarrierModule:
     examples: tuple[tuple[str, bool], ...] = ()
     build_client: Callable[[], Carrier | None] = no_client
     pending_hint: Callable[[str], str | None] = no_hint
+    progress: Callable[[TrackingResult], int | None] = stage_progress

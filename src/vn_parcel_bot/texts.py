@@ -101,8 +101,10 @@ LINK_17TRACK_NAME = "17TRACK"
 
 LIST_HEADER = "<b>📋 Đơn của bạn</b>"
 LIST_EMPTY = "Bạn chưa theo dõi đơn nào. Gửi mã vận đơn để bắt đầu."
-LIST_ITEM = "{index}. {emoji} <b>{title}</b> · {carrier}\n    {status}{time_suffix}"
+LIST_ITEM = "{index}. {emoji} <b>{title}</b> · {carrier}\n    {status}{time_suffix}{bar}"
 LIST_TIME_SUFFIX = " · 🕒 {time}"
+PROGRESS_SUFFIX = " · {percent}%"
+PROGRESS_BAR_LINE = "\n    {bar}"
 
 HISTORY_HEADER = "<b>📦 {title}</b> · {carrier} · {code}"
 HISTORY_EMPTY = "Chưa có thông tin vận chuyển."

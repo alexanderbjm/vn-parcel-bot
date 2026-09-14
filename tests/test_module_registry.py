@@ -204,3 +204,19 @@ def test_broken_module_at_startup_is_added_once_fixed(tmp_path):
 def test_static_registry_refresh_does_nothing(tmp_path):
     snapshot = load(tmp_path, alpha=ALPHA).current
     assert CarrierRegistry(snapshot).refresh().reloaded == []
+
+
+def test_progress_errors_are_contained_and_values_clamped(tmp_path):
+    from datetime import UTC, datetime
+
+    from vn_parcel_bot.carriers.models import TrackingEvent, TrackingResult
+
+    event = TrackingEvent(time=datetime(2026, 9, 14, tzinfo=UTC), description="x")
+    result = TrackingResult("alpha", "AL00000001", True, (event,))
+    anchor = '    examples=(("AL00000001", True),),\n'
+    broken = load(tmp_path, alpha=ALPHA.replace(anchor, anchor + "    progress=lambda r: 1 / 0,\n"))
+    assert broken.current.progress("alpha", result) is None
+    high = tmp_path / "high"
+    high.mkdir()
+    clamped = load(high, alpha=ALPHA.replace(anchor, anchor + "    progress=lambda r: 150,\n"))
+    assert clamped.current.progress("alpha", result) == 100

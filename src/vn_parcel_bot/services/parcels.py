@@ -213,6 +213,7 @@ class ParcelService:
             next_check_at=now + interval,
             now=now,
             delivered_at=latest.time if state == "delivered" and latest else None,
+            progress=snapshot.progress(carrier, result),
         )
         log.info(
             "parcel added user=%s carrier=%s code=%s state=%s", uid, carrier, mask_code(code), state

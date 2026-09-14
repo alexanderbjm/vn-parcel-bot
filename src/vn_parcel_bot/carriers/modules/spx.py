@@ -1,3 +1,4 @@
+import re
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -6,6 +7,7 @@ import httpx
 from vn_parcel_bot.carriers.api import PRIORITY_PREFIXED, CarrierModule, Rule
 from vn_parcel_bot.carriers.common import clean_text, json_body, request
 from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.progress import stage_progress
 
 SPX_ORDER_INFO_URL = "https://spx.vn/shipment/order/open/order/get_order_info"
 NOT_FOUND_RETCODES = (2,)
@@ -13,6 +15,7 @@ PUBLIC_DISPLAY_FLAG = 1
 DELIVERED_MILESTONE = 8
 DELIVERED_TRACKING_CODES = ("F980",)
 RETURNED_MARKERS = ("return", "hoàn hàng", "trả hàng")
+SPX_TRACKING_CODE = re.compile(r"F(\d{3})", re.ASCII)
 
 
 def _parse_error(detail: str) -> CarrierError:
@@ -98,6 +101,23 @@ def parse_spx_response(payload: object, tracking_number: str) -> TrackingResult:
     return replace(result, delivered=delivered, returned=returned)
 
 
+def spx_progress(result: TrackingResult) -> int | None:
+    latest = result.latest
+    match = SPX_TRACKING_CODE.fullmatch(latest.raw_status or "") if latest else None
+    if match is None:
+        return stage_progress(result)
+    number = int(match.group(1))
+    if number < 100:
+        return 10
+    if number < 400:
+        return 30
+    if number < 599:
+        return 50
+    if number < 600:
+        return 80
+    return 95
+
+
 class SpxCarrier:
     code: CarrierCode = "spx"
     display_name = "SPX"
@@ -123,4 +143,5 @@ MODULE = CarrierModule(
     rules=(Rule(r"SPXVN[0-9A-Z]{8,16}", PRIORITY_PREFIXED),),
     examples=(("SPXVN05338454932C", True), ("SPEVN000000000001", False)),
     build_client=SpxCarrier,
+    progress=spx_progress,
 )

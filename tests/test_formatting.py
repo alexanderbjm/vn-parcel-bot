@@ -10,6 +10,7 @@ from vn_parcel_bot.services.formatting import (
     carrier_names,
     format_add_outcome,
     format_carrier_alert,
+    format_digest,
     format_event_update,
     format_expired,
     format_health,
@@ -420,3 +421,29 @@ def test_ref_text_blurs_codes_but_not_list_numbers():
     assert ref_text("12") == "12"
     assert ref_text(SPX) == blurred(SPX)
     assert ref_text("<x>") == blurred("&lt;x&gt;")
+
+
+def test_list_item_shows_progress_and_bar():
+    parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=80)
+    text = format_parcel_list([parcel], TZ)
+    assert "1. 🚚 <b>Áo</b> · SPX · 80%\n    Đã đến kho · 🕒 01/09 08:30\n    ▓▓▓▓▓▓▓▓░░" in text
+
+
+def test_list_item_hides_progress_for_returned_and_unknown():
+    returned = make_parcel(label="Áo", state="returned", progress=80)
+    assert "80%" not in format_parcel_list([returned], TZ)
+    assert "%" not in format_parcel_list([make_parcel(label="Áo")], TZ)
+
+
+def test_digest_puts_new_mark_after_progress():
+    text = format_digest([make_parcel(label="Áo", progress=50)], {1}, T0, TZ)
+    assert "<b>Áo</b> · SPX · 50% 🆕" in text
+
+
+def test_event_update_header_shows_progress_and_bar():
+    text = format_event_update(
+        make_parcel(label="Áo"), [ev(0)], TZ, delivered=False, returned=False, progress=95
+    )
+    lines = text.split("\n")
+    assert lines[0] == "📦 <b>Áo</b> · SPX · 95%"
+    assert lines[1] == "▓▓▓▓▓▓▓▓▓░"

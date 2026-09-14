@@ -61,6 +61,20 @@ def format_time(dt: datetime, tz: ZoneInfo) -> str:
     return dt.astimezone(tz).strftime(texts.TIME_FORMAT)
 
 
+_PROGRESS_STATES = ("in_transit", "delivered")
+
+
+def progress_bar(percent: int, width: int = 10) -> str:
+    filled = max(0, min(width, percent * width // 100))
+    return "▓" * filled + "░" * (width - filled)
+
+
+def _progress_parts(progress: int | None, state: str) -> tuple[str, str]:
+    if progress is None or state not in _PROGRESS_STATES:
+        return "", ""
+    return texts.PROGRESS_SUFFIX.format(percent=progress), progress_bar(progress)
+
+
 def _link_item(url: str, name: str) -> str:
     return texts.LINK_ITEM.format(url=html.escape(url, quote=True), name=name)
 
@@ -109,9 +123,16 @@ def format_event_update(
     delivered: bool,
     returned: bool,
     resolved_carrier: CarrierCode | None = None,
+    progress: int | None = None,
 ) -> str:
     carrier = carrier_name(resolved_carrier) if resolved_carrier else parcel_carrier_label(parcel)
-    lines = [texts.UPDATE_HEADER.format(title=parcel_title(parcel), carrier=carrier)]
+    progress_suffix, bar = _progress_parts(None if returned else progress, "in_transit")
+    header = texts.UPDATE_HEADER.format(
+        title=parcel_title(parcel), carrier=carrier + progress_suffix
+    )
+    lines = [header]
+    if bar:
+        lines.append(bar)
     if resolved_carrier:
         lines.append(texts.UPDATE_RESOLVED.format(carrier=carrier))
     ordered = sorted(new_events, key=lambda event: event.time)
@@ -139,13 +160,15 @@ def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "") -> str:
     carrier = (
         carrier_name(parcel.carrier) if parcel.carrier is not None else texts.CARRIER_UNRESOLVED
     )
+    progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
     return texts.LIST_ITEM.format(
         index=index,
         emoji=texts.STATE_EMOJI[parcel.state],
         title=parcel_title(parcel),
-        carrier=carrier + mark,
+        carrier=carrier + progress_suffix + mark,
         status=status,
         time_suffix=suffix,
+        bar=texts.PROGRESS_BAR_LINE.format(bar=bar) if bar else "",
     )
 
 

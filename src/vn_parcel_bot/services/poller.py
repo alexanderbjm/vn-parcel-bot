@@ -61,6 +61,12 @@ def fetch_keys(parcel: Parcel, snapshot: CarrierSnapshot) -> list[FetchKey]:
     return keys
 
 
+def _shown_progress(stored: int | None, new: int | None) -> int | None:
+    if new is None:
+        return stored
+    return max(new, stored or 0)
+
+
 @dataclass
 class PollReport:
     started_at: datetime
@@ -286,6 +292,7 @@ class Poller:
             newly_delivered = state == "delivered" and parcel.state != "delivered"
             newly_returned = state == "returned" and parcel.state != "returned"
             latest = result.latest
+            progress = self._registry.current.progress(result.carrier, result)
             await self._repo.record_check_success(
                 parcel.id,
                 state=state,
@@ -294,6 +301,7 @@ class Poller:
                 next_check_at=now + interval,
                 now=now,
                 delivered_at=latest.time if newly_delivered and latest else None,
+                progress=progress,
             )
             report.new_events += len(new)
             if new or newly_delivered or newly_returned:
@@ -304,6 +312,7 @@ class Poller:
                     delivered=newly_delivered,
                     returned=newly_returned,
                     resolved_carrier=resolved_carrier,
+                    progress=_shown_progress(parcel.progress, progress),
                 )
                 await self._notify(parcel.user_id, text, report)
             return

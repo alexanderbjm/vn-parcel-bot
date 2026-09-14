@@ -2,7 +2,7 @@ from pathlib import Path
 
 import aiosqlite
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATIONS: list[str] = [
     """
@@ -92,6 +92,10 @@ DROP TABLE parcels;
 ALTER TABLE parcels_new RENAME TO parcels;
 CREATE INDEX idx_parcels_due ON parcels (state, next_check_at);
 COMMIT;
+""",
+    """
+ALTER TABLE parcels ADD COLUMN progress INTEGER
+  CHECK (progress IS NULL OR progress BETWEEN 0 AND 100);
 """,
 ]
 

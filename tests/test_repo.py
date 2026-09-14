@@ -53,7 +53,7 @@ async def test_migrate_sets_user_version_and_is_idempotent(tmp_path):
     await first.close()
     second = await Repository.open(path)
     async with second._conn.execute("PRAGMA user_version") as cursor:
-        assert (await cursor.fetchone())[0] == 2
+        assert (await cursor.fetchone())[0] == 3
     await second.close()
 
 
@@ -337,7 +337,7 @@ async def test_migration_2_keeps_rows_and_events(tmp_path):
     repo = await Repository.open(path)
     try:
         async with repo._conn.execute("PRAGMA user_version") as cursor:
-            assert (await cursor.fetchone())[0] == 2
+            assert (await cursor.fetchone())[0] == 3
         parcel = await repo.get_parcel(7)
         assert (parcel.carrier, parcel.tracking_number, parcel.state) == (
             "cainiao",
@@ -376,3 +376,26 @@ async def test_fresh_database_has_no_backup(tmp_path):
     repo = await Repository.open(tmp_path / "new.sqlite3")
     await repo.close()
     assert not await asyncio.to_thread((tmp_path / "new.sqlite3.bak-v1").exists)
+
+
+async def test_progress_only_moves_forward(repo):
+    await make_user(repo)
+    parcel = await add(repo)
+
+    async def record(value):
+        await repo.record_check_success(
+            parcel.id,
+            state="in_transit",
+            last_status_text=None,
+            last_event_at=None,
+            next_check_at=T0,
+            now=T0,
+            progress=value,
+        )
+        return (await repo.get_parcel(parcel.id)).progress
+
+    assert parcel.progress is None
+    assert await record(50) == 50
+    assert await record(30) == 50
+    assert await record(None) == 50
+    assert await record(95) == 95

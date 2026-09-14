@@ -407,3 +407,9 @@ async def test_find_in_text_matches_codes_and_names(service, user):
     both = await service.find_in_text(1, f"1. {SPX}\n2. Tai nghe")
     assert sorted(parcel.tracking_number for parcel in both) == [SPX, SPX2]
     assert await service.find_in_text(1, "xin chào") == []
+
+
+async def test_add_found_stores_progress(service, user, fakes):
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đơn hàng đã đến kho"))
+    outcome = await service.add(user, SPX)
+    assert outcome.parcel.progress == 50

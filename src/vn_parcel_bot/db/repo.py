@@ -17,7 +17,7 @@ TERMINAL_STATES: tuple[ParcelState, ...] = ("delivered", "returned", "expired", 
 _PARCEL_COLUMNS = (
     "id, user_id, carrier, candidates, tracking_number, phone_last4, label, state, "
     "last_status_text, last_event_at, consecutive_failures, next_check_at, delivered_at, "
-    "created_at, updated_at"
+    "created_at, updated_at, progress"
 )
 _P_PARCEL_COLUMNS = ", ".join(f"p.{name.strip()}" for name in _PARCEL_COLUMNS.split(","))
 _USER_COLUMNS = "telegram_id, name, default_phone_last4, is_admin, is_allowed, created_at"
@@ -54,6 +54,7 @@ class Parcel:
     delivered_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    progress: int | None = None
 
     @property
     def is_active(self) -> bool:
@@ -113,6 +114,7 @@ def _parcel(row: aiosqlite.Row) -> Parcel:
         delivered_at=_from_db(row["delivered_at"]),
         created_at=_required(row["created_at"]),
         updated_at=_required(row["updated_at"]),
+        progress=row["progress"],
     )
 
 
@@ -329,18 +331,22 @@ class Repository:
         next_check_at: datetime,
         now: datetime,
         delivered_at: datetime | None = None,
+        progress: int | None = None,
     ) -> None:
         await self._write(
             "UPDATE parcels SET state = ?, "
             "last_status_text = COALESCE(?, last_status_text), "
             "last_event_at = COALESCE(?, last_event_at), "
             "delivered_at = COALESCE(?, delivered_at), "
+            "progress = CASE WHEN ? IS NULL THEN progress ELSE MAX(COALESCE(progress, 0), ?) END, "
             "consecutive_failures = 0, next_check_at = ?, updated_at = ? WHERE id = ?",
             (
                 state,
                 last_status_text,
                 _to_db(last_event_at) if last_event_at else None,
                 _to_db(delivered_at) if delivered_at else None,
+                progress,
+                progress,
                 _to_db(next_check_at),
                 _to_db(now),
                 parcel_id,

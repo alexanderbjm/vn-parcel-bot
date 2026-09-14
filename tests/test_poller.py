@@ -554,3 +554,13 @@ async def test_parcel_without_loaded_module_is_skipped_with_warning(poller, repo
     report = await poller.run_cycle()
     assert report.fetches == 0
     assert "carrier module missing carrier=oldcarrier parcels=1" in caplog.text
+
+
+async def test_found_result_stores_progress_and_update_shows_bar(poller, repo, fakes, notifier):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).progress == 95
+    text = notifier.sent[0][1]
+    assert text.split("\n")[0].endswith(" · 95%")
+    assert "▓▓▓▓▓▓▓▓▓░" in text
