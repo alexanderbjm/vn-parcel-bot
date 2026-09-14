@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.2 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
+Version 1.3 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,10 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 1.3 (2026-09-14)
+
+- **SPX endpoint** (§5.1, §5.3, §9, R1): the bot reads `get_order_info`, the endpoint spx.vn's own tracking page loads the timeline from. The old `fleet_order/tracking/search` endpoint returned `data: {}` for a real code that spx.vn showed as out for delivery. A plain request works; signing, `SPX_SIGNING_SECRET` and `sign_spx_code` are removed. Part 3 prompts that mention SPX signing are historical; Part 2 wins.
 
 ## Changes in 1.2 (2026-09-14)
 
@@ -231,7 +235,7 @@ Facts probed from this PC on 2026-09-13 with fake codes unless marked otherwise.
 
 | Code | Name | Tier | Needs phone | Evidence | Official link template |
 |---|---|---|---|---|---|
-| `spx` | SPX | tracked | no | JSON API answers without captcha; real-data signing unverified (§5.3) | – |
+| `spx` | SPX | tracked | no | JSON endpoint used by spx.vn's tracking page; verified with a real code 2026-09-14 (§5.3) | – |
 | `jt` | J&amp;T | tracked | yes | Server-rendered HTML (§5.4) | – |
 | `cainiao` | Cainiao | tracked | no | JSON API, HTTP 200, no captcha (§5.5) | – |
 | `fourpx` | 4PX | tracked | no | JSON API, HTTP 200, no captcha (§5.6) | – |
@@ -283,16 +287,16 @@ Prompt 10A updates this section and `tracking_codes.py` together when real codes
 
 | Item | Value | Confidence |
 |---|---|---|
-| Endpoint | `GET https://spx.vn/api/v2/fleet_order/tracking/search?sls_tracking_number=<VALUE>` | Verified (HTTP 200) |
-| Unknown code | `{"retcode": 0, "message": "", "data": {}}` | Verified |
-| Found response | `data.sls_tracking_number`, `data.current_status` (display text), `data.tracking_list[]` items with `message` (text), `timestamp` (Unix seconds), `code`; also `data.status_list[]` | Field names verified in spx.vn's own page script (2026-09-13); values unverified |
-| Request signing | The SPX Thailand client sends `VALUE = f"{code}\|{ts}{sha256(code + ts + SECRET)}"` (`ts` = Unix seconds as a string, `SECRET` per country). No Vietnamese `SECRET` was found in spx.vn's public scripts. | **Unverified** — decided in Prompt 10A |
-| Delivered / returned | Markers in `current_status` or the latest `message` (§9.7) | Unverified |
+| Endpoint | `GET https://spx.vn/shipment/order/open/order/get_order_info?language_code=vi&spx_tn=<CODE>`, the call spx.vn's tracking page makes | Verified with a real code (2026-09-14): plain request, no signature or page headers |
+| Unknown code | `{"retcode": 2, "message": "…find [0]:get logistic order index map error", "data": {}}` | Verified (2026-09-14) |
+| Found response | `retcode 0`; `data.sls_tracking_info.records[]`, newest first, with `actual_time` (int, Unix seconds), `description`, `tracking_code` (`F980` delivered, `F600` out for delivery), `milestone_code` (int; `8` delivered), `milestone_name`, `tracking_name`, `display_flag` (`1` = shown on spx.vn), `current_location.location_name` | Verified (2026-09-14) |
+| Personal data | The same response carries `receiver_name`, `driver_phone_number`, `client_order_id`, `buyer_description`, `epod`, addresses and coordinates | Never read, stored, logged or put in fixtures |
+| Old endpoint | `GET https://spx.vn/api/v2/fleet_order/tracking/search` returns `data: {}` for real codes | Not used |
 
-- `SPX_SIGNING_SECRET: str | None = None`. `None` → `VALUE = code`. A string → the signed form. Prompt 10A sets it only if real codes need it and records where the value came from.
-- Parsing: `retcode != 0` → `parse` error. `data` empty or `tracking_list` missing/empty → not found. `tracking_list` not a list, or an item without an integer `timestamp` or a string `message` → `parse` error.
-- Event: `time = datetime.fromtimestamp(timestamp, UTC)`; `description` = `message` with literal `\n` sequences replaced by a space, whitespace-collapsed; `raw_status = str(code)` when present; `location = None`.
-- `delivered` = any `DELIVERED_MARKERS` (casefold substring) in `current_status` or the latest description. `returned` = not delivered and any `RETURNED_MARKERS` in `current_status` or the latest description.
+- Parsing: payload not an object or without `retcode` → `parse` error. `retcode` in `NOT_FOUND_RETCODES = (2,)` → not found; any other non-zero `retcode` → `parse` error. `data` missing/empty, `sls_tracking_info` missing, or `records` missing/empty → not found. `sls_tracking_info` not an object or `records` not a list → `parse` error.
+- Records with `display_flag != 1` are skipped. A kept record that is not an object, lacks an integer `actual_time` (bool rejected) or has an empty `description` after whitespace collapsing → `parse` error. No kept records → not found.
+- Event: `time = datetime.fromtimestamp(actual_time, UTC)`; `description` whitespace-collapsed; `location` = whitespace-collapsed `current_location.location_name` only when non-empty and not already contained in the description (case-insensitive), else `None`; `raw_status = tracking_code`.
+- `delivered` = the latest kept record has `milestone_code == 8` or `tracking_code == "F980"`. `returned` = not delivered and any of `return`, `hoàn hàng`, `trả hàng` (casefold substring) in that record's `description`, `tracking_name` or `milestone_name`.
 
 Tracking code format: `SPXVN` + 8–16 uppercase alphanumerics (observed examples have 11–14, e.g. `SPXVN05338454932C`).
 
@@ -571,7 +575,7 @@ vn-parcel-bot/
 │  │  ├─ models.py              TrackingEvent, TrackingResult, CarrierError, Carrier protocol
 │  │  ├─ http.py                DEFAULT_HEADERS, make_http_client
 │  │  ├─ common.py              request, json_body, looks_like_challenge, parse_gmt_offset, clean_text
-│  │  ├─ spx.py                 parse_spx_response, sign_spx_code, SpxCarrier
+│  │  ├─ spx.py                 parse_spx_response, SpxCarrier
 │  │  ├─ jt.py                  parse_jt_html, JtCarrier
 │  │  ├─ cainiao.py             parse_cainiao_response, CainiaoCarrier
 │  │  ├─ fourpx.py              parse_fourpx_response, FourPxCarrier
@@ -827,16 +831,15 @@ def parse_gmt_offset(value: object, default: tzinfo) -> tzinfo: ...
 def clean_text(value: object) -> str: ...   # " ".join(str(value).split())
 
 # spx.py
-SPX_TRACKING_URL = "https://spx.vn/api/v2/fleet_order/tracking/search"
-SPX_SIGNING_SECRET: str | None = None
-DELIVERED_MARKERS = ("delivered", "giao hàng thành công", "giao thành công")
-RETURNED_MARKERS = ("returned", "hoàn hàng thành công", "đã hoàn hàng", "trả hàng thành công")
-def sign_spx_code(code: str, timestamp: int, secret: str) -> str: ...
-    # f"{code}|{timestamp}{sha256(f'{code}{timestamp}{secret}'.encode()).hexdigest()}"
+SPX_ORDER_INFO_URL = "https://spx.vn/shipment/order/open/order/get_order_info"
+NOT_FOUND_RETCODES = (2,)
+PUBLIC_DISPLAY_FLAG = 1
+DELIVERED_MILESTONE = 8
+DELIVERED_TRACKING_CODES = ("F980",)
+RETURNED_MARKERS = ("return", "hoàn hàng", "trả hàng")
 def parse_spx_response(payload: object, tracking_number: str) -> TrackingResult: ...
 class SpxCarrier:  code = "spx"; display_name = "SPX"; needs_phone = False
-    def __init__(self, *, secret: str | None = SPX_SIGNING_SECRET,
-                 clock: Callable[[], float] = time.time) -> None: ...
+    # fetch: GET SPX_ORDER_INFO_URL with params {"language_code": "vi", "spx_tn": code}
 
 # jt.py
 JT_TRACKING_URL = "https://jtexpress.vn/tracking"      # adjust only if Prompt 10A proves otherwise
@@ -1364,7 +1367,7 @@ See §9.2. They are code constants, not env vars.
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | SPX real data needs a signed request whose Vietnamese secret is unknown | High | High | Prompt 10A with real codes; find the secret via DevTools; otherwise the human chooses (headers copy, headless browser, aggregator, or SPX link-only) |
+| R1 | SPX changes or blocks the order-info endpoint its tracking page uses | Medium | High | Resolved 2026-09-14: the page's own endpoint answers plain requests (§5.3); blocks surface as `blocked` with backoff and admin alerts, replies keep the spx.vn link; no evasion |
 | R2 | J&T phone-digit submission differs from the assumed `cellphone` GET param | Medium | High | Prompt 10A inspects `tracking_cellphone.js` and the verify modal and tests with a real code + digits |
 | R3 | Carriers change markup/API or add anti-bot | Medium (over months) | High | Parser errors → backoff + admin alert; fixtures make fixes quick; conservative polling |
 | R4 | Telegram blocked by the ISP | Medium | High | Pre-flight check; `TELEGRAM_PROXY_URL` |
