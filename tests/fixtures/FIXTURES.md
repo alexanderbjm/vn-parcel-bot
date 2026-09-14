@@ -4,17 +4,19 @@ Facts that the parser tests assert. Provenance is either `synthetic` (hand-built
 
 ## SPX Express Vietnam
 
-- Provenance: **synthetic 2026-09-13**
-- Request: `GET https://spx.vn/api/v2/fleet_order/tracking/search?sls_tracking_number=<code>` (unsigned)
-- Paths: `retcode`; `data.current_status`; `data.tracking_list[]` → `timestamp` (Unix seconds, UTC), `message`, `code`
-- Not found: `{"retcode": 0, "message": "", "data": {}}` (verified 2026-09-11)
-- Delivered marker: latest message `Giao hàng thành công`; returned marker: none in these files
-- `spx/in_transit.json` contains the message `Đơn hàng đã đến kho\nSOC Hồ Chí Minh` with a literal backslash-n, parsed as `Đơn hàng đã đến kho SOC Hồ Chí Minh`
+- Provenance: **synthetic 2026-09-14**, shaped like a live `get_order_info` response captured for a real code the same day (values invented; personal fields are placeholders)
+- Request: `GET https://spx.vn/shipment/order/open/order/get_order_info?language_code=vi&spx_tn=<code>`
+- Paths: `retcode`; `data.sls_tracking_info.records[]` (newest first) → `actual_time` (Unix seconds, UTC), `description`, `tracking_code`, `milestone_code`, `display_flag`, `current_location.location_name`
+- Not found: `{"retcode": 2, "message": "…find [0]…", "data": {}}` (observed 2026-09-14 for an unknown code)
+- Only `display_flag: 1` records become events; `in_transit.json` has 8 records, 5 shown
+- Delivered: latest shown record `tracking_code` `F980` / `milestone_code` 8; returned marker: none in these files
+- Personal placeholders that must never appear in events: `receiver_name` `N***A`, `driver_phone_number` `0900000000`, `buyer_description` mentioning `Đường Giả`, coordinates `10.000000` / `106.000000`
+- The oldest shown description has a leading space (`" Người bán đang chuẩn bị hàng"`), parsed without it
 
 | File | Code | Events | Latest description | Oldest local |
 |---|---|---|---|---|
-| `spx/in_transit.json` | `SPXVN000000000001` | 4 | Đơn hàng đang được giao đến bạn | 10/09 08:00 |
-| `spx/delivered.json` | `SPXVN000000000002` | 4 | Giao hàng thành công | 10/09 08:00 |
+| `spx/in_transit.json` | `SPXVN000000000001` | 5 | Đang giao hàng | 10/09 07:01 |
+| `spx/delivered.json` | `SPXVN000000000002` | 6 | Giao hàng thành công | 10/09 07:01 |
 | `spx/not_found.json` | – | 0 | – | – |
 
 ## J&T Express Vietnam

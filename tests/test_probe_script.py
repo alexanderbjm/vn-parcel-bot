@@ -36,7 +36,7 @@ async def test_parse_flag_prints_summary_without_body(tmp_path, monkeypatch, cap
     codes = tmp_path / "codes.txt"
     codes.write_text("cainiao LP00000000000001 in_transit\n", encoding="utf-8")
 
-    await probe.probe_carriers(argparse.Namespace(file=str(codes), parse=True, spx_secret=None))
+    await probe.probe_carriers(argparse.Namespace(file=str(codes), parse=True))
 
     out = capsys.readouterr().out
     assert route.call_count == 2
@@ -45,3 +45,21 @@ async def test_parse_flag_prints_summary_without_body(tmp_path, monkeypatch, cap
     assert "Đã đến trung tâm" not in out
     assert "LP00000000000001" not in out
     assert len(list((tmp_path / "raw").iterdir())) == 1
+
+
+def test_spx_request_uses_order_info_endpoint():
+    probe = load_probe_module()
+    method, url, kwargs, kind = probe.build_request("spx", "SPXVN000000000001", None)
+    assert (method, url, kind) == (
+        "GET",
+        "https://spx.vn/shipment/order/open/order/get_order_info",
+        "json",
+    )
+    assert kwargs == {"params": {"language_code": "vi", "spx_tn": "SPXVN000000000001"}}
+
+
+def test_spx_event_count_path():
+    probe = load_probe_module()
+    fixture = ROOT / "tests" / "fixtures" / "spx" / "in_transit.json"
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+    assert probe.event_count("spx", payload) == 8

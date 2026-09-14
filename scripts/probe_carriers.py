@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import random
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,7 +19,6 @@ from dotenv import load_dotenv
 from vn_parcel_bot.carriers import CARRIERS
 from vn_parcel_bot.carriers.http import make_http_client
 from vn_parcel_bot.carriers.models import CarrierError
-from vn_parcel_bot.carriers.spx import SpxCarrier
 from vn_parcel_bot.config import ConfigError, Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -64,17 +62,14 @@ def parse_probe_file(path: Path) -> list[tuple[str, str, str | None]]:
 
 
 def build_request(
-    carrier: str, code: str, last4: str | None, spx_secret: str | None
+    carrier: str, code: str, last4: str | None
 ) -> tuple[str, str, dict[str, Any], str]:
     if carrier == "spx":
-        value = code
-        if spx_secret:
-            ts = int(time.time())
-            value = f"{code}|{ts}{hashlib.sha256(f'{code}{ts}{spx_secret}'.encode()).hexdigest()}"
+        params = {"language_code": "vi", "spx_tn": code}
         return (
             "GET",
-            "https://spx.vn/api/v2/fleet_order/tracking/search",
-            {"params": {"sls_tracking_number": value}},
+            "https://spx.vn/shipment/order/open/order/get_order_info",
+            {"params": params},
             "json",
         )
     if carrier == "jt":
@@ -119,7 +114,7 @@ def _dig(payload: Any, *path: str | int) -> Any:
 
 def event_count(carrier: str, payload: Any) -> int | None:
     paths: dict[str, tuple[str | int, ...]] = {
-        "spx": ("data", "tracking_list"),
+        "spx": ("data", "sls_tracking_info", "records"),
         "cainiao": ("module", 0, "detailList"),
         "fourpx": ("data", 0, "tracks"),
         "ninjavan": ("events",),
@@ -147,13 +142,11 @@ def structural_hint(carrier: str, text: str, kind: str) -> str:
     return f"keys={keys} events={event_count(carrier, payload)}"
 
 
-async def parse_summary(
-    http: httpx.AsyncClient, carrier: str, code: str, last4: str | None, spx_secret: str | None
-) -> str:
+async def parse_summary(http: httpx.AsyncClient, carrier: str, code: str, last4: str | None) -> str:
     prefix = f"{carrier:9} {mask(code)} parse"
     if carrier not in CARRIERS:
         return f"{prefix} skipped: not a tracked carrier"
-    fetcher = SpxCarrier(secret=spx_secret) if carrier == "spx" else CARRIERS[carrier]
+    fetcher = CARRIERS[carrier]
     try:
         result = await fetcher.fetch(http, code, last4)
     except CarrierError as err:
@@ -176,7 +169,7 @@ async def probe_carriers(args: argparse.Namespace) -> None:
             if carrier == last_carrier:
                 await pause()
             last_carrier = carrier
-            method, url, kwargs, kind = build_request(carrier, code, last4, args.spx_secret)
+            method, url, kwargs, kind = build_request(carrier, code, last4)
             try:
                 response = await http.request(method, url, **kwargs)
             except httpx.HTTPError as exc:
@@ -192,7 +185,7 @@ async def probe_carriers(args: argparse.Namespace) -> None:
             )
             if args.parse:
                 await pause()
-                print(await parse_summary(http, carrier, code, last4, args.spx_secret))
+                print(await parse_summary(http, carrier, code, last4))
 
 
 async def probe_telegram() -> None:
@@ -218,7 +211,6 @@ def main() -> None:
     carriers = sub.add_parser("carriers", help="probe carrier endpoints with real codes")
     carriers.add_argument("--file", default=str(ROOT / "probe_codes.local.txt"))
     carriers.add_argument("--parse", action="store_true", help="also run the carrier parsers")
-    carriers.add_argument("--spx-secret", default=None, help="sign SPX requests with this secret")
     sub.add_parser("telegram", help="check that the bot token works (getMe)")
     args = parser.parse_args()
     if args.command == "carriers":

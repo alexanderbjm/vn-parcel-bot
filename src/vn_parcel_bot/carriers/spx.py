@@ -1,6 +1,3 @@
-import hashlib
-import time
-from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -10,68 +7,94 @@ from vn_parcel_bot.carrier_catalog import CarrierCode
 from vn_parcel_bot.carriers.common import clean_text, json_body, request
 from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
 
-SPX_TRACKING_URL = "https://spx.vn/api/v2/fleet_order/tracking/search"
-SPX_SIGNING_SECRET: str | None = None
-DELIVERED_MARKERS = ("delivered", "giao hàng thành công", "giao thành công")
-RETURNED_MARKERS = ("returned", "hoàn hàng thành công", "đã hoàn hàng", "trả hàng thành công")
-
-
-def sign_spx_code(code: str, timestamp: int, secret: str) -> str:
-    digest = hashlib.sha256(f"{code}{timestamp}{secret}".encode()).hexdigest()
-    return f"{code}|{timestamp}{digest}"
+SPX_ORDER_INFO_URL = "https://spx.vn/shipment/order/open/order/get_order_info"
+NOT_FOUND_RETCODES = (2,)
+PUBLIC_DISPLAY_FLAG = 1
+DELIVERED_MILESTONE = 8
+DELIVERED_TRACKING_CODES = ("F980",)
+RETURNED_MARKERS = ("return", "hoàn hàng", "trả hàng")
 
 
 def _parse_error(detail: str) -> CarrierError:
     return CarrierError("spx", "parse", detail)
 
 
-def _has_marker(texts: Iterable[str], markers: tuple[str, ...]) -> bool:
-    return any(marker in text.casefold() for text in texts for marker in markers)
+def _location(record: dict, description: str) -> str | None:
+    current = record.get("current_location")
+    if not isinstance(current, dict):
+        return None
+    name = clean_text(current.get("location_name") or "")
+    if not name or name.casefold() in description.casefold():
+        return None
+    return name
+
+
+def _public_record(record: object) -> tuple[TrackingEvent, dict] | None:
+    if not isinstance(record, dict):
+        raise _parse_error("record is not an object")
+    if record.get("display_flag") != PUBLIC_DISPLAY_FLAG:
+        return None
+    timestamp = record.get("actual_time")
+    if isinstance(timestamp, bool) or not isinstance(timestamp, int):
+        raise _parse_error("record without actual_time")
+    description = clean_text(record.get("description") or "")
+    if not description:
+        raise _parse_error("record without description")
+    code = record.get("tracking_code")
+    event = TrackingEvent(
+        time=datetime.fromtimestamp(timestamp, UTC),
+        description=description,
+        location=_location(record, description),
+        raw_status=str(code) if code else None,
+    )
+    return event, record
 
 
 def parse_spx_response(payload: object, tracking_number: str) -> TrackingResult:
     if not isinstance(payload, dict) or "retcode" not in payload:
         raise _parse_error("unexpected payload")
+    not_found = TrackingResult(carrier="spx", tracking_number=tracking_number, found=False)
     retcode = payload["retcode"]
+    if retcode in NOT_FOUND_RETCODES:
+        return not_found
     if retcode != 0:
         raise _parse_error(f"retcode={retcode}")
-    not_found = TrackingResult(carrier="spx", tracking_number=tracking_number, found=False)
     data = payload.get("data")
     if not isinstance(data, dict) or not data:
         return not_found
-    items = data.get("tracking_list")
-    if items is None or items == []:
+    info = data.get("sls_tracking_info")
+    if info is None:
         return not_found
-    if not isinstance(items, list):
-        raise _parse_error("tracking_list is not a list")
+    if not isinstance(info, dict):
+        raise _parse_error("sls_tracking_info is not an object")
+    records = info.get("records")
+    if records is None or records == []:
+        return not_found
+    if not isinstance(records, list):
+        raise _parse_error("records is not a list")
 
-    events = []
-    for item in items:
-        if not isinstance(item, dict):
-            raise _parse_error("tracking item is not an object")
-        timestamp, message = item.get("timestamp"), item.get("message")
-        if isinstance(timestamp, bool) or not isinstance(timestamp, int):
-            raise _parse_error("tracking item without timestamp")
-        if not isinstance(message, str):
-            raise _parse_error("tracking item without message")
-        description = clean_text(message.replace("\\n", " "))
-        if not description:
-            raise _parse_error("tracking item with empty message")
-        code = item.get("code")
-        events.append(
-            TrackingEvent(
-                time=datetime.fromtimestamp(timestamp, UTC),
-                description=description,
-                raw_status=None if code is None else str(code),
-            )
-        )
+    kept = [pair for record in records if (pair := _public_record(record)) is not None]
+    if not kept:
+        return not_found
 
     result = TrackingResult(
-        carrier="spx", tracking_number=tracking_number, found=True, events=tuple(events)
+        carrier="spx",
+        tracking_number=tracking_number,
+        found=True,
+        events=tuple(event for event, _ in kept),
     )
-    status_texts = [clean_text(data.get("current_status") or ""), result.latest.description]
-    delivered = _has_marker(status_texts, DELIVERED_MARKERS)
-    returned = not delivered and _has_marker(status_texts, RETURNED_MARKERS)
+    _, latest = max(kept, key=lambda pair: pair[0].time)
+    delivered = (
+        latest.get("milestone_code") == DELIVERED_MILESTONE
+        or latest.get("tracking_code") in DELIVERED_TRACKING_CODES
+    )
+    status_texts = [
+        clean_text(latest.get(field) or "").casefold()
+        for field in ("description", "tracking_name", "milestone_name")
+    ]
+    returned = not delivered and any(
+        marker in text for text in status_texts for marker in RETURNED_MARKERS
+    )
     return replace(result, delivered=delivered, returned=returned)
 
 
@@ -80,22 +103,14 @@ class SpxCarrier:
     display_name = "SPX"
     needs_phone = False
 
-    def __init__(
-        self,
-        *,
-        secret: str | None = SPX_SIGNING_SECRET,
-        clock: Callable[[], float] = time.time,
-    ) -> None:
-        self._secret = secret
-        self._clock = clock
-
     async def fetch(
         self, http: httpx.AsyncClient, tracking_number: str, phone_last4: str | None = None
     ) -> TrackingResult:
-        value = tracking_number
-        if self._secret is not None:
-            value = sign_spx_code(tracking_number, int(self._clock()), self._secret)
         response = await request(
-            http, "spx", "GET", SPX_TRACKING_URL, params={"sls_tracking_number": value}
+            http,
+            "spx",
+            "GET",
+            SPX_ORDER_INFO_URL,
+            params={"language_code": "vi", "spx_tn": tracking_number},
         )
         return parse_spx_response(json_body("spx", response), tracking_number)

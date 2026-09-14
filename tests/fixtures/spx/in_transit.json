@@ -1,31 +1,93 @@
 {
   "retcode": 0,
-  "message": "",
+  "message": "success",
+  "detail": "",
+  "debug": "",
   "data": {
-    "sls_tracking_number": "SPXVN000000000001",
-    "current_status": "Đang giao hàng",
-    "tracking_list": [
-      {
-        "timestamp": 1789088400,
-        "message": "Đơn hàng đang được giao đến bạn",
-        "code": 4
-      },
-      {
-        "timestamp": 1789066800,
-        "message": "Đơn hàng đang được trung chuyển đến bưu cục Quận 7",
-        "code": 3
-      },
-      {
-        "timestamp": 1789023600,
-        "message": "Đơn hàng đã đến kho\\nSOC Hồ Chí Minh",
-        "code": 2
-      },
-      {
-        "timestamp": 1789002000,
-        "message": "Người bán đã giao hàng cho đơn vị vận chuyển",
-        "code": 1
-      }
-    ],
-    "status_list": []
+    "fulfillment_info": {"deliver_type": 1},
+    "is_instant_order": false,
+    "is_shopee_market_order": true,
+    "sls_tracking_info": {
+      "sls_tn": "SPXVN000000000001",
+      "client_order_id": "000000000000001",
+      "receiver_name": "N***A",
+      "receiver_type_name": "",
+      "driver_phone_number": "0900000000",
+      "records": [
+        {
+          "tracking_code": "F600", "tracking_name": "Out For Delivery",
+          "description": "Đang giao hàng", "display_flag": 1, "display_flag_v2": 13,
+          "actual_time": 1789084860, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "Giao cho N***A tại Số 1 Đường Giả",
+          "seller_description": "Đơn hàng chuẩn bị giao tới người mua",
+          "milestone_code": 6, "milestone_name": "Out for delivery"
+        },
+        {
+          "tracking_code": "F598", "tracking_name": "Delivery Driver Assigned",
+          "description": "Đã sắp xếp tài xế giao hàng", "display_flag": 0, "display_flag_v2": 5,
+          "actual_time": 1789084800, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "Đã sắp xếp tài xế giao hàng",
+          "milestone_code": 5, "milestone_name": "In transit"
+        },
+        {
+          "tracking_code": "F599", "tracking_name": "Enter Last Mile Hub",
+          "description": "Đơn hàng đã đến kho 50-HCM Quan 1 Hub", "display_flag": 1, "display_flag_v2": 13,
+          "actual_time": 1789063200, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "50-HCM Quan 1 Hub", "location_type_name": "", "lng": "106.000000", "lat": "10.000000", "full_address": "Số 1 Đường Giả, Quận 1"},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "Đơn hàng đã đến kho 50-HCM Quan 1 Hub",
+          "milestone_code": 5, "milestone_name": "In transit"
+        },
+        {
+          "tracking_code": "F540", "tracking_name": "Left Domestic Sorting Center",
+          "description": "Đơn hàng đang được trung chuyển  tới 50-HCM Quan 1 Hub", "display_flag": 0, "display_flag_v2": 5,
+          "actual_time": 1789027200, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "50-HCM Quan 1 Hub", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "Đơn hàng đang được trung chuyển",
+          "milestone_code": 5, "milestone_name": "In transit"
+        },
+        {
+          "tracking_code": "F510", "tracking_name": "Enter Domestic Sorting Center",
+          "description": "Đơn hàng đã đến kho SOC Ho Chi Minh", "display_flag": 1, "display_flag_v2": 13,
+          "actual_time": 1789020000, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "SOC Ho Chi Minh", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "Đơn hàng đã đến kho SOC Ho Chi Minh",
+          "milestone_code": 5, "milestone_name": "In transit"
+        },
+        {
+          "tracking_code": "F100", "tracking_name": "Pickup From Domestic Seller",
+          "description": "Đơn vị vận chuyển lấy hàng thành công", "display_flag": 1, "display_flag_v2": 13,
+          "actual_time": 1789005600, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "Đơn vị vận chuyển lấy hàng thành công",
+          "milestone_code": 5, "milestone_name": "In transit"
+        },
+        {
+          "tracking_code": "F000", "tracking_name": "Manifested",
+          "description": " Người bán đang chuẩn bị hàng", "display_flag": 1, "display_flag_v2": 13,
+          "actual_time": 1788998460, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "Người bán đang chuẩn bị hàng",
+          "milestone_code": 1, "milestone_name": "Preparing to ship"
+        },
+        {
+          "tracking_code": "A000", "tracking_name": "SLSTN Created",
+          "description": "SLSTN đã được tạo, đang gửi yêu cầu đến đối tác vận chuyển", "display_flag": 0, "display_flag_v2": 0,
+          "actual_time": 1788998400, "reason_code": "R00", "reason_desc": "R00", "epod": "",
+          "current_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "next_location": {"location_name": "", "location_type_name": "", "lng": "", "lat": "", "full_address": ""},
+          "buyer_description": "", "seller_description": "",
+          "milestone_code": 1, "milestone_name": "Preparing to ship"
+        }
+      ]
+    }
   }
 }
