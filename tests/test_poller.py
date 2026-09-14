@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tests.fakes import FakeCarrier, FakeClock, FakeNotifier, ev, found
+from tests.fakes import FakeCarrier, FakeClock, FakeNotifier, ev, fake_registry, found
 from vn_parcel_bot import texts
 from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent
 from vn_parcel_bot.db.repo import Repository
@@ -52,7 +52,9 @@ def make_poller(repo, fakes, notifier, settings, clock, sleeps):
     async def fake_sleep(seconds):
         sleeps.append(seconds)
 
-    return Poller(repo, fakes, None, notifier, settings, clock, fake_sleep, lambda: 0.5)
+    return Poller(
+        repo, fake_registry(fakes), None, notifier, settings, clock, fake_sleep, lambda: 0.5
+    )
 
 
 @pytest.fixture
@@ -92,14 +94,14 @@ async def test_fetch_keys(repo, fakes):
     bare = await add(repo, GEN, None, candidates=("ghn", "ninjavan"))
     phoned = await add(repo, "GA0000000002", None, candidates=("ghn", "ninjavan"), last4="2222")
     unmapped = await add(repo, "LP00000000000001", "cainiao")
-    assert fetch_keys(jt, fakes) == [FetchKey("jt", JT, "1111")]
-    assert fetch_keys(spx, fakes) == [FetchKey("spx", SPX, None)]
-    assert fetch_keys(bare, fakes) == [FetchKey("ninjavan", GEN, None)]
-    assert fetch_keys(phoned, fakes) == [
+    assert fetch_keys(jt, fake_registry(fakes).current) == [FetchKey("jt", JT, "1111")]
+    assert fetch_keys(spx, fake_registry(fakes).current) == [FetchKey("spx", SPX, None)]
+    assert fetch_keys(bare, fake_registry(fakes).current) == [FetchKey("ninjavan", GEN, None)]
+    assert fetch_keys(phoned, fake_registry(fakes).current) == [
         FetchKey("ghn", "GA0000000002", "2222"),
         FetchKey("ninjavan", "GA0000000002", None),
     ]
-    assert fetch_keys(unmapped, fakes) == []
+    assert fetch_keys(unmapped, fake_registry(fakes).current) == []
 
 
 async def test_no_due_parcels(poller, notifier):
@@ -544,3 +546,12 @@ async def test_failing_pending_parcel_expires_after_seven_days(poller, repo, fak
     assert refreshed.consecutive_failures == 0
     assert len(notifier.sent) == 1
     assert "Sau 7 ngày" in notifier.sent[0][1]
+
+
+@pytest.mark.skip(reason="needs schema v2, Task 4")
+async def test_parcel_without_loaded_module_is_skipped_with_warning(poller, repo, caplog):
+    caplog.set_level("WARNING")
+    await add(repo, "XX0000000001", "oldcarrier")
+    report = await poller.run_cycle()
+    assert report.fetches == 0
+    assert "carrier module missing carrier=oldcarrier parcels=1" in caplog.text

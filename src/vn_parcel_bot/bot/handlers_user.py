@@ -17,6 +17,7 @@ from vn_parcel_bot.constants import CHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import User
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
+    format_help,
     format_history,
     format_links,
     format_needs_phone_multi,
@@ -64,11 +65,13 @@ def user_data(context: ContextTypes.DEFAULT_TYPE) -> dict:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     first_name = update.effective_user.first_name if update.effective_user else ""
-    await reply(update, texts.WELCOME.format(name=escape(first_name or "")) + "\n\n" + texts.HELP)
+    await reply(
+        update, texts.WELCOME.format(name=escape(first_name or "")) + "\n\n" + format_help()
+    )
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply(update, texts.HELP)
+    await reply(update, format_help())
 
 
 async def _add_and_reply(

@@ -4,6 +4,7 @@ import httpx
 from telegram.ext import ContextTypes
 
 from vn_parcel_bot.bot.notifier import TelegramNotifier
+from vn_parcel_bot.carriers.registry import CarrierRegistry
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.digest import DigestService
@@ -22,6 +23,7 @@ class Deps:
     notifier: TelegramNotifier
     vision: VisionEngine | None = None
     digests: DigestService | None = None
+    registry: CarrierRegistry | None = None
 
 
 def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps:

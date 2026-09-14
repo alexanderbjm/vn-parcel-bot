@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from vn_parcel_bot.carrier_catalog import needs_phone
+from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.tracking_codes import (
     detect_carriers,
     extract_codes,
@@ -20,7 +20,7 @@ def parse_track_args(args: Sequence[str]) -> tuple[str, str | None] | None:
     last4 = None
     if len(parts) >= 2 and is_valid_last4(parts[-1]):
         rest = normalize_code("".join(parts[:-1]))
-        if any(needs_phone(carrier) for carrier in detect_carriers(rest)):
+        if any(current_snapshot().needs_phone(carrier) for carrier in detect_carriers(rest)):
             last4 = parts[-1]
             parts = parts[:-1]
     joined = normalize_code("".join(parts))

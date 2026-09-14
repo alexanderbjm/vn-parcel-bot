@@ -7,8 +7,7 @@ from typing import Any, Literal, Self, cast
 
 import aiosqlite
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
-from vn_parcel_bot.carriers.models import TrackingEvent
+from vn_parcel_bot.carriers.models import CarrierCode, TrackingEvent
 from vn_parcel_bot.db.schema import migrate
 
 ParcelState = Literal["pending", "in_transit", "delivered", "returned", "expired", "stale"]

@@ -1,20 +1,15 @@
 import html
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from vn_parcel_bot import texts
-from vn_parcel_bot.carrier_catalog import (
-    CarrierCode,
-    needs_phone,
-    official_url,
-    seventeen_track_url,
-)
-from vn_parcel_bot.carriers.models import TrackingEvent
+from vn_parcel_bot.carriers.models import CarrierCode, TrackingEvent
+from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.constants import MAX_EVENTS_IN_HISTORY, MAX_EVENTS_IN_UPDATE, TELEGRAM_TEXT_LIMIT
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
-from vn_parcel_bot.tracking_codes import is_jt_cross_border, is_lazada_cainiao
 
 
 def _escape(value: object) -> str:
@@ -25,8 +20,15 @@ def parcel_title(parcel: Parcel) -> str:
     return _escape(parcel.label) if parcel.label else _escape(parcel.tracking_number)
 
 
+SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"
+
+
+def seventeen_track_url(code: str) -> str:
+    return SEVENTEEN_TRACK_TEMPLATE.replace("{code}", urllib.parse.quote(code, safe=""))
+
+
 def carrier_name(code: CarrierCode) -> str:
-    return texts.CARRIER_NAMES[code]
+    return _escape(current_snapshot().display_name(code))
 
 
 def carrier_names(codes: Sequence[CarrierCode]) -> str:
@@ -48,13 +50,24 @@ def _link_item(url: str, name: str) -> str:
 
 
 def format_links(code: str, carriers: Sequence[CarrierCode]) -> str:
+    snapshot = current_snapshot()
     items = []
     for carrier in carriers:
-        url = official_url(carrier, code)
+        url = snapshot.link(carrier, code)
         if url is not None:
             items.append(_link_item(url, carrier_name(carrier)))
     items.append(_link_item(seventeen_track_url(code), texts.LINK_17TRACK_NAME))
     return "\n".join(items)
+
+
+def format_help() -> str:
+    snapshot = current_snapshot()
+    modules = snapshot.ordered()
+    tracked = ", ".join(_escape(m.display_name) for m in modules if snapshot.is_tracked(m.code))
+    link_only = ", ".join(
+        _escape(m.display_name) for m in modules if not snapshot.is_tracked(m.code)
+    )
+    return texts.HELP.format(tracked=tracked, link_only=link_only)
 
 
 def format_link_only(code: str, carriers: Sequence[CarrierCode]) -> str:
@@ -189,12 +202,12 @@ def _format_added(outcome: AddOutcome, tz: ZoneInfo) -> str:
         text = texts.ADDED_PENDING.format(title=title, carrier=label)
     else:
         text = texts.ADDED_PENDING_AUTO.format(title=title, carriers=label)
-    if any(needs_phone(code) for code in parcel.candidates):
+    snapshot = current_snapshot()
+    if any(snapshot.needs_phone(code) for code in parcel.candidates):
         text += texts.ADDED_PENDING_PHONE_HINT
-    if is_jt_cross_border(parcel.tracking_number):
-        text += texts.JT_CROSS_BORDER_HINT
-    elif is_lazada_cainiao(parcel.tracking_number):
-        text += texts.LAZADA_CAINIAO_HINT
+    hint = snapshot.pending_hint(parcel.try_order(), parcel.tracking_number)
+    if hint:
+        text += hint
     return text + _link_extra(outcome)
 
 
@@ -205,15 +218,12 @@ def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -
             return _format_added(outcome, tz)
         case "needs_phone":
             asked = texts.ASK_PHONE.format(code=code, carriers=carrier_names(outcome.candidates))
-            if is_jt_cross_border(outcome.code or ""):
-                asked += texts.JT_CROSS_BORDER_HINT
-            return asked
+            hint = current_snapshot().pending_hint(outcome.candidates, outcome.code or "")
+            return asked + (hint or "")
         case "link_only":
             return format_link_only(outcome.code or "", outcome.link_carriers)
         case "seller_fleet":
             return texts.SELLER_FLEET.format(code=code, links=format_links(outcome.code or "", ()))
-        case "order_number":
-            return texts.ORDER_NUMBER.format(code=code, links=format_links(outcome.code or "", ()))
         case "unknown_carrier":
             return texts.UNKNOWN_CARRIER.format(
                 code=code, links=format_links(outcome.code or "", ())

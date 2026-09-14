@@ -6,7 +6,7 @@ import httpx
 import pytest
 from telegram.error import TelegramError
 
-from tests.fakes import FakeCarrier
+from tests.fakes import FakeCarrier, fake_registry
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps
 from vn_parcel_bot.bot.handlers_user import PENDING_PHONE, photo_message, text_message
@@ -100,8 +100,9 @@ async def deps(settings: Settings):
     await repo.upsert_user(111, now=T0, is_allowed=True, is_admin=True)
     carriers = {"spx": FakeCarrier("spx"), "jt": FakeCarrier("jt", needs_phone=True)}
     http = httpx.AsyncClient()
-    parcels = ParcelService(repo, carriers, http, settings, lambda: T0)
-    poller = Poller(repo, carriers, http, FakeNotifier(), settings, lambda: T0)
+    registry = fake_registry(carriers)
+    parcels = ParcelService(repo, registry, http, settings, lambda: T0)
+    poller = Poller(repo, registry, http, FakeNotifier(), settings, lambda: T0)
     yield Deps(settings, repo, http, parcels, poller, FakeNotifier(), vision=FakeVisionEngine())
     await http.aclose()
     await repo.close()

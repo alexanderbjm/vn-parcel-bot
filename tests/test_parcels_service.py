@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tests.fakes import FakeCarrier, FakeClock, ev, found
+from tests.fakes import FakeCarrier, FakeClock, ev, fake_registry, found
 from vn_parcel_bot.carriers.models import CarrierError
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.parcels import ParcelService
@@ -36,7 +36,7 @@ def fakes():
 
 @pytest.fixture
 def service(repo, fakes, settings, clock):
-    return ParcelService(repo, fakes, None, settings, clock)
+    return ParcelService(repo, fake_registry(fakes), None, settings, clock)
 
 
 @pytest.fixture
@@ -223,12 +223,11 @@ async def test_add_generic_error_then_not_found_is_pending_success(service, repo
     assert outcome.result.found is False
 
 
-async def test_add_order_number_is_not_stored(service, user, fakes, repo):
-    outcome = await service.add(user, "500000000000001")
-    assert outcome.kind == "order_number"
-    assert outcome.code == "500000000000001"
-    assert await repo.find_parcel(1, "500000000000001") is None
-    assert total_calls(fakes) == 0
+async def test_add_fifteen_digit_number_is_tracked_as_cainiao(service, user, fakes):
+    outcome = await service.add(user, "773440000000001")
+    assert outcome.kind == "added"
+    assert outcome.parcel.carrier == "cainiao"
+    assert fakes["cainiao"].calls == [("773440000000001", None)]
 
 
 async def test_add_unknown_code_like(service, user, fakes, repo):
@@ -261,7 +260,9 @@ async def test_add_duplicate_any_carrier(service, user, fakes):
 
 
 async def test_add_limit(repo, fakes, settings, clock, user):
-    limited = ParcelService(repo, fakes, None, replace(settings, max_parcels_per_user=2), clock)
+    limited = ParcelService(
+        repo, fake_registry(fakes), None, replace(settings, max_parcels_per_user=2), clock
+    )
     assert (await limited.add(user, SPX)).kind == "added"
     assert (await limited.add(user, SPX2)).kind == "added"
     assert (await limited.add(user, "SPXVN000000000003")).kind == "limit"

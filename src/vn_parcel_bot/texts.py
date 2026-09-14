@@ -1,20 +1,5 @@
 TIME_FORMAT = "%d/%m %H:%M"
 
-CARRIER_NAMES = {
-    "spx": "SPX",
-    "jt": "J&amp;T",
-    "cainiao": "Cainiao",
-    "fourpx": "4PX",
-    "ninjavan": "Ninja Van",
-    "ghn": "GHN",
-    "best": "BEST Express",
-    "yunexpress": "YunExpress",
-    "ghtk": "GHTK",
-    "viettelpost": "Viettel Post",
-    "vnpost": "VNPost",
-    "lex": "LEX VN",
-    "sf": "SF Express",
-}
 CARRIER_UNRESOLVED = "Đang xác định hãng"
 CARRIER_SEPARATOR = " / "
 
@@ -44,9 +29,8 @@ HELP = (
     "<b>📦 Hướng dẫn</b>\n"
     "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
     "• Gửi ảnh chụp đơn hàng – mình tự đọc mã vận đơn và tên sản phẩm\n"
-    "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
-    "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
-    "SF Express\n"
+    "• Tự động theo dõi: {tracked}\n"
+    "• Gửi link tra cứu: {link_only}\n"
     "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
@@ -69,11 +53,6 @@ SELLER_FLEET = (
     "🛵 <code>{code}</code> có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
     "không có trang tra cứu công khai.\n"
     "Hãy xem hành trình trong app nơi bạn đặt hàng. Hoặc thử tra cứu tại:\n{links}"
-)
-ORDER_NUMBER = (
-    "🧾 <code>{code}</code> có vẻ là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
-    "Trong app (Lazada, TikTok Shop, Shopee…) mở đơn → <b>Thông tin vận chuyển</b> "
-    "để lấy mã vận đơn rồi gửi cho mình. Hoặc thử tra cứu tại:\n{links}"
 )
 UNKNOWN_CARRIER = (
     "🔍 Mình chưa nhận ra hãng vận chuyển của mã <code>{code}</code>.\n"
@@ -103,14 +82,6 @@ ADDED_PENDING_AUTO = (
     "Hiện chưa có thông tin vận chuyển. Mình sẽ tự kiểm tra mã này ở {carriers}."
 )
 ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
-JT_CROSS_BORDER_HINT = (
-    "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
-    "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
-)
-LAZADA_CAINIAO_HINT = (
-    "\n🌏 Đơn quốc tế Lazada qua Cainiao: Cainiao có thể chưa công bố hành trình ngay. "
-    "Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
-)
 ADDED_ERROR = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa kết nối được với {carrier}, mình sẽ thử lại sau."

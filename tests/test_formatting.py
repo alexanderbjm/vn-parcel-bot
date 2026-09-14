@@ -13,6 +13,7 @@ from vn_parcel_bot.services.formatting import (
     format_event_update,
     format_expired,
     format_health,
+    format_help,
     format_history,
     format_link_only,
     format_links,
@@ -23,6 +24,7 @@ from vn_parcel_bot.services.formatting import (
     format_users,
     parcel_carrier_label,
     parcel_title,
+    seventeen_track_url,
     truncate_message,
 )
 from vn_parcel_bot.services.parcels import AddOutcome
@@ -315,12 +317,7 @@ def test_add_outcome_other_kinds():
     assert outcome_text(AddOutcome("invalid_phone", code=SPX)) == texts.INVALID_PHONE
 
 
-def test_add_outcome_order_number_and_unknown_carrier():
-    order = outcome_text(AddOutcome("order_number", code="500000000000001"))
-    assert "<code>500000000000001</code>" in order
-    assert "mã đơn hàng" in order
-    assert "Thông tin vận chuyển" in order
-    assert 'href="https://t.17track.net/vi#nums=500000000000001"' in order
+def test_add_outcome_unknown_carrier():
     unknown = outcome_text(AddOutcome("unknown_carrier", code="ABC1234567890DEF"))
     assert "chưa nhận ra hãng vận chuyển" in unknown
     assert 'href="https://t.17track.net/vi#nums=ABC1234567890DEF"' in unknown
@@ -389,3 +386,16 @@ def test_truncate_message():
     single = truncate_message("x" * 5000)
     assert len(single) == 4000
     assert single.endswith("…")
+
+
+def test_seventeen_track_url():
+    assert seventeen_track_url("EB123456789VN") == "https://t.17track.net/vi#nums=EB123456789VN"
+
+
+def test_help_lists_carriers_from_modules():
+    text = format_help()
+    assert "Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n" in text
+    assert (
+        "Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
+        "SF Express\n"
+    ) in text

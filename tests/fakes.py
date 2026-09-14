@@ -1,7 +1,8 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
-from vn_parcel_bot.carrier_catalog import CATALOG, CarrierCode
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.registry import CarrierRegistry, CarrierSnapshot, current_snapshot
 
 BASE_TIME = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
 
@@ -30,7 +31,8 @@ class FakeCarrier:
         needs_phone: bool | None = None,
         display_name: str | None = None,
     ) -> None:
-        info = CATALOG[code]
+        info = current_snapshot().get(code)
+        assert info is not None, code
         self.code = code
         self.needs_phone = info.needs_phone if needs_phone is None else needs_phone
         self.display_name = info.display_name if display_name is None else display_name
@@ -47,6 +49,11 @@ class FakeCarrier:
         if value is None:
             return TrackingResult(carrier=self.code, tracking_number=tracking_number, found=False)
         return value
+
+
+def fake_registry(clients: Mapping[str, object]) -> CarrierRegistry:
+    # Keep the caller's dict (not a copy) so tests can swap a fake client mid-test.
+    return CarrierRegistry(CarrierSnapshot(current_snapshot().modules, clients))
 
 
 class FakeNotifier:

@@ -16,9 +16,9 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from vn_parcel_bot.carriers import CARRIERS
 from vn_parcel_bot.carriers.http import make_http_client
 from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.config import ConfigError, Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -144,9 +144,10 @@ def structural_hint(carrier: str, text: str, kind: str) -> str:
 
 async def parse_summary(http: httpx.AsyncClient, carrier: str, code: str, last4: str | None) -> str:
     prefix = f"{carrier:9} {mask(code)} parse"
-    if carrier not in CARRIERS:
+    clients = current_snapshot().clients
+    if carrier not in clients:
         return f"{prefix} skipped: not a tracked carrier"
-    fetcher = CARRIERS[carrier]
+    fetcher = clients[carrier]
     try:
         result = await fetcher.fetch(http, code, last4)
     except CarrierError as err:

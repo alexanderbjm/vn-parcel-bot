@@ -1,14 +1,20 @@
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode, is_tracked, needs_phone
-from vn_parcel_bot.carriers.models import Carrier, CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import (
+    Carrier,
+    CarrierCode,
+    CarrierError,
+    TrackingEvent,
+    TrackingResult,
+)
+from vn_parcel_bot.carriers.registry import CarrierRegistry, CarrierSnapshot
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import (
     DELIVERED_VISIBLE_FOR,
@@ -18,9 +24,7 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import DuplicateParcelError, Parcel, Repository, User
 from vn_parcel_bot.tracking_codes import (
-    detect_carriers,
     is_code_like,
-    is_order_number,
     is_seller_fleet,
     is_valid_last4,
     mask_code,
@@ -34,7 +38,6 @@ AddKind = Literal[
     "needs_phone",
     "link_only",
     "seller_fleet",
-    "order_number",
     "unknown_carrier",
     "duplicate",
     "limit",
@@ -66,13 +69,13 @@ class ParcelService:
     def __init__(
         self,
         repo: Repository,
-        carriers: Mapping[CarrierCode, Carrier],
+        registry: CarrierRegistry,
         http: httpx.AsyncClient,
         settings: Settings,
         now: Callable[[], datetime],
     ) -> None:
         self._repo = repo
-        self._carriers = carriers
+        self._registry = registry
         self._http = http
         self._settings = settings
         self._now = now
@@ -84,13 +87,12 @@ class ParcelService:
         phone_last4: str | None = None,
         label: str | None = None,
     ) -> AddOutcome:
+        snapshot = self._registry.current
         code = normalize_code(raw_code)
-        candidates = detect_carriers(code)
+        candidates = snapshot.detect(code).candidates
         if not candidates:
             if is_seller_fleet(code):
                 kind: AddKind = "seller_fleet"
-            elif is_order_number(code):
-                kind = "order_number"
             elif is_code_like(code):
                 kind = "unknown_carrier"
             else:
@@ -104,8 +106,10 @@ class ParcelService:
             )
             return AddOutcome(kind, code=code)
 
-        tracked = [c for c in candidates if is_tracked(c) and c in self._carriers]
-        link_only = tuple(c for c in candidates if not is_tracked(c))
+        tracked = [
+            c for c in candidates if snapshot.is_tracked(c) and snapshot.client(c) is not None
+        ]
+        link_only = tuple(c for c in candidates if not snapshot.is_tracked(c))
         if not tracked and not link_only:
             return AddOutcome("invalid_code", code=code or None)
         if phone_last4 is not None and not is_valid_last4(phone_last4):
@@ -132,31 +136,40 @@ class ParcelService:
             return AddOutcome("limit", code=code)
 
         last4 = phone_last4 or user.default_phone_last4
-        tryable = [c for c in tracked if not needs_phone(c) or last4]
-        phone_missing = tuple(c for c in tracked if needs_phone(c) and not last4)
+        tryable = [c for c in tracked if not snapshot.needs_phone(c) or last4]
+        phone_missing = tuple(c for c in tracked if snapshot.needs_phone(c) and not last4)
 
-        attempts = await self._try_candidates(code, tryable, last4)
+        attempts = await self._try_candidates(snapshot, code, tryable, last4)
         try:
             if attempts:
                 winner, outcome = attempts[-1]
                 if isinstance(outcome, TrackingResult) and outcome.found:
-                    return await self._store_found(uid, code, winner, outcome, last4, cleaned_label)
+                    return await self._store_found(
+                        snapshot, uid, code, winner, outcome, last4, cleaned_label
+                    )
             if phone_missing:
                 return AddOutcome("needs_phone", code=code, candidates=phone_missing)
             return await self._store_pending(
-                uid, code, tracked, attempts, last4, link_only, cleaned_label
+                snapshot, uid, code, tracked, attempts, last4, link_only, cleaned_label
             )
         except DuplicateParcelError:
             return AddOutcome("duplicate", code=code)
 
     async def _try_candidates(
-        self, code: str, tryable: Sequence[CarrierCode], last4: str | None
+        self,
+        snapshot: CarrierSnapshot,
+        code: str,
+        tryable: Sequence[CarrierCode],
+        last4: str | None,
     ) -> list[Attempt]:
         attempts: list[Attempt] = []
         for candidate in tryable:
-            digits = last4 if needs_phone(candidate) else None
+            client: Carrier | None = snapshot.client(candidate)
+            if client is None:
+                continue
+            digits = last4 if snapshot.needs_phone(candidate) else None
             try:
-                result = await self._carriers[candidate].fetch(self._http, code, digits)
+                result = await client.fetch(self._http, code, digits)
             except CarrierError as err:
                 attempts.append((candidate, err))
                 continue
@@ -167,6 +180,7 @@ class ParcelService:
 
     async def _store_found(
         self,
+        snapshot: CarrierSnapshot,
         uid: int,
         code: str,
         carrier: CarrierCode,
@@ -181,7 +195,7 @@ class ParcelService:
             carrier=carrier,
             candidates=(carrier,),
             tracking_number=code,
-            phone_last4=last4 if needs_phone(carrier) else None,
+            phone_last4=last4 if snapshot.needs_phone(carrier) else None,
             now=now,
             next_check_at=now + interval,
         )
@@ -208,6 +222,7 @@ class ParcelService:
 
     async def _store_pending(
         self,
+        snapshot: CarrierSnapshot,
         uid: int,
         code: str,
         tracked: Sequence[CarrierCode],
@@ -223,7 +238,7 @@ class ParcelService:
             carrier=tracked[0] if len(tracked) == 1 else None,
             candidates=tuple(tracked),
             tracking_number=code,
-            phone_last4=last4 if any(needs_phone(c) for c in tracked) else None,
+            phone_last4=last4 if any(snapshot.needs_phone(c) for c in tracked) else None,
             now=now,
             next_check_at=now + interval,
         )

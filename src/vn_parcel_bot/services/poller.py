@@ -9,8 +9,8 @@ from typing import Protocol
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode, needs_phone
-from vn_parcel_bot.carriers.models import Carrier, CarrierError, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingResult
+from vn_parcel_bot.carriers.registry import CarrierRegistry, CarrierSnapshot
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import (
     ALERT_COOLDOWN,
@@ -48,12 +48,12 @@ class FetchKey:
     phone_last4: str | None
 
 
-def fetch_keys(parcel: Parcel, carriers: Mapping[CarrierCode, Carrier]) -> list[FetchKey]:
+def fetch_keys(parcel: Parcel, snapshot: CarrierSnapshot) -> list[FetchKey]:
     keys = []
     for carrier in parcel.try_order():
-        if carrier not in carriers:
+        if snapshot.client(carrier) is None:
             continue
-        if needs_phone(carrier):
+        if snapshot.needs_phone(carrier):
             if parcel.phone_last4:
                 keys.append(FetchKey(carrier, parcel.tracking_number, parcel.phone_last4))
         else:
@@ -83,7 +83,7 @@ class Poller:
     def __init__(
         self,
         repo: Repository,
-        carriers: Mapping[CarrierCode, Carrier],
+        registry: CarrierRegistry,
         http: httpx.AsyncClient,
         notifier: Notifier,
         settings: Settings,
@@ -92,7 +92,7 @@ class Poller:
         rand: Callable[[], float] = random.random,
     ) -> None:
         self._repo = repo
-        self._carriers = carriers
+        self._registry = registry
         self._http = http
         self._notifier = notifier
         self._settings = settings
@@ -126,7 +126,16 @@ class Poller:
             parcels = await self._repo.active_parcels_for_user(only_user_id)
         report.parcels_checked = len(parcels)
 
-        keys_by_parcel = {parcel.id: fetch_keys(parcel, self._carriers) for parcel in parcels}
+        snapshot = self._registry.current
+        missing: dict[str, int] = {}
+        for parcel in parcels:
+            if all(snapshot.get(carrier) is None for carrier in parcel.try_order()):
+                for carrier in parcel.try_order():
+                    missing[carrier] = missing.get(carrier, 0) + 1
+        for carrier, count in sorted(missing.items()):
+            log.warning("carrier module missing carrier=%s parcels=%d", carrier, count)
+
+        keys_by_parcel = {parcel.id: fetch_keys(parcel, snapshot) for parcel in parcels}
         by_carrier: dict[CarrierCode, list[FetchKey]] = {}
         for parcel in parcels:
             for key in keys_by_parcel[parcel.id]:
@@ -137,7 +146,7 @@ class Poller:
         outcomes: dict[FetchKey, Outcome] = {}
         await asyncio.gather(
             *(
-                self._fetch_carrier(carrier, keys, outcomes, report)
+                self._fetch_carrier(snapshot, carrier, keys, outcomes, report)
                 for carrier, keys in by_carrier.items()
             )
         )
@@ -175,12 +184,15 @@ class Poller:
 
     async def _fetch_carrier(
         self,
+        snapshot: CarrierSnapshot,
         code: CarrierCode,
         keys: Sequence[FetchKey],
         outcomes: dict[FetchKey, Outcome],
         report: PollReport,
     ) -> None:
-        carrier = self._carriers[code]
+        carrier = snapshot.client(code)
+        if carrier is None:
+            return
         for index, key in enumerate(keys):
             if index > 0:
                 await self._sleep(

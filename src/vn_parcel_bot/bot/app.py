@@ -36,8 +36,8 @@ from vn_parcel_bot.bot.handlers_user import (
     unknown_command,
 )
 from vn_parcel_bot.bot.notifier import TelegramNotifier
-from vn_parcel_bot.carriers import CARRIERS
 from vn_parcel_bot.carriers.http import make_http_client
+from vn_parcel_bot.carriers.registry import CarrierRegistry, set_registry
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import ERROR_ALERT_COOLDOWN, FIRST_POLL_DELAY_SECONDS
 from vn_parcel_bot.db.repo import Repository
@@ -101,12 +101,22 @@ async def _post_init(app: Application) -> None:
     )
     http = make_http_client(settings)
     notifier = TelegramNotifier(app.bot)
-    parcels = ParcelService(repo, CARRIERS, http, settings, _utc_now)
-    poller = Poller(repo, CARRIERS, http, notifier, settings, _utc_now)
+    registry = CarrierRegistry.load()
+    set_registry(registry)
+    parcels = ParcelService(repo, registry, http, settings, _utc_now)
+    poller = Poller(repo, registry, http, notifier, settings, _utc_now)
     vision = build_vision_engine(settings, http)
     digests = DigestService(repo, notifier, settings, _utc_now)
     app.bot_data["deps"] = Deps(
-        settings, repo, http, parcels, poller, notifier, vision=vision, digests=digests
+        settings,
+        repo,
+        http,
+        parcels,
+        poller,
+        notifier,
+        vision=vision,
+        digests=digests,
+        registry=registry,
     )
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     schedule_jobs(app.job_queue, settings)

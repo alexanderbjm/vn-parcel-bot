@@ -4,8 +4,6 @@ from vn_parcel_bot.tracking_codes import (
     detect_carriers,
     extract_codes,
     is_code_like,
-    is_jt_cross_border,
-    is_lazada_cainiao,
     is_order_number,
     is_seller_fleet,
     is_valid_last4,
@@ -30,14 +28,6 @@ def test_normalize_drops_lazada_order_number_prefix():
     assert normalize_code("500000000000001_YT0000000000001") == "YT0000000000001"
     assert normalize_code(" 500000000000001_yt0000000000001 ") == "YT0000000000001"
     assert normalize_code("ABC_DEF") == "ABC_DEF"
-
-
-@pytest.mark.parametrize(
-    ("code", "expected"),
-    [("YT0000000000001", True), ("YT1234567890123456", False), ("LP00123456789012", False)],
-)
-def test_is_lazada_cainiao(code, expected):
-    assert is_lazada_cainiao(code) is expected
 
 
 def test_extract_codes_splits_lazada_cainiao_code_in_text():
@@ -65,25 +55,12 @@ def test_extract_codes_splits_lazada_cainiao_code_in_text():
         ("BEST0000000001VN", ["best"]),
         ("841000072647", ["jt", "best", "viettelpost"]),
         ("8410000726470", ["best"]),
+        ("773440000000001", ["cainiao"]),
         ("GAN6DKKU12", ["ghn", "ninjavan"]),
     ],
 )
 def test_detect_each_rule(code, expected):
     assert detect_carriers(code) == expected
-
-
-@pytest.mark.parametrize(
-    ("code", "expected"),
-    [
-        ("JNTXB0000000001", True),
-        ("JNTX0000000001", True),
-        ("JNTXB12", False),
-        ("841000072647", False),
-        ("SPXVN05338454932C", False),
-    ],
-)
-def test_is_jt_cross_border(code, expected):
-    assert is_jt_cross_border(code) is expected
 
 
 def test_extract_codes_finds_jt_cross_border_code_in_text():
@@ -104,7 +81,6 @@ def test_detect_first_rule_wins():
         "12345678",
         "71426082060",
         "GAN6DKKU12345678",
-        "500000000000001",
         "84000000000001",
         "94000000000001",
     ],

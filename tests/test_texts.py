@@ -2,7 +2,6 @@ import re
 import string
 
 from vn_parcel_bot import texts
-from vn_parcel_bot.carrier_catalog import CATALOG
 
 ALLOWED_MARKUP = ("<b>", "</b>", "<code>", "</code>", '<a href="{url}">', "</a>")
 
@@ -39,7 +38,3 @@ def test_state_maps_cover_all_states():
     states = {"pending", "in_transit", "delivered", "returned", "expired", "stale"}
     assert set(texts.STATE_EMOJI) == states
     assert set(texts.STATE_TEXT) == states
-
-
-def test_carrier_names_cover_catalog():
-    assert set(texts.CARRIER_NAMES) == set(CATALOG)
