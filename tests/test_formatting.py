@@ -447,3 +447,9 @@ def test_event_update_header_shows_progress_and_bar():
     lines = text.split("\n")
     assert lines[0] == "📦 <b>Áo</b> · SPX · 95%"
     assert lines[1] == "▓▓▓▓▓▓▓▓▓░"
+
+
+def test_delivered_parcel_shows_full_bar_without_stored_progress():
+    text = format_parcel_list([make_parcel(label="Áo", state="delivered")], TZ)
+    assert "<b>Áo</b> · SPX · 100%" in text
+    assert "▓▓▓▓▓▓▓▓▓▓" in text

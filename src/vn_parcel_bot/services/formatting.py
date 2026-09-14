@@ -70,6 +70,8 @@ def progress_bar(percent: int, width: int = 10) -> str:
 
 
 def _progress_parts(progress: int | None, state: str) -> tuple[str, str]:
+    if state == "delivered":
+        progress = 100
     if progress is None or state not in _PROGRESS_STATES:
         return "", ""
     return texts.PROGRESS_SUFFIX.format(percent=progress), progress_bar(progress)
