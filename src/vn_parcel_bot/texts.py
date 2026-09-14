@@ -101,6 +101,10 @@ ADDED_PENDING_AUTO = (
     "Hiện chưa có thông tin vận chuyển. Mình sẽ tự kiểm tra mã này ở {carriers}."
 )
 ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
+JT_CROSS_BORDER_HINT = (
+    "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
+    "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
+)
 ADDED_ERROR = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa kết nối được với {carrier}, mình sẽ thử lại sau."

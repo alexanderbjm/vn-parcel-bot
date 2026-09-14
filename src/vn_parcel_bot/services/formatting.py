@@ -14,6 +14,7 @@ from vn_parcel_bot.carriers.models import TrackingEvent
 from vn_parcel_bot.constants import MAX_EVENTS_IN_HISTORY, MAX_EVENTS_IN_UPDATE, TELEGRAM_TEXT_LIMIT
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
+from vn_parcel_bot.tracking_codes import is_jt_cross_border
 
 
 def _escape(value: object) -> str:
@@ -190,6 +191,8 @@ def _format_added(outcome: AddOutcome, tz: ZoneInfo) -> str:
         text = texts.ADDED_PENDING_AUTO.format(title=title, carriers=label)
     if any(needs_phone(code) for code in parcel.candidates):
         text += texts.ADDED_PENDING_PHONE_HINT
+    if is_jt_cross_border(parcel.tracking_number):
+        text += texts.JT_CROSS_BORDER_HINT
     return text + _link_extra(outcome)
 
 
@@ -199,7 +202,10 @@ def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -
         case "added":
             return _format_added(outcome, tz)
         case "needs_phone":
-            return texts.ASK_PHONE.format(code=code, carriers=carrier_names(outcome.candidates))
+            asked = texts.ASK_PHONE.format(code=code, carriers=carrier_names(outcome.candidates))
+            if is_jt_cross_border(outcome.code or ""):
+                asked += texts.JT_CROSS_BORDER_HINT
+            return asked
         case "link_only":
             return format_link_only(outcome.code or "", outcome.link_carriers)
         case "seller_fleet":

@@ -366,3 +366,13 @@ async def test_add_needs_phone_does_not_store_label(service, user, repo):
     outcome = await service.add(user, JT, label="Tai nghe")
     assert outcome.kind == "needs_phone"
     assert await repo.find_parcel(1, JT) is None
+
+
+async def test_add_jt_cross_border_code_is_tracked_as_jt(service, repo, fakes):
+    user = await user_with_phone(repo)
+    outcome = await service.add(user, "JNTXB0000000001")
+    assert outcome.kind == "added"
+    assert outcome.parcel.carrier == "jt"
+    assert outcome.parcel.state == "pending"
+    assert outcome.parcel.phone_last4 == "1111"
+    assert fakes["jt"].calls == [("JNTXB0000000001", "1111")]

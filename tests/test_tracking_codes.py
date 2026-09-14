@@ -4,6 +4,7 @@ from vn_parcel_bot.tracking_codes import (
     detect_carriers,
     extract_codes,
     is_code_like,
+    is_jt_cross_border,
     is_order_number,
     is_seller_fleet,
     is_valid_last4,
@@ -36,6 +37,8 @@ def test_normalize_keeps_internal_dots():
         ("EB123456789VN", ["vnpost"]),
         ("LEXVN00123456", ["lex"]),
         ("S1234567.MB12.D5.123456789", ["ghtk"]),
+        ("JNTXB0000000001", ["jt"]),
+        ("JNTX0000000001", ["jt"]),
         ("BESTMP0000000001VNA", ["best"]),
         ("BEST0000000001VN", ["best"]),
         ("841000072647", ["jt", "best", "viettelpost"]),
@@ -45,6 +48,24 @@ def test_normalize_keeps_internal_dots():
 )
 def test_detect_each_rule(code, expected):
     assert detect_carriers(code) == expected
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("JNTXB0000000001", True),
+        ("JNTX0000000001", True),
+        ("JNTXB12", False),
+        ("841000072647", False),
+        ("SPXVN05338454932C", False),
+    ],
+)
+def test_is_jt_cross_border(code, expected):
+    assert is_jt_cross_border(code) is expected
+
+
+def test_extract_codes_finds_jt_cross_border_code_in_text():
+    assert extract_codes("J&T VN: Giao tiêu chuẩn JNTXB0000000001") == ["JNTXB0000000001"]
 
 
 def test_detect_first_rule_wins():

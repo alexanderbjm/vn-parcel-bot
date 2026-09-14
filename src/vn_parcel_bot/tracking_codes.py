@@ -2,6 +2,8 @@ import re
 
 from vn_parcel_bot.carrier_catalog import CarrierCode
 
+_JT_CROSS_BORDER = r"JNTX[A-Z]?\d{8,12}"
+
 _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tuple(
     (re.compile(pattern, re.ASCII), candidates, standalone_only)
     for pattern, candidates, standalone_only in (
@@ -14,12 +16,14 @@ _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tupl
         (r"[A-Z]{2}\d{9}VN", ("vnpost",), False),
         (r"(LEXVN|LXVN|LVS)[0-9A-Z]{6,20}", ("lex",), False),
         (r"S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}", ("ghtk",), False),
+        (_JT_CROSS_BORDER, ("jt",), False),
         (r"BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}", ("best",), False),
         (r"\d{12}", ("jt", "best", "viettelpost"), False),
         (r"\d{13}", ("best",), False),
         (r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}", ("ghn", "ninjavan"), True),
     )
 )
+_JT_CROSS_BORDER_RE = re.compile(_JT_CROSS_BORDER, re.ASCII)
 _ORDER_NUMBER = re.compile(r"\d{15}", re.ASCII)
 _SELLER_FLEET = re.compile(r"84\d{12}", re.ASCII)
 _CODE_LIKE = re.compile(r"[0-9A-Z]{8,40}", re.ASCII)
@@ -44,6 +48,10 @@ def normalize_code(raw: str) -> str:
 def detect_carriers(code: str) -> list[CarrierCode]:
     rule = _match(code)
     return [] if rule is None else list(rule[0])
+
+
+def is_jt_cross_border(code: str) -> bool:
+    return _JT_CROSS_BORDER_RE.fullmatch(code) is not None
 
 
 def is_order_number(code: str) -> bool:
