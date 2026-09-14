@@ -5,7 +5,7 @@ A personal Telegram bot that watches parcels bought online in Vietnam and messag
 | Carrier | What the bot does |
 |---|---|
 | SPX Express, J&T Express, Cainiao, 4PX, Ninja Van, GHN | Tracks automatically and notifies on every new event |
-| BEST Express, YunExpress, GHTK, Viettel Post, VNPost/EMS, LEX VN | Recognises the code and replies with tracking links (their sites block automated lookups) |
+| BEST Express, YunExpress, GHTK, Viettel Post, VNPost/EMS, LEX VN, SF Express | Recognises the code and replies with tracking links (their sites block automated lookups) |
 
 Paste a tracking code and the bot works out the carrier. When a code could belong to several carriers (for example GHN and Ninja Van), it tries each one and keeps the carrier that returns data.
 
@@ -91,7 +91,7 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 
 - **Phone digits:** J&T and GHN only show tracking with the last 4 digits of the recipient's phone. Save them once with `/phone 1234`, or give them per parcel with `/track <mã> 1234`.
 - **Automatic detection:** if a code matches several carriers, `/list` shows "Đang xác định hãng" until one of them has data; the update message then names the carrier. Use `/track <mã> <hãng>` to force a carrier.
-- **Link-only carriers:** codes from BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN get an official tracking link plus a 17TRACK link; they are not tracked.
+- **Link-only carriers:** codes from BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express get an official tracking link plus a 17TRACK link; they are not tracked.
 - **Quiet hours:** between 22:00 and 07:00 updates still arrive, but silently.
 
 ### Screenshots

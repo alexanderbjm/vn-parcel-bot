@@ -1,8 +1,8 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.7 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
+Version 1.8 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
 
-One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
+One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
 | Part | Contents | Used by |
 |---|---|---|
@@ -24,6 +24,12 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 1.8 (2026-09-14)
+
+- **SF Express** (§5.1, §5.2 rule 12): `SF` + 13 digits is recognised as a thirteenth, link-only carrier instead of an unknown code. Its official query pages are JavaScript apps and no open endpoint was found, so it is not polled and is never stored (the `carrier` CHECK is unchanged).
+- **Logs for silent photo results**: the photo handler logs INFO `"photo read codes=%d order_ids=%d product=%s"` (counts and yes/no only) for every successful read, and `ParcelService.add` logs INFO `"duplicate code user=%s code=%s"` with the masked code. Before this, a photo whose code was already tracked, or that held only an order number or nothing, left no log line.
+- BEST Express VN's track page was re-checked on 2026-09-14 and shows a slider captcha; it stays link-only.
 
 ## Changes in 1.7 (2026-09-14)
 
@@ -150,14 +156,14 @@ A personal Telegram bot, running on a Windows 10 PC in Vietnam, that watches par
 
 - Users are **buyers** receiving parcels. They add parcels by **pasting a tracking code** into a private chat with the bot. The bot works out the carrier itself (§4.3).
 - **Tracked carriers** (polled, notified): SPX Express VN, J&T Express VN, Cainiao, 4PX, Ninja Van VN, GHN.
-- **Link-only carriers** (recognised, answered with tracking links, never polled): BEST Express VN, YunExpress, GHTK, Viettel Post, VNPost/EMS, LEX VN.
+- **Link-only carriers** (recognised, answered with tracking links, never polled): BEST Express VN, YunExpress, GHTK, Viettel Post, VNPost/EMS, LEX VN, SF Express.
 - Used by the **admin (owner) plus a few allowlisted family/friends**. Each person sees and is notified only about their own parcels.
 - The bot **polls the carriers' public tracking endpoints** directly (no paid aggregator) and uses Telegram **long polling** (no public URL, no webhook, no port forwarding).
 
 ## 2. Scope
 
 In scope (v1):
-- The twelve carriers and their tiers in §5.1; automatic carrier detection with auto-try (§4.3, §5.2).
+- The thirteen carriers and their tiers in §5.1; automatic carrier detection with auto-try (§4.3, §5.2).
 - Private chats only (groups are ignored).
 - Commands and flows in §4; polling and notifications in §6.
 - Runs as a background process started at Windows logon (§12).
@@ -272,6 +278,7 @@ Facts probed from this PC on 2026-09-13 with fake codes unless marked otherwise.
 | `viettelpost` | Viettel Post | link-only | – | JavaScript cookie challenge (`document.cookie=…; location.reload`) | `https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/` |
 | `vnpost` | VNPost | link-only | – | Tracking tab renders a captcha (`tracuu.js`) | `https://vnpost.vn/vi/ca-nhan/chuyen-phat/chuyen-phat-trong-nuoc#!?tab=tra-cuu-hanh-trinh&code={code}` |
 | `lex` | LEX VN | link-only | – | `tracker.lel.asia` no longer resolves; logistics site loads Lazada anti-bot script | `https://logistics.lazada.vn/` |
+| `sf` | SF Express | link-only | – | official query pages are JavaScript apps; no open endpoint found (2026-09-14) | `https://www.sf-express.com/chn/en/waybill/list` |
 
 Every link list ends with 17TRACK: `https://t.17track.net/vi#nums={code}`.
 
@@ -295,10 +302,11 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 | 9 | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | ghtk | web |
 | 10 | `^JNTX[A-Z]?\d{8,12}$` | jt | observed (`JNTXB…`, Lazada cross-border via J&T VN) |
 | 11 | `^YT\d{13}$` | cainiao | observed (Lazada `<order>_YT…` shown as Cainiao) |
-| 12 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
-| 13 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
-| 14 | `^\d{13}$` | best | web |
-| 15 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
+| 12 | `^SF\d{13}$` | sf | observed (SF Express waybill in an order screenshot) |
+| 13 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
+| 14 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
+| 15 | `^\d{13}$` | best | web |
+| 16 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
 
   No rule matches → `[]`.
 - `is_order_number(code)`: `^\d{15}$`. Marketplace order numbers (Lazada, TikTok Shop) have this shape; they are not shipping codes and are never tracked.
@@ -307,7 +315,7 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 - `is_jt_cross_border(code)`: `^JNTX[A-Z]?\d{8,12}$` (rule 10). Such parcels are J&T parcels; add replies (pending and phone question) append `JT_CROSS_BORDER_HINT`.
 - `is_seller_fleet(code)`: `^84\d{12}$`. TikTok Shop seller own fleet codes; no public tracking page, never tracked.
 - `is_code_like(code)`: `^[0-9A-Z]{8,40}$` with at least 6 digits.
-- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 15** match only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including rule-15 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
+- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 16** match only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including rule-16 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
 - `is_valid_last4(s)`: `^\d{4}$`.
 - `mask_code(code)`: `code[:5] + "…" + code[-3:]`, used in logs.
 
@@ -567,7 +575,7 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 
 - `carrier IS NULL` means **unresolved**: the parcel has several candidates and none has returned data yet. Unresolved parcels can only be `pending` or `expired`.
 - `candidates` stores tracked carrier codes in try order, comma-separated (`ghn,ninjavan`). A resolved parcel stores exactly its carrier.
-- The `carrier` CHECK lists all twelve codes so that promoting a link-only carrier needs no migration.
+- The `carrier` CHECK lists the twelve original codes so that promoting one of them needs no migration. `sf` (added in 1.8) is link-only and never stored; promoting it would need a migration that widens the CHECK.
 - `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
 **Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
@@ -763,6 +771,7 @@ CarrierCode = Literal[
     "viettelpost",
     "vnpost",
     "lex",
+    "sf",
 ]
 
 
@@ -1403,7 +1412,7 @@ See §9.2. They are code constants, not env vars.
 10. `/label 1 Áo khoác` → `/list` and future updates show "Áo khoác"; `/label 1` clears it.
 11. `/status 1` → history newest first; `/remove 1` → `REMOVED`, gone from `/list`.
 12. Paste a real Cainiao (`LP…`) or 4PX (`4PX…`) code → `ADDED_FOUND` naming Cainiao / 4PX.
-13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 15 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
+13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 16 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
 14. Paste a VNPost-shaped code (`EB123456789VN`) → `LINK_ONLY` with a VNPost link and a 17TRACK link; `/list` unchanged.
 15. Paste a 15-digit marketplace order number → `ORDER_NUMBER` with a 17TRACK link, nothing added; paste a 14-digit `84…` code → `SELLER_FLEET`; paste an unrecognised code-like string → `UNKNOWN_CARRIER`; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
 16. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
@@ -1433,7 +1442,7 @@ See §9.2. They are code constants, not env vars.
 ## 16. Out of scope for v1 (future ideas)
 
 - Auto-import codes from Gmail (Shopee/TikTok/Lazada emails) or a marketplace account.
-- Polling link-only carriers (BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN): would need captcha solving, headless browsers, or a paid aggregator (17TRACK API). A carrier moves to tracked only when an open endpoint is found (Appendix B).
+- Polling link-only carriers (BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, SF Express): would need captcha solving, headless browsers, or a paid aggregator (17TRACK API). A carrier moves to tracked only when an open endpoint is found (Appendix B).
 - Following a cross-border parcel's hand-off to a Vietnamese last-mile code automatically (Cainiao/4PX → SPX/J&T/Ninja Van).
 - Batched lookups (J&T accepts up to 10 codes; 4PX and Cainiao accept lists) — only worth it at larger volumes.
 - Inline buttons on notifications (remove/label), per-user "milestones only" mode, English UI.
@@ -1461,6 +1470,7 @@ CARRIER_NAMES = {
     "viettelpost": "Viettel Post",
     "vnpost": "VNPost",
     "lex": "LEX VN",
+    "sf": "SF Express",
 }
 CARRIER_UNRESOLVED = "Đang xác định hãng"
 CARRIER_SEPARATOR = " / "
@@ -1492,7 +1502,8 @@ HELP = (
     "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
     "• Gửi ảnh chụp đơn hàng – mình tự đọc mã vận đơn và tên sản phẩm\n"
     "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
-    "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN\n"
+    "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
+    "SF Express\n"
     "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
@@ -2030,7 +2041,7 @@ Expected: gates green; the help text lists `carriers` and `telegram`.
 **Tests (write first):**
 
 `tests/test_carrier_catalog.py`
-- `test_catalog_has_twelve_carriers_in_table_order`.
+- `test_catalog_has_thirteen_carriers_in_table_order`.
 - `test_tracked_tuple` — `TRACKED == ("spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn")` and equals the codes with `tracked=True`.
 - `test_needs_phone_only_jt_and_ghn`.
 - `test_link_only_carriers_have_templates_tracked_have_none`.
@@ -2523,7 +2534,7 @@ Expected: gates green; the help text lists `carriers` and `telegram`.
 6. `rename(user_id, ref, label)` → resolve; `None`/blank → clear; else `label.strip()[:MAX_LABEL_LENGTH]`; return refreshed parcel.
 7. `history(user_id, ref)` → resolve; `repo.list_events(parcel.id, MAX_EVENTS_IN_HISTORY)`.
 8. `set_default_phone(user_id, last4)` → `None` clears; invalid → `ValueError`.
-9. Log INFO `"parcel added user=%s carrier=%s code=%s state=%s"` with `mask_code(code)` and `parcel.carrier or "auto"`; log INFO `"link-only code user=%s carriers=%s code=%s"`.
+9. Log INFO `"parcel added user=%s carrier=%s code=%s state=%s"` with `mask_code(code)` and `parcel.carrier or "auto"`; log INFO `"link-only code user=%s carriers=%s code=%s"`; log INFO `"duplicate code user=%s code=%s"` with `mask_code(code)` when the parcel already exists.
 
 **Tests (write first)** — fixtures: `repo` (temp DB), `clock = FakeClock(T0)`, fakes for `spx`, `jt`, `cainiao`, `ninjavan`, `ghn` (**no** `fourpx`, to test the mapping rule), `service = ParcelService(repo, fakes, http=None, settings=settings, now=clock)`, `user = await repo.upsert_user(1, now=T0, name="A", is_allowed=True)`. Codes: `SPX = "SPXVN000000000001"`, `JT = "840000000001"`, `GEN = "GA0000000001"` (ghn, ninjavan), `LP = "LP00000000000001"`, `VNP = "EB123456789VN"`, `FPX = "4PX0000000000000001"`.
 
