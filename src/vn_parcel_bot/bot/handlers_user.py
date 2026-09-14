@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import logging
 import math
@@ -6,24 +7,31 @@ from html import escape
 
 from telegram import LinkPreviewOptions, Update
 from telegram.constants import ChatAction, ParseMode
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
-from vn_parcel_bot.constants import CHECK_COOLDOWN
+from vn_parcel_bot.constants import CHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import User
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
     format_history,
+    format_links,
     format_needs_phone_multi,
     format_parcel_list,
     parcel_title,
     truncate_message,
 )
+from vn_parcel_bot.services.vision import VisionResult
 from vn_parcel_bot.tracking_codes import is_valid_last4
 
 PENDING_PHONE = "pending_phone"
+PHOTO_LOCKS = "photo_locks"
+VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+
+log = logging.getLogger(__name__)
 
 
 async def reply(update: Update, text: str) -> None:
@@ -68,12 +76,13 @@ async def _add_and_reply(
     context: ContextTypes.DEFAULT_TYPE,
     code: str,
     last4: str | None,
+    label: str | None = None,
 ) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
-    outcome = await deps.parcels.add(user, code, last4)
+    outcome = await deps.parcels.add(user, code, last4, label=label)
     if outcome.kind == "needs_phone":
-        user_data(context)[PENDING_PHONE] = {"code": outcome.code}
+        user_data(context)[PENDING_PHONE] = {"code": outcome.code, "label": label}
     else:
         user_data(context).pop(PENDING_PHONE, None)
     await reply(
@@ -122,7 +131,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     route = route_text(message.text, PENDING_PHONE in data)
     if route.kind == "phone_for_pending":
         pending = data.pop(PENDING_PHONE)
-        await _add_and_reply(update, context, pending["code"], route.last4)
+        await _add_and_reply(update, context, pending["code"], route.last4, pending.get("label"))
     elif route.kind == "codes":
         data.pop(PENDING_PHONE, None)
         if len(route.codes) == 1:
@@ -237,96 +246,123 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await reply(update, texts.UNKNOWN_COMMAND)
 
 
-log = logging.getLogger(__name__)
+def _photo_lock(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> asyncio.Lock:
+    locks: dict[int, asyncio.Lock] = context.bot_data.setdefault(PHOTO_LOCKS, {})
+    return locks.setdefault(user_id, asyncio.Lock())
+
+
+def _caption_last4(caption: str | None) -> str | None:
+    for word in (caption or "").split():
+        cleaned = word.strip(" ,;.:()[]")
+        if is_valid_last4(cleaned):
+            return cleaned
+    return None
+
+
+def _vision_header(result: VisionResult, code: str | None, phone_last4: str | None) -> str:
+    parts = [texts.VISION_DETECTED_HEADER]
+    if result.product_name:
+        parts.append(texts.VISION_PRODUCT.format(name=escape(result.product_name)))
+    if code is not None:
+        carrier_suffix = f" ({result.carrier})" if result.carrier else ""
+        parts.append(
+            texts.VISION_DETECTED_ITEM.format(
+                code=escape(code), carrier_suffix=escape(carrier_suffix)
+            )
+        )
+    if phone_last4:
+        parts.append(texts.VISION_DETECTED_PHONE.format(phone=escape(phone_last4)))
+    return "\n".join(parts)
+
+
+async def _add_codes_from_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    result: VisionResult,
+    phone_last4: str | None,
+) -> None:
+    deps = get_deps(context)
+    user = await current_user(update, deps)
+    label = result.product_name
+    single = len(result.tracking_codes) == 1
+    needs_phone: list[str] = []
+    for code in result.tracking_codes:
+        outcome = await deps.parcels.add(user, code, phone_last4, label=label)
+        if outcome.kind == "needs_phone" and not single:
+            needs_phone.append(outcome.code or code)
+            continue
+        if single:
+            if outcome.kind == "needs_phone":
+                user_data(context)[PENDING_PHONE] = {"code": outcome.code, "label": label}
+            else:
+                user_data(context).pop(PENDING_PHONE, None)
+        body = format_add_outcome(
+            outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
+        )
+        await reply(update, f"{_vision_header(result, code, phone_last4)}\n\n{body}")
+    if needs_phone:
+        await reply(update, format_needs_phone_multi(needs_phone))
+
+
+async def _reply_to_vision_result(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    caption: str | None,
+    result: VisionResult,
+) -> None:
+    if result.error == "not_configured":
+        await reply(update, texts.VISION_NOT_CONFIGURED)
+        return
+    if result.error:
+        await reply(update, texts.VISION_ERROR)
+        return
+    phone_last4 = result.phone_last4 or _caption_last4(caption)
+    if result.tracking_codes:
+        await _add_codes_from_photo(update, context, result, phone_last4)
+        return
+    if result.order_ids:
+        order_id = result.order_ids[0]
+        body = texts.VISION_ORDER_ONLY.format(
+            order_id=escape(order_id), links=format_links(order_id, ())
+        )
+        await reply(update, f"{_vision_header(result, None, None)}\n\n{body}")
+        return
+    await reply(update, texts.VISION_NO_DATA)
 
 
 async def photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
-    if message is None:
+    if message is None or update.effective_user is None:
         return
-
     deps = get_deps(context)
     if deps.vision is None or not deps.vision.is_configured:
         await reply(update, texts.VISION_NOT_CONFIGURED)
         return
 
-    file_id = None
-    media_type = "image/jpeg"
     if message.photo:
-        file_id = message.photo[-1].file_id
-        media_type = "image/jpeg"
-    elif (
-        message.document
-        and message.document.mime_type
-        and message.document.mime_type.startswith("image/")
-    ):
-        file_id = message.document.file_id
-        media_type = message.document.mime_type
-
-    if file_id is None:
+        file_id, media_type = message.photo[-1].file_id, "image/jpeg"
+    elif message.document is not None:
+        document = message.document
+        if (
+            document.mime_type not in VISION_MEDIA_TYPES
+            or (document.file_size or 0) > VISION_MAX_IMAGE_BYTES
+        ):
+            await reply(update, texts.VISION_UNSUPPORTED_IMAGE)
+            return
+        file_id, media_type = document.file_id, document.mime_type
+    else:
         return
 
-    if update.effective_chat:
-        with contextlib.suppress(Exception):
-            await update.effective_chat.send_action(action=ChatAction.TYPING)
-
-    try:
-        tg_file = await context.bot.get_file(file_id)
-        image_bytes = bytes(await tg_file.download_as_bytearray())
-    except Exception as exc:
-        log.exception("Failed to download photo from Telegram: %s", exc)
-        await reply(update, texts.VISION_ERROR.format(detail="không thể tải ảnh từ Telegram"))
-        return
-
-    result = await deps.vision.analyze_image(image_bytes, media_type=media_type)
-    if result.error:
-        await reply(update, texts.VISION_ERROR.format(detail=escape(result.error)))
-        return
-
-    phone_last4 = result.phone_last4
-    if phone_last4 is None and message.caption:
-        for word in message.caption.split():
-            clean_word = word.strip(" ,;.:()[]")
-            if is_valid_last4(clean_word):
-                phone_last4 = clean_word
-                break
-
-    user = await current_user(update, deps)
-
-    if result.tracking_codes:
-        for code in result.tracking_codes:
-            outcome = await deps.parcels.add(user, code, phone_last4)
-            if outcome.kind == "needs_phone":
-                user_data(context)[PENDING_PHONE] = {"code": outcome.code}
-            else:
-                user_data(context).pop(PENDING_PHONE, None)
-
-            header_parts = [texts.VISION_DETECTED_HEADER]
-            carrier_suffix = f" ({result.carrier})" if result.carrier else ""
-            header_parts.append(
-                texts.VISION_DETECTED_ITEM.format(
-                    code=escape(code), carrier_suffix=escape(carrier_suffix)
-                )
-            )
-            if phone_last4:
-                header_parts.append(texts.VISION_DETECTED_PHONE.format(phone=escape(phone_last4)))
-            header = "\n".join(header_parts)
-            formatted = format_add_outcome(
-                outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
-            )
-            await reply(update, f"{header}\n\n{formatted}")
-        return
-
-    if result.order_ids:
-        for order_id in result.order_ids:
-            outcome = await deps.parcels.add(user, order_id)
-            header = (
-                f"{texts.VISION_DETECTED_HEADER}\n• Mã đơn hàng: <code>{escape(order_id)}</code>"
-            )
-            formatted = format_add_outcome(
-                outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
-            )
-            await reply(update, f"{header}\n\n{formatted}")
-        return
-
-    await reply(update, texts.VISION_NO_DATA)
+    async with _photo_lock(context, update.effective_user.id):
+        if update.effective_chat is not None:
+            with contextlib.suppress(Exception):
+                await update.effective_chat.send_action(action=ChatAction.TYPING)
+        try:
+            telegram_file = await context.bot.get_file(file_id)
+            image_bytes = bytes(await telegram_file.download_as_bytearray())
+        except TelegramError as exc:
+            log.warning("photo download failed type=%s", type(exc).__name__)
+            await reply(update, texts.VISION_ERROR)
+            return
+        result = await deps.vision.analyze_image(image_bytes, media_type)
+        await _reply_to_vision_result(update, context, message.caption, result)
