@@ -111,7 +111,7 @@ async def test_event_saved_while_sending_is_marked_next_time(repo, settings, clo
     parcel = await add_parcel(repo, 1, "SPXVN000000000004", event_at=T0 - timedelta(days=2))
 
     class SlowNotifier(FakeNotifier):
-        async def send(self, chat_id, text, *, silent=False):
+        async def send(self, chat_id, text, *, silent=False, reply_markup=None):
             await super().send(chat_id, text, silent=silent)
             clock.advance(timedelta(seconds=30))
             await repo.insert_events(parcel.id, [ev(0, "Đã đến kho", base=clock())], clock())

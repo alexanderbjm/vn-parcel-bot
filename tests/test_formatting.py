@@ -19,11 +19,14 @@ from vn_parcel_bot.services.formatting import (
     format_link_only,
     format_links,
     format_needs_phone_multi,
+    format_parcel_card,
     format_parcel_list,
     format_stale,
     format_time,
     format_users,
+    list_pages,
     parcel_carrier_label,
+    parcel_link,
     parcel_title,
     ref_text,
     seventeen_track_url,
@@ -456,3 +459,37 @@ def test_delivered_parcel_shows_full_bar_without_stored_progress():
     text = format_parcel_list([make_parcel(label="Áo", state="delivered")], TZ)
     assert "<b>Áo</b> · SPX · 100%" in text
     assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩" in text
+
+
+def test_parcel_card_shows_title_progress_bar_and_status():
+    parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=50)
+    assert format_parcel_card(parcel, TZ) == (
+        "🚚 <b>Áo</b> · SPX · 50%\n🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥\nĐã đến kho · 🕒 01/09 08:30"
+    )
+    pending = format_parcel_card(unresolved(), TZ)
+    assert pending.startswith(f"⏳ <b>{blurred('GA0000000001')}</b> · GHN / Ninja Van\n")
+
+
+def test_parcel_link_prefers_module_link():
+    assert parcel_link(make_parcel()) == ("17TRACK", f"https://t.17track.net/vi#nums={SPX}")
+    vnpost = make_parcel(carrier="vnpost", candidates=("vnpost",), tracking_number="EB123456789VN")
+    name, url = parcel_link(vnpost)
+    assert name == "VNPost"
+    assert url.startswith("https://vnpost.vn/")
+
+
+def test_parcel_list_pages():
+    parcels = [
+        make_parcel(id=i, label=f"Đơn {i}", tracking_number=f"SPXVN00000000000{i}")
+        for i in range(1, 8)
+    ]
+    assert list_pages(7) == 2
+    assert list_pages(0) == 1
+    first = format_parcel_list(parcels, TZ)
+    assert "5. " in first
+    assert "6. " not in first
+    assert first.endswith("Trang 1/2")
+    second = format_parcel_list(parcels, TZ, page=2)
+    assert "6. " in second
+    assert "7. " in second
+    assert "1. " not in second

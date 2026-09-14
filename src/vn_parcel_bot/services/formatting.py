@@ -1,4 +1,5 @@
 import html
+import math
 import re
 import urllib.parse
 from collections.abc import Mapping, Sequence
@@ -8,7 +9,12 @@ from zoneinfo import ZoneInfo
 from vn_parcel_bot import texts
 from vn_parcel_bot.carriers.models import CarrierCode, TrackingEvent
 from vn_parcel_bot.carriers.registry import current_snapshot
-from vn_parcel_bot.constants import MAX_EVENTS_IN_HISTORY, MAX_EVENTS_IN_UPDATE, TELEGRAM_TEXT_LIMIT
+from vn_parcel_bot.constants import (
+    LIST_PAGE_SIZE,
+    MAX_EVENTS_IN_HISTORY,
+    MAX_EVENTS_IN_UPDATE,
+    TELEGRAM_TEXT_LIMIT,
+)
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.tracking_codes import mask_code
@@ -174,11 +180,63 @@ def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "") -> str:
     )
 
 
-def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo) -> str:
+def format_parcel_card(parcel: Parcel, tz: ZoneInfo) -> str:
+    progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
+    status = (
+        _escape(parcel.last_status_text)
+        if parcel.last_status_text
+        else texts.STATE_TEXT[parcel.state]
+    )
+    time_suffix = (
+        texts.LIST_TIME_SUFFIX.format(time=format_time(parcel.last_event_at, tz))
+        if parcel.last_event_at
+        else ""
+    )
+    lines = [
+        texts.CARD_HEADER.format(
+            emoji=texts.STATE_EMOJI[parcel.state],
+            title=parcel_title(parcel),
+            carrier=parcel_carrier_label(parcel) + progress_suffix,
+        )
+    ]
+    if bar:
+        lines.append(bar)
+    lines.append(status + time_suffix)
+    return "\n".join(lines)
+
+
+def parcel_link(parcel: Parcel) -> tuple[str, str]:
+    if parcel.carrier is not None:
+        snapshot = current_snapshot()
+        url = snapshot.link(parcel.carrier, parcel.tracking_number)
+        if url:
+            return snapshot.display_name(parcel.carrier), url
+    return texts.LINK_17TRACK_NAME, seventeen_track_url(parcel.tracking_number)
+
+
+def list_pages(count: int) -> int:
+    return max(1, math.ceil(count / LIST_PAGE_SIZE))
+
+
+def list_page_items(
+    parcels: Sequence[Parcel], page: int
+) -> tuple[int, int, list[tuple[int, Parcel]]]:
+    pages = list_pages(len(parcels))
+    page = min(max(page, 1), pages)
+    start = (page - 1) * LIST_PAGE_SIZE
+    numbered = list(enumerate(parcels[start : start + LIST_PAGE_SIZE], start=start + 1))
+    return page, pages, numbered
+
+
+def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo, *, page: int = 1) -> str:
     if not parcels:
         return texts.LIST_EMPTY
-    items = [_list_item(index, parcel, tz) for index, parcel in enumerate(parcels, start=1)]
-    return truncate_message(texts.LIST_HEADER + "\n\n" + "\n".join(items))
+    page, pages, numbered = list_page_items(parcels, page)
+    items = [_list_item(index, parcel, tz) for index, parcel in numbered]
+    text = texts.LIST_HEADER + "\n\n" + "\n".join(items)
+    if pages > 1:
+        text += "\n\n" + texts.LIST_PAGE.format(page=page, pages=pages)
+    return truncate_message(text)
 
 
 def format_digest(

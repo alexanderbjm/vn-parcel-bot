@@ -60,11 +60,21 @@ class FakeNotifier:
     def __init__(self, fail_with: Exception | None = None) -> None:
         self.fail_with = fail_with
         self.sent: list[tuple[int, str, bool]] = []
+        self.markups: list[object] = []
+        self.stickers: list[tuple[int, str]] = []
+        self.sticker_ok = True
 
-    async def send(self, chat_id: int, text: str, *, silent: bool = False) -> None:
+    async def send(
+        self, chat_id: int, text: str, *, silent: bool = False, reply_markup: object = None
+    ) -> None:
         self.sent.append((chat_id, text, silent))
+        self.markups.append(reply_markup)
         if self.fail_with is not None:
             raise self.fail_with
+
+    async def send_sticker(self, chat_id: int, file_id: str) -> bool:
+        self.stickers.append((chat_id, file_id))
+        return self.sticker_ok
 
 
 def ev(

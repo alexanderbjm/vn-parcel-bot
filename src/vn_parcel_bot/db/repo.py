@@ -437,6 +437,9 @@ class Repository:
         row = await self._fetchone("SELECT value FROM meta WHERE key = ?", (key,))
         return row[0] if row else None
 
+    async def delete_meta(self, key: str) -> None:
+        await self._write("DELETE FROM meta WHERE key = ?", (key,))
+
     async def set_meta(self, key: str, value: str) -> None:
         await self._write(
             "INSERT INTO meta (key, value) VALUES (?, ?) "

@@ -399,3 +399,10 @@ async def test_progress_only_moves_forward(repo):
     assert await record(30) == 50
     assert await record(None) == 50
     assert await record(95) == 95
+
+
+async def test_delete_meta(repo):
+    await repo.set_meta("sticker:spx", "file-1")
+    await repo.delete_meta("sticker:spx")
+    assert await repo.get_meta("sticker:spx") is None
+    await repo.delete_meta("missing")
