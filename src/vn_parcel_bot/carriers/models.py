@@ -5,8 +5,7 @@ from typing import Literal, Protocol
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
-
+CarrierCode = str
 ErrorReason = Literal["network", "blocked", "http_status", "parse"]
 
 

@@ -6,8 +6,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
-from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
