@@ -3,9 +3,9 @@ from datetime import UTC, datetime
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
+from vn_parcel_bot.carriers.api import PRIORITY_GENERIC, PRIORITY_PREFIXED, CarrierModule, Rule
 from vn_parcel_bot.carriers.common import VN_TZ, clean_text, json_body, request
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 
 NINJAVAN_TRACKING_URL = "https://api.ninjavan.co/vn/dash/1.2/public/orders"
 NOT_FOUND_ERROR_CODE = 150002
@@ -135,3 +135,21 @@ class NinjaVanCarrier:
                 )
             raise CarrierError("ninjavan", "http_status", "404")
         return parse_ninjavan_response(json_body("ninjavan", response), tracking_number)
+
+
+MODULE = CarrierModule(
+    code="ninjavan",
+    display_name="Ninja Van",
+    order=50,
+    rules=(
+        Rule(r"SPEVN[0-9A-Z]{6,20}", PRIORITY_PREFIXED),
+        Rule(
+            r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}",
+            PRIORITY_GENERIC,
+            rank=1,
+            standalone_only=True,
+        ),
+    ),
+    examples=(("SPEVN000000000001", True), ("GAN6DKKU12", True)),
+    build_client=NinjaVanCarrier,
+)

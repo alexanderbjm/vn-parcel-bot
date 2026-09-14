@@ -3,9 +3,9 @@ from datetime import UTC, datetime
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
+from vn_parcel_bot.carriers.api import PRIORITY_PREFIXED, CarrierModule, Rule
 from vn_parcel_bot.carriers.common import clean_text, json_body, request
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 
 SPX_ORDER_INFO_URL = "https://spx.vn/shipment/order/open/order/get_order_info"
 NOT_FOUND_RETCODES = (2,)
@@ -114,3 +114,13 @@ class SpxCarrier:
             params={"language_code": "vi", "spx_tn": tracking_number},
         )
         return parse_spx_response(json_body("spx", response), tracking_number)
+
+
+MODULE = CarrierModule(
+    code="spx",
+    display_name="SPX",
+    order=10,
+    rules=(Rule(r"SPXVN[0-9A-Z]{8,16}", PRIORITY_PREFIXED),),
+    examples=(("SPXVN05338454932C", True), ("SPEVN000000000001", False)),
+    build_client=SpxCarrier,
+)

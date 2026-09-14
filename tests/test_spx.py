@@ -9,7 +9,7 @@ import pytest
 import respx
 
 from vn_parcel_bot.carriers.models import CarrierError
-from vn_parcel_bot.carriers.spx import SPX_ORDER_INFO_URL, SpxCarrier, parse_spx_response
+from vn_parcel_bot.carriers.modules.spx import SPX_ORDER_INFO_URL, SpxCarrier, parse_spx_response
 
 FIXTURES = Path(__file__).parent / "fixtures" / "spx"
 VN = ZoneInfo("Asia/Ho_Chi_Minh")

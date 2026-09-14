@@ -4,9 +4,9 @@ from datetime import datetime
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
+from vn_parcel_bot.carriers.api import PRIORITY_GENERIC, CarrierModule, Rule
 from vn_parcel_bot.carriers.common import VN_TZ, clean_text, json_body, request
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 
 GHN_TRACKING_URL = "https://fe-online-gateway.ghn.vn/order-tracking/public-api/client/tracking-logs"
 
@@ -135,3 +135,21 @@ class GhnCarrier:
                 raise CarrierError("ghn", "http_status", "400")
             return parse_ghn_response(payload, tracking_number)
         return parse_ghn_response(json_body("ghn", response), tracking_number)
+
+
+MODULE = CarrierModule(
+    code="ghn",
+    display_name="GHN",
+    order=60,
+    needs_phone=True,
+    rules=(
+        Rule(
+            r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}",
+            PRIORITY_GENERIC,
+            rank=0,
+            standalone_only=True,
+        ),
+    ),
+    examples=(("GAN6DKKU12", True), ("SPXVN05338454932C", False)),
+    build_client=GhnCarrier,
+)

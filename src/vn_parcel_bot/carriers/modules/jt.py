@@ -1,12 +1,18 @@
+import re
 from dataclasses import replace
 from datetime import datetime
 
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
+from vn_parcel_bot.carriers.api import (
+    PRIORITY_PREFIXED,
+    PRIORITY_SHARED_NUMERIC,
+    CarrierModule,
+    Rule,
+)
 from vn_parcel_bot.carriers.common import VN_TZ, clean_text, request
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 
 JT_TRACKING_URL = "https://jtexpress.vn/tracking"
 NOT_FOUND_MARKER = "Không tìm thấy dữ liệu"
@@ -109,3 +115,29 @@ class JtCarrier:
             params={"type": "track", "billcode": tracking_number, "cellphone": phone_last4},
         )
         return parse_jt_html(response.text, tracking_number)
+
+
+CROSS_BORDER = re.compile(r"JNTX[A-Z]?\d{8,12}", re.ASCII)
+CROSS_BORDER_HINT = (
+    "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
+    "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
+)
+
+
+def cross_border_hint(tracking_number: str) -> str | None:
+    return CROSS_BORDER_HINT if CROSS_BORDER.fullmatch(tracking_number) else None
+
+
+MODULE = CarrierModule(
+    code="jt",
+    display_name="J&T",
+    order=20,
+    needs_phone=True,
+    rules=(
+        Rule(CROSS_BORDER.pattern, PRIORITY_PREFIXED),
+        Rule(r"\d{12}", PRIORITY_SHARED_NUMERIC, rank=0),
+    ),
+    examples=(("JNTXB0000000001", True), ("841000072647", True), ("SPXVN05338454932C", False)),
+    build_client=JtCarrier,
+    pending_hint=cross_border_hint,
+)

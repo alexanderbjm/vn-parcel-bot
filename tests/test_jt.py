@@ -6,8 +6,8 @@ import pytest
 import respx
 from bs4 import BeautifulSoup
 
-from vn_parcel_bot.carriers.jt import JT_TRACKING_URL, JtCarrier, parse_jt_html
 from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.modules.jt import JT_TRACKING_URL, JtCarrier, parse_jt_html
 
 FIXTURES = Path(__file__).parent / "fixtures" / "jt"
 VN = ZoneInfo("Asia/Ho_Chi_Minh")

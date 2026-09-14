@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
+from vn_parcel_bot.carriers.api import PRIORITY_PREFIXED, CarrierModule, Rule
 from vn_parcel_bot.carriers.common import clean_text, json_body, parse_gmt_offset, request
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 
 FOURPX_TRACKING_URL = "https://track.4px.com/track/v2/front/listTrackV3"
 DELIVERED_CODE_PREFIX = "FPX_S_OK"
@@ -85,3 +85,13 @@ class FourPxCarrier:
             },
         )
         return parse_fourpx_response(json_body("fourpx", response), tracking_number)
+
+
+MODULE = CarrierModule(
+    code="fourpx",
+    display_name="4PX",
+    order=40,
+    rules=(Rule(r"4PX[0-9A-Z]{10,20}", PRIORITY_PREFIXED),),
+    examples=(("4PX3000123456789CN", True),),
+    build_client=FourPxCarrier,
+)

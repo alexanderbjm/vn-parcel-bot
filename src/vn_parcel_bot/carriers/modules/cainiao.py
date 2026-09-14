@@ -1,11 +1,12 @@
+import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 
 import httpx
 
-from vn_parcel_bot.carrier_catalog import CarrierCode
+from vn_parcel_bot.carriers.api import PRIORITY_NUMERIC, PRIORITY_PREFIXED, CarrierModule, Rule
 from vn_parcel_bot.carriers.common import clean_text, json_body, parse_gmt_offset, request
-from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 
 CAINIAO_TRACKING_URL = "https://global.cainiao.com/global/detail.json"
 DELIVERED_ACTION_CODES = ("GTMS_SIGNED",)
@@ -85,3 +86,36 @@ class CainiaoCarrier:
             params={"mailNos": tracking_number, "lang": "en-US", "language": "en-US"},
         )
         return parse_cainiao_response(json_body("cainiao", response), tracking_number)
+
+
+LAZADA_WAYBILL = re.compile(r"YT\d{13}", re.ASCII)
+LAZADA_HINT = (
+    "\n🌏 Đơn quốc tế Lazada qua Cainiao: Cainiao có thể chưa công bố hành trình ngay. "
+    "Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
+)
+
+
+def lazada_hint(tracking_number: str) -> str | None:
+    return LAZADA_HINT if LAZADA_WAYBILL.fullmatch(tracking_number) else None
+
+
+MODULE = CarrierModule(
+    code="cainiao",
+    display_name="Cainiao",
+    order=30,
+    rules=(
+        Rule(r"LP\d{14}", PRIORITY_PREFIXED),
+        Rule(r"[A-Z]{2}\d{9}CN", PRIORITY_PREFIXED),
+        Rule(LAZADA_WAYBILL.pattern, PRIORITY_PREFIXED),
+        Rule(r"\d{15}", PRIORITY_NUMERIC),
+    ),
+    examples=(
+        ("LP00123456789012", True),
+        ("LX123456789CN", True),
+        ("YT0000000000001", True),
+        ("773440000000001", True),
+        ("YT1234567890123456", False),
+    ),
+    build_client=CainiaoCarrier,
+    pending_hint=lazada_hint,
+)

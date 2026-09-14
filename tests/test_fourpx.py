@@ -7,12 +7,12 @@ import httpx
 import pytest
 import respx
 
-from vn_parcel_bot.carriers.fourpx import (
+from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.modules.fourpx import (
     FOURPX_TRACKING_URL,
     FourPxCarrier,
     parse_fourpx_response,
 )
-from vn_parcel_bot.carriers.models import CarrierError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fourpx"
 VN = ZoneInfo("Asia/Ho_Chi_Minh")

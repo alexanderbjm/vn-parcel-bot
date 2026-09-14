@@ -7,12 +7,12 @@ import httpx
 import pytest
 import respx
 
-from vn_parcel_bot.carriers.cainiao import (
+from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.modules.cainiao import (
     CAINIAO_TRACKING_URL,
     CainiaoCarrier,
     parse_cainiao_response,
 )
-from vn_parcel_bot.carriers.models import CarrierError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cainiao"
 VN = ZoneInfo("Asia/Ho_Chi_Minh")

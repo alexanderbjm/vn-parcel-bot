@@ -1,11 +1,11 @@
 from vn_parcel_bot.carrier_catalog import CarrierCode
-from vn_parcel_bot.carriers.cainiao import CainiaoCarrier
-from vn_parcel_bot.carriers.fourpx import FourPxCarrier
-from vn_parcel_bot.carriers.ghn import GhnCarrier
-from vn_parcel_bot.carriers.jt import JtCarrier
 from vn_parcel_bot.carriers.models import Carrier
-from vn_parcel_bot.carriers.ninjavan import NinjaVanCarrier
-from vn_parcel_bot.carriers.spx import SpxCarrier
+from vn_parcel_bot.carriers.modules.cainiao import CainiaoCarrier
+from vn_parcel_bot.carriers.modules.fourpx import FourPxCarrier
+from vn_parcel_bot.carriers.modules.ghn import GhnCarrier
+from vn_parcel_bot.carriers.modules.jt import JtCarrier
+from vn_parcel_bot.carriers.modules.ninjavan import NinjaVanCarrier
+from vn_parcel_bot.carriers.modules.spx import SpxCarrier
 
 CARRIERS: dict[CarrierCode, Carrier] = {
     "spx": SpxCarrier(),

@@ -7,7 +7,7 @@ import pytest
 import respx
 
 from vn_parcel_bot.carriers.models import CarrierError
-from vn_parcel_bot.carriers.ninjavan import (
+from vn_parcel_bot.carriers.modules.ninjavan import (
     NINJAVAN_TRACKING_URL,
     NinjaVanCarrier,
     parse_ninjavan_response,

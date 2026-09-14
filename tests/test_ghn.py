@@ -7,13 +7,13 @@ import httpx
 import pytest
 import respx
 
-from vn_parcel_bot.carriers.ghn import (
+from vn_parcel_bot.carriers.models import CarrierError
+from vn_parcel_bot.carriers.modules.ghn import (
     GHN_TRACKING_URL,
     GhnCarrier,
     ghn_phone_verify,
     parse_ghn_response,
 )
-from vn_parcel_bot.carriers.models import CarrierError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ghn"
 VN = ZoneInfo("Asia/Ho_Chi_Minh")
