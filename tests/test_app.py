@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from telegram.ext import CommandHandler, MessageHandler, TypeHandler
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, TypeHandler
 
 from vn_parcel_bot.bot.app import build_application
 from vn_parcel_bot.bot.commands import BOT_COMMANDS
@@ -31,7 +31,8 @@ def test_build_application_registers_handlers(settings):
     group = app.handlers[0]
     commands = set().union(*(h.commands for h in group if isinstance(h, CommandHandler)))
     assert commands == ALL_COMMANDS
-    assert isinstance(group[-1], MessageHandler)
+    assert isinstance(group[-1], CallbackQueryHandler)
+    assert isinstance(group[-2], MessageHandler)
     assert len(app.error_handlers) == 1
     assert app.bot_data["settings"] is settings
 

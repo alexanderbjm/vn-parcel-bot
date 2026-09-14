@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.error import Conflict, NetworkError, TelegramError
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     JobQueue,
@@ -22,6 +23,7 @@ from vn_parcel_bot.bot.auth import gate
 from vn_parcel_bot.bot.commands import BOT_COMMANDS
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.handlers_admin import allow_cmd, health_cmd, revoke_cmd, users_cmd
+from vn_parcel_bot.bot.handlers_callback import callback_query
 from vn_parcel_bot.bot.handlers_user import (
     cancel_cmd,
     check_cmd,
@@ -95,6 +97,7 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(MessageHandler(filters.Document.IMAGE & private, photo_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & private, text_message))
     app.add_handler(MessageHandler(filters.COMMAND & private, unknown_command))
+    app.add_handler(CallbackQueryHandler(callback_query))
     app.add_error_handler(on_error)
     return app
 

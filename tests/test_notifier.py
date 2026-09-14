@@ -49,6 +49,7 @@ async def test_send_passes_reply_markup():
     assert bot.calls[0]["reply_markup"] is marker
 
 
+@pytest.mark.filterwarnings("ignore::telegram.warnings.PTBDeprecationWarning")
 async def test_retry_after_is_retried_once():
     bot = FakeBot()
     failures = [RetryAfter(3)]

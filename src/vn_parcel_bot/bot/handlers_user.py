@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from html import escape
 
-from telegram import LinkPreviewOptions, Message, Update
+from telegram import InlineKeyboardMarkup, LinkPreviewOptions, Message, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
@@ -16,19 +16,23 @@ from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
 from vn_parcel_bot.constants import CHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
-from vn_parcel_bot.db.repo import User
+from vn_parcel_bot.db.repo import Parcel, User
+from vn_parcel_bot.keyboards import card_keyboard, list_keyboard
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
     format_help,
     format_history,
     format_links,
     format_needs_phone_multi,
+    format_parcel_card,
     format_parcel_list,
+    list_page_items,
     masked_title,
     ref_text,
     spoiler,
     truncate_message,
 )
+from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.services.vision import VisionResult
 from vn_parcel_bot.tracking_codes import is_valid_last4, mask_code
 
@@ -44,7 +48,9 @@ CLEAR_LABEL = "-"
 log = logging.getLogger(__name__)
 
 
-async def reply(update: Update, text: str) -> Message | None:
+async def reply(
+    update: Update, text: str, reply_markup: InlineKeyboardMarkup | None = None
+) -> Message | None:
     message = update.effective_message
     if message is None:
         return None
@@ -52,7 +58,14 @@ async def reply(update: Update, text: str) -> Message | None:
         truncate_message(text),
         parse_mode=ParseMode.HTML,
         link_preview_options=LinkPreviewOptions(is_disabled=True),
+        reply_markup=reply_markup,
     )
+
+
+def _card_markup(outcome: AddOutcome) -> InlineKeyboardMarkup | None:
+    if outcome.parcel is None or outcome.kind not in ("added", "duplicate"):
+        return None
+    return card_keyboard(outcome.parcel)
 
 
 async def current_user(update: Update, deps: Deps) -> User:
@@ -80,7 +93,7 @@ def _message_id(message: object) -> int | None:
     return getattr(message, "message_id", None)
 
 
-def _drop_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
+def drop_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
     data = user_data(context)
     for key in PENDING_KEYS:
         data.pop(key, None)
@@ -121,12 +134,13 @@ async def _add_and_reply(
     deps = get_deps(context)
     user = await current_user(update, deps)
     outcome = await deps.parcels.add(user, code, last4, label=label)
-    _drop_pending(context)
+    drop_pending(context)
     sent = await reply(
         update,
         format_add_outcome(
             outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
         ),
+        reply_markup=_card_markup(outcome),
     )
     if outcome.kind == "needs_phone":
         user_data(context)[PENDING_PHONE] = {
@@ -161,6 +175,7 @@ async def _add_many(
             format_add_outcome(
                 outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
             ),
+            reply_markup=_card_markup(outcome),
         )
     if needs_phone:
         await reply(update, format_needs_phone_multi(needs_phone))
@@ -187,6 +202,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             message.text,
             pending.get("censor"),
             [pending.get("command_id"), pending.get("prompt_id"), _message_id(message)],
+            card=pending.get("card"),
         )
         return
     if PENDING_REMOVE in data:
@@ -219,7 +235,12 @@ async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
     parcels = await deps.parcels.list_for(user.telegram_id)
-    await reply(update, format_parcel_list(parcels, deps.settings.tz))
+    page, pages, numbered = list_page_items(parcels, 1)
+    await reply(
+        update,
+        format_parcel_list(parcels, deps.settings.tz, page=page),
+        reply_markup=list_keyboard(numbered, page, pages),
+    )
 
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -265,6 +286,24 @@ async def _censor(
         log.info("message censor failed type=%s", type(exc).__name__)
 
 
+async def _refresh_card(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int | None, card: dict | None, parcel: Parcel
+) -> None:
+    if chat_id is None or not card:
+        return
+    try:
+        await context.bot.edit_message_text(
+            format_parcel_card(parcel, get_deps(context).settings.tz),
+            chat_id=chat_id,
+            message_id=card["message_id"],
+            parse_mode=ParseMode.HTML,
+            reply_markup=card_keyboard(parcel, page=card.get("page")),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+    except TelegramError as exc:
+        log.info("card refresh failed type=%s", type(exc).__name__)
+
+
 async def _apply_label(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -273,6 +312,7 @@ async def _apply_label(
     name: str,
     target: dict | None,
     delete_ids: Iterable[int | None],
+    card: dict | None = None,
 ) -> None:
     deps = get_deps(context)
     label = None if name.strip() == CLEAR_LABEL else name
@@ -282,6 +322,7 @@ async def _apply_label(
         return
     chat_id = _chat_id(update)
     await _censor(context, chat_id, target, parcel.tracking_number)
+    await _refresh_card(context, chat_id, card, parcel)
     masked = escape(mask_code(parcel.tracking_number))
     if parcel.label:
         await reply(update, texts.LABEL_SET.format(label=escape(parcel.label), code=masked))
@@ -323,7 +364,7 @@ async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         parcel = found
         target = None
     if name is None:
-        _drop_pending(context)
+        drop_pending(context)
         prompt = await reply(
             update, texts.LABEL_ASK.format(code=escape(mask_code(parcel.tracking_number)))
         )
@@ -350,7 +391,7 @@ async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if parcel is None:
         await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
         return
-    _drop_pending(context)
+    drop_pending(context)
     prompt = await reply(update, texts.REMOVE_CONFIRM.format(title=masked_title(parcel)))
     user_data(context)[PENDING_REMOVE] = {
         "code": parcel.tracking_number,
@@ -483,7 +524,11 @@ async def _add_codes_from_photo(
         body = format_add_outcome(
             outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
         )
-        sent = await reply(update, f"{_vision_header(result, code, phone_last4)}\n\n{body}")
+        sent = await reply(
+            update,
+            f"{_vision_header(result, code, phone_last4)}\n\n{body}",
+            reply_markup=_card_markup(outcome),
+        )
         if single:
             if outcome.kind == "needs_phone":
                 user_data(context)[PENDING_PHONE] = {
