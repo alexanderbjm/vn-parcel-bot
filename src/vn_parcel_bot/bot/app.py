@@ -42,7 +42,7 @@ from vn_parcel_bot.constants import ERROR_ALERT_COOLDOWN, FIRST_POLL_DELAY_SECON
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
-from vn_parcel_bot.services.vision import VisionService
+from vn_parcel_bot.services.vision import AnthropicVisionEngine
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ async def _post_init(app: Application) -> None:
     notifier = TelegramNotifier(app.bot)
     parcels = ParcelService(repo, CARRIERS, http, settings, _utc_now)
     poller = Poller(repo, CARRIERS, http, notifier, settings, _utc_now)
-    vision = VisionService(settings, http)
+    vision = AnthropicVisionEngine(settings, http)
     app.bot_data["deps"] = Deps(settings, repo, http, parcels, poller, notifier, vision=vision)
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     app.job_queue.run_repeating(
