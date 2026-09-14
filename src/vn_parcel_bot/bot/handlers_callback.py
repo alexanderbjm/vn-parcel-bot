@@ -10,7 +10,14 @@ from telegram.ext import ContextTypes
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import get_deps
-from vn_parcel_bot.bot.handlers_user import PENDING_LABEL, drop_pending, user_data
+from vn_parcel_bot.bot.handlers_user import (
+    PENDING_LABEL,
+    PENDING_PHONE,
+    card_markup,
+    current_user,
+    drop_pending,
+    user_data,
+)
 from vn_parcel_bot.constants import CHECK_COOLDOWN, MAX_EVENTS_IN_HISTORY
 from vn_parcel_bot.db.repo import Parcel
 from vn_parcel_bot.keyboards import (
@@ -21,12 +28,14 @@ from vn_parcel_bot.keyboards import (
     list_keyboard,
 )
 from vn_parcel_bot.services.formatting import (
+    format_add_outcome,
     format_history,
     format_parcel_card,
     format_parcel_list,
     list_page_items,
     masked_title,
 )
+from vn_parcel_bot.services.sharing import share_token, shared_parcel
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
@@ -63,6 +72,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _parcel_action(context, query, parts)
     elif kind == "l":
         await _list_page(context, query, parts)
+    elif kind == "s":
+        await _share_answer(update, context, query, parts)
     else:
         await query.answer()
 
@@ -100,6 +111,15 @@ async def _parcel_action(
             query,
             texts.REMOVE_CONFIRM.format(title=masked_title(parcel)),
             confirm_remove_keyboard(parcel.id, page),
+        )
+    elif action == "shr":
+        await query.answer()
+        token = await share_token(deps.repo, parcel.id)
+        link = f"https://t.me/{context.bot.username}?start=s_{token}"
+        await _edit(
+            query,
+            texts.SHARE_LINK.format(title=masked_title(parcel), link=escape(link)),
+            back_keyboard(parcel.id, page),
         )
     elif action == "dok":
         await query.answer()
@@ -168,3 +188,31 @@ async def _list_page(
         format_parcel_list(parcels, deps.settings.tz, page=page),
         list_keyboard(numbered, page, pages),
     )
+
+
+async def _share_answer(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    token = parts[0] if parts else ""
+    choice = parts[1] if len(parts) > 1 else ""
+    deps = get_deps(context)
+    parcel = await shared_parcel(deps.repo, token)
+    if parcel is None:
+        await query.answer(texts.SHARE_NOT_FOUND)
+        return
+    await query.answer()
+    if choice != "ok":
+        await _edit(query, texts.CANCELLED, None)
+        return
+    user = await current_user(update, deps)
+    outcome = await deps.parcels.add(user, parcel.tracking_number, None, label=parcel.label)
+    text = format_add_outcome(
+        outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
+    )
+    await _edit(query, text, card_markup(outcome))
+    if outcome.kind == "needs_phone":
+        user_data(context)[PENDING_PHONE] = {
+            "code": outcome.code,
+            "label": parcel.label,
+            "prompt_id": None,
+        }

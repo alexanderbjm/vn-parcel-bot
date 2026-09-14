@@ -17,7 +17,7 @@ from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
 from vn_parcel_bot.constants import CHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import Parcel, User
-from vn_parcel_bot.keyboards import card_keyboard, list_keyboard
+from vn_parcel_bot.keyboards import card_keyboard, list_keyboard, share_open_keyboard
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
     format_help,
@@ -28,11 +28,14 @@ from vn_parcel_bot.services.formatting import (
     format_parcel_list,
     list_page_items,
     masked_title,
+    parcel_carrier_label,
+    parcel_title,
     ref_text,
     spoiler,
     truncate_message,
 )
 from vn_parcel_bot.services.parcels import AddOutcome
+from vn_parcel_bot.services.sharing import shared_parcel
 from vn_parcel_bot.services.vision import VisionResult
 from vn_parcel_bot.tracking_codes import is_valid_last4, mask_code
 
@@ -62,7 +65,7 @@ async def reply(
     )
 
 
-def _card_markup(outcome: AddOutcome) -> InlineKeyboardMarkup | None:
+def card_markup(outcome: AddOutcome) -> InlineKeyboardMarkup | None:
     if outcome.parcel is None or outcome.kind not in ("added", "duplicate"):
         return None
     return card_keyboard(outcome.parcel)
@@ -113,7 +116,32 @@ async def _delete_messages(
             log.info("message delete failed type=%s", type(exc).__name__)
 
 
+async def _open_share(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str) -> None:
+    deps = get_deps(context)
+    parcel = await shared_parcel(deps.repo, token)
+    if parcel is None:
+        await reply(update, texts.SHARE_NOT_FOUND)
+        return
+    user = await current_user(update, deps)
+    if parcel.user_id == user.telegram_id:
+        await reply(
+            update,
+            format_parcel_card(parcel, deps.settings.tz),
+            reply_markup=card_keyboard(parcel),
+        )
+        return
+    await reply(
+        update,
+        texts.SHARE_OPEN.format(title=parcel_title(parcel), carrier=parcel_carrier_label(parcel)),
+        reply_markup=share_open_keyboard(token),
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = context.args or []
+    if args and args[0].startswith("s_"):
+        await _open_share(update, context, args[0][2:])
+        return
     first_name = update.effective_user.first_name if update.effective_user else ""
     await reply(
         update, texts.WELCOME.format(name=escape(first_name or "")) + "\n\n" + format_help()
@@ -140,7 +168,7 @@ async def _add_and_reply(
         format_add_outcome(
             outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
         ),
-        reply_markup=_card_markup(outcome),
+        reply_markup=card_markup(outcome),
     )
     if outcome.kind == "needs_phone":
         user_data(context)[PENDING_PHONE] = {
@@ -175,7 +203,7 @@ async def _add_many(
             format_add_outcome(
                 outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
             ),
-            reply_markup=_card_markup(outcome),
+            reply_markup=card_markup(outcome),
         )
     if needs_phone:
         await reply(update, format_needs_phone_multi(needs_phone))
@@ -527,7 +555,7 @@ async def _add_codes_from_photo(
         sent = await reply(
             update,
             f"{_vision_header(result, code, phone_last4)}\n\n{body}",
-            reply_markup=_card_markup(outcome),
+            reply_markup=card_markup(outcome),
         )
         if single:
             if outcome.kind == "needs_phone":

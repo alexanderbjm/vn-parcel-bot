@@ -9,11 +9,12 @@ from tests.fakes import FakeCarrier, FakeNotifier, ev, fake_registry, found
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps
 from vn_parcel_bot.bot.handlers_callback import callback_query
-from vn_parcel_bot.bot.handlers_user import PENDING_LABEL, list_cmd, text_message
+from vn_parcel_bot.bot.handlers_user import PENDING_LABEL, list_cmd, start, text_message
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.formatting import format_parcel_card
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
+from vn_parcel_bot.services.sharing import share_token
 
 T0 = datetime(2026, 9, 1, 5, 0, tzinfo=UTC)
 USER = 111
@@ -233,3 +234,62 @@ async def test_list_command_and_add_reply_carry_buttons(env):
     listed = []
     await list_cmd(user_update(Msg(61, "/list", listed)), env.context)
     assert first_data(listed[-1][1]) == f"p:{parcel.id}:card:1"
+
+
+def other_update(message):
+    return SimpleNamespace(
+        effective_user=SimpleNamespace(id=OTHER, full_name="O", first_name="O"),
+        effective_chat=SimpleNamespace(id=OTHER),
+        effective_message=message,
+    )
+
+
+async def test_share_button_shows_link(env):
+    parcel = await add_spx(env)
+    query = await tap(env, f"p:{parcel.id}:shr")
+    text, markup = query.edits[0]
+    assert "https://t.me/vn_parcel_hozk_bot?start=s_" in text
+    assert first_data(markup) == f"p:{parcel.id}:card"
+
+
+async def test_shared_link_lets_another_user_track(env):
+    parcel = await add_spx(env)
+    await env.deps.parcels.rename(USER, SPX, "Áo")
+    token = await share_token(env.repo, parcel.id)
+    env.context.args = [f"s_{token}"]
+    opened = []
+    await start(other_update(Msg(80, "/start", opened)), env.context)
+    text, markup = opened[-1]
+    assert text == texts.SHARE_OPEN.format(title="Áo", carrier="SPX")
+    assert [b.callback_data for b in markup.inline_keyboard[0]] == [
+        f"s:{token}:ok",
+        f"s:{token}:no",
+    ]
+    query = await tap(env, f"s:{token}:ok", user_id=OTHER)
+    added = await env.repo.find_parcel(OTHER, SPX)
+    assert added is not None
+    assert added.label == "Áo"
+    assert first_data(query.edits[0][1]) == f"p:{added.id}:ren"
+
+
+async def test_shared_link_skip_and_unknown(env):
+    parcel = await add_spx(env)
+    token = await share_token(env.repo, parcel.id)
+    skipped = await tap(env, f"s:{token}:no", user_id=OTHER)
+    assert skipped.edits[0] == (texts.CANCELLED, None)
+    assert await env.repo.find_parcel(OTHER, SPX) is None
+    unknown = await tap(env, "s:missing00000:ok", user_id=OTHER)
+    assert unknown.answers == [texts.SHARE_NOT_FOUND]
+    env.context.args = ["s_missing00000"]
+    replies = []
+    await start(other_update(Msg(81, "/start", replies)), env.context)
+    assert replies[-1][0] == texts.SHARE_NOT_FOUND
+
+
+async def test_owner_opening_own_link_gets_card(env):
+    parcel = await add_spx(env)
+    token = await share_token(env.repo, parcel.id)
+    env.context.args = [f"s_{token}"]
+    replies = []
+    await start(user_update(Msg(82, "/start", replies)), env.context)
+    assert first_data(replies[-1][1]) == f"p:{parcel.id}:ren"
