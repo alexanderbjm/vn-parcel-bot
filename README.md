@@ -96,6 +96,9 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 - **15-digit numbers** are tracked as Cainiao. A number that turns out to be an order number never gets data and stops after 7 days.
 - **Hidden codes:** tracking codes and order numbers in bot messages are blurred (Telegram spoiler); tap to reveal.
 - **Progress:** `/list`, digests and updates show how far a parcel has come (` · 80%` and a bar) from its latest status: 10% order created, 30% picked up, 50% at a hub, 60% cleared customs, 80% at the delivery post office, 95% out for delivery, 100% delivered. SPX uses its status codes, other carriers use status keywords; a carrier module can override this with `progress=`.
+- **Buttons:** update messages and add replies carry ✏️ Đổi tên (rename), 📜 Hành trình (history), 🔄 Kiểm tra (check now, once every 5 minutes per parcel), 🗑 Xóa (remove after confirming), 📤 Chia sẻ (share link) and 🔗 Tra cứu ↗ (tracking page). Taps edit the same message. `/list` and digests show numbered buttons that open a parcel card; `/list` shows 5 parcels per page with ⬅️/➡️.
+- **Sound:** update messages arrive silently unless a parcel is out for delivery, delivered or returned; quiet hours keep everything silent.
+- **Share links:** 📤 Chia sẻ creates a `t.me/<bot>?start=s_…` link. Another allowed user who opens it can add the same parcel (code and name, not your phone digits) to their own list.
 - **Tidy chat:** questions that need a second message (phone digits, a parcel name, `/remove` confirmation) are deleted together with your answer once handled. Telegram only lets bots delete messages younger than 48 hours.
 - **Quiet hours:** between 22:00 and 07:00 updates still arrive, but silently.
 
@@ -107,6 +110,10 @@ Send a screenshot of an order (the shop app's shipping details screen works best
 
 At 07:00, 12:00, 19:00 and 22:00 every allowed user who has parcels gets one summary message with sound. It lists active parcels with 🆕 on the ones that changed since the previous digest, and parcels that were delivered, returned or stopped since then are shown once. Instant updates still arrive as before. To change the times, set `DIGEST_TIMES` in `.env` (for example `DIGEST_TIMES=08:00,20:00`, or leave it empty to turn digests off) and restart the bot. A digest time missed while the PC was off is skipped; the next digest covers everything since the last one.
 
+## Carrier stickers
+
+Send a sticker from any Telegram pack to the bot, then reply to that sticker with `/sticker spx` (admin only; any carrier code works, and `/sticker xyz` lists them). The bot then sends that sticker silently just before each SPX update message. `/sticker` lists carriers that have a sticker; `/sticker spx off` removes it. If the pack owner deletes the sticker, the bot logs it once and skips it until the next restart.
+
 ## Fixing a carrier while the bot runs
 
 Each carrier is one file in `src/vn_parcel_bot/carriers/modules/` (its code rules, name, link, notes, example codes and tracking client). Edit and save the file: within about a minute the bot loads the new version, checks every carrier's example codes and switches over without a restart (log line `carrier module reloaded code=<name>`). If the new version fails to load or breaks another carrier's examples, the bot keeps the last working version, logs `carrier module rejected` and sends the admin `⚠️ Module <name> lỗi, vẫn dùng bản cũ: <error>` once. Adding a file adds a carrier. Changes to any other file still need a restart.
@@ -117,7 +124,7 @@ Each carrier is one file in `src/vn_parcel_bot/carriers/modules/` (its code rule
 2. They forward that ID to you.
 3. You send `/allow <id> <tên>`. They get a welcome message.
 
-Admin commands: `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`.
+Admin commands: `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sticker <hãng> [off]`.
 
 ## Operations
 

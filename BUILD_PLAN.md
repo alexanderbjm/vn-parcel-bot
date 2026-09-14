@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 2.1 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
+Version 2.2 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,14 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 2.2 (2026-09-14)
+
+- **Parcel card buttons** (`keyboards.py`, `bot/handlers_callback.py`): update messages and add replies carry rename, history, check (5-minute cooldown per parcel), remove (confirm/cancel), share and tracking-link buttons; callback data is `p:<id>:<action>[:<page>]`, `l:<page>` or `s:<token>:<ok|no>` and never holds a tracking code. Taps edit the message in place; every handler answers the query and checks ownership. `/list` pages 5 parcels with numbered buttons; digests carry numbered buttons.
+- **Poller**: `check_parcel(user_id, parcel_id)`; update messages are silent unless newly delivered, newly returned or progress reaches 95; a carrier sticker from meta `sticker:<carrier>` is sent before the update and skipped after a failure.
+- **Notifier**: `reply_markup`, `send_sticker` and one retry after `RetryAfter` (max 60 s).
+- **Share links** (`services/sharing.py`): meta `share:<token>` / `share-of:<parcel_id>`; `/start s_<token>` lets another allowed user add the same parcel to their own list.
+- **`/sticker`** admin command; `Repository.delete_meta`. Design: `docs/superpowers/specs/2026-09-14-parcel-buttons-design.md`.
 
 ## Changes in 2.1 (2026-09-14)
 

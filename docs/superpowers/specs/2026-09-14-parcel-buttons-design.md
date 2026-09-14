@@ -1,6 +1,6 @@
 # Parcel buttons, carrier stickers and service-bot patterns — design
 
-Date: 2026-09-14 · Branch: `main` · Status: approved in chat, not built
+Date: 2026-09-14 · Branch: `main` · Status: built and deployed 2026-09-14 (`139ec16`, `415a2d0`, `5006794`, `c44bfcc`, `c211676`); keyboards live in `vn_parcel_bot/keyboards.py`
 
 ## 1. Why
 
