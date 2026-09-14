@@ -52,6 +52,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
    | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
    | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
+   | `SEVENTEEN_TRACK_KEY` | no | – | 17TRACK API key: tracks BEST, SF and cross-border J&T (`JNTX…`, after the phone digits). Each newly registered parcel uses one 17TRACK quota |
 
 5. **Check Telegram and carriers** (optional but recommended before the first run):
    ```powershell
@@ -83,15 +84,17 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 | `/track <mã> [4 số] [hãng]` | Track with phone digits and/or a forced carrier (`spx`, `jt`, `cainiao`, `4px`, `ninjavan`, `ghn`) |
 | `/list` | Your parcels |
 | `/status <mã hoặc số>` | Full history, newest first |
-| `/label <mã hoặc số> <tên>` | Name a parcel (no name clears it) |
-| `/remove <mã hoặc số>` | Stop tracking |
+| `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one (send `-` to clear). The code is shown masked and your `/label` message is deleted |
+| `/remove <mã hoặc số>` | Stop tracking after you confirm with `có` |
 | `/phone <4 số>` · `/phone clear` | Save or clear your default last 4 phone digits |
 | `/check` | Check your parcels now (once every 5 minutes) |
-| `/cancel` | Cancel a pending phone-digit question |
+| `/cancel` | Cancel a pending question (phone digits, name, remove) |
 
 - **Phone digits:** J&T and GHN only show tracking with the last 4 digits of the recipient's phone. Save them once with `/phone 1234`, or give them per parcel with `/track <mã> 1234`.
 - **Automatic detection:** if a code matches several carriers, `/list` shows "Đang xác định hãng" until one of them has data; the update message then names the carrier. Use `/track <mã> <hãng>` to force a carrier.
-- **Link-only carriers:** codes from BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express get an official tracking link plus a 17TRACK link; they are not tracked.
+- **Link-only carriers:** codes from YunExpress, GHTK, Viettel Post, VNPost and LEX VN get an official tracking link plus a 17TRACK link; they are not tracked. BEST Express and SF Express are the same unless `SEVENTEEN_TRACK_KEY` is set, in which case they are tracked through the 17TRACK API.
+- **15-digit numbers** are tracked as Cainiao. A number that turns out to be an order number never gets data and stops after 7 days.
+- **Tidy chat:** questions that need a second message (phone digits, a parcel name, `/remove` confirmation) are deleted together with your answer once handled. Telegram only lets bots delete messages younger than 48 hours.
 - **Quiet hours:** between 22:00 and 07:00 updates still arrive, but silently.
 
 ### Screenshots
@@ -101,6 +104,10 @@ Send a screenshot of an order (the shop app's shipping details screen works best
 ### Daily digests
 
 At 07:00, 12:00, 19:00 and 22:00 every allowed user who has parcels gets one summary message with sound. It lists active parcels with 🆕 on the ones that changed since the previous digest, and parcels that were delivered, returned or stopped since then are shown once. Instant updates still arrive as before. To change the times, set `DIGEST_TIMES` in `.env` (for example `DIGEST_TIMES=08:00,20:00`, or leave it empty to turn digests off) and restart the bot. A digest time missed while the PC was off is skipped; the next digest covers everything since the last one.
+
+## Fixing a carrier while the bot runs
+
+Each carrier is one file in `src/vn_parcel_bot/carriers/modules/` (its code rules, name, link, notes, example codes and tracking client). Edit and save the file: within about a minute the bot loads the new version, checks every carrier's example codes and switches over without a restart (log line `carrier module reloaded code=<name>`). If the new version fails to load or breaks another carrier's examples, the bot keeps the last working version, logs `carrier module rejected` and sends the admin `⚠️ Module <name> lỗi, vẫn dùng bản cũ: <error>` once. Adding a file adds a carrier. Changes to any other file still need a restart.
 
 ## Adding family and friends
 

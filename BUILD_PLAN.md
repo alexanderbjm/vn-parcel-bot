@@ -1,8 +1,8 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.8 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
+Version 2.0 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
 
-One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
+One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
 | Part | Contents | Used by |
 |---|---|---|
@@ -24,6 +24,15 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 2.0 (2026-09-14)
+
+- **Carrier modules with hot reload** (§5.2, §9.5): each carrier is one file in `src/vn_parcel_bot/carriers/modules/` (rules with priority and rank, name, link, notes, example codes, tracking client). The running bot reloads a changed file once it reads the same content on two 30-second checks and every module's examples still pass; otherwise it keeps the last working version and sends the admin `MODULE_REJECTED`. `carrier_catalog.py`, `texts.CARRIER_NAMES` and the rule table in `tracking_codes.py` are gone. Verified live on 2026-09-14: an edit to `sf.py` and its revert were both reloaded without a restart.
+- **15-digit numbers are Cainiao** (§5.2): every 15-digit number is added as a pending Cainiao parcel and the typed order-number reply (`ORDER_NUMBER`) is removed. Order numbers get no data and expire after 7 days.
+- **Schema v2**: no `carrier` CHECK; migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first. Migrated live with 4 parcels and 11 events intact.
+- **Labels and privacy** (§17): reply to a bot message with `/label [name]` to name the parcel in it; the replied bot message is edited to show the masked code, the confirmation shows the masked code and the `/label` message is deleted. `/label` without a name asks for one (`-` clears), `/remove` asks for confirmation (`có`), and these prompts and the phone-digit prompt delete the question and the answer once handled.
+- **17TRACK (optional)**: with `SEVENTEEN_TRACK_KEY`, BEST (17TRACK carrier 101194), SF (100012) and cross-border J&T (`JNTX…`, 100295, after the phone digits) are tracked through the 17TRACK API, one quota per newly registered number. Without the key nothing changes. Written by agy, reviewed and fixed.
+- **Cainiao last-mile code**: when Cainiao reports a destination waybill (`destMailNo`), one extra event "Chặng cuối <carrier>: <code>" is added, dated just before the oldest event so it is announced once.
 
 ## Changes in 1.8 (2026-09-14)
 
@@ -287,39 +296,37 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 ### 5.2 Code normalization, detection, order numbers and fallback
 
 - `normalize_code(raw)`: uppercase; remove all whitespace and `-`; strip surrounding `,;:()[]<>"'.`. Internal dots are kept (GHTK codes contain them).
-- `detect_carriers(code)` on a normalized code — the **first** matching rule wins and returns its candidates in order:
+- `detect_carriers(code)` on a normalized code asks the carrier snapshot (§9.5): every rule of every loaded module in `src/vn_parcel_bot/carriers/modules/` that full-matches is collected, only the highest priority is kept, and candidates are ordered by rank, then carrier code.
 
-| # | Regex | Candidates | Source |
-|---|---|---|---|
-| 1 | `^SPXVN[0-9A-Z]{8,16}$` | spx | observed |
-| 2 | `^SPEVN[0-9A-Z]{6,20}$` | ninjavan | web (Ninja Van codes on Shopee) |
-| 3 | `^LP\d{14}$` | cainiao | open-source trackers |
-| 4 | `^[A-Z]{2}\d{9}CN$` | cainiao | UPU S10 (China Post / AliExpress) |
-| 5 | `^4PX[0-9A-Z]{10,20}$` | fourpx | open-source tracker |
-| 6 | `^YT\d{16}$` | yunexpress | web |
-| 7 | `^[A-Z]{2}\d{9}VN$` | vnpost | UPU S10 |
-| 8 | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | lex | web, unverified |
-| 9 | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | ghtk | web |
-| 10 | `^JNTX[A-Z]?\d{8,12}$` | jt | observed (`JNTXB…`, Lazada cross-border via J&T VN) |
-| 11 | `^YT\d{13}$` | cainiao | observed (Lazada `<order>_YT…` shown as Cainiao) |
-| 12 | `^SF\d{13}$` | sf | observed (SF Express waybill in an order screenshot) |
-| 13 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
-| 14 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
-| 15 | `^\d{13}$` | best | web |
-| 16 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
+| Module | Regex | Priority | Rank | Notes |
+|---|---|---|---|---|
+| spx | `^SPXVN[0-9A-Z]{8,16}$` | 100 | | observed |
+| ninjavan | `^SPEVN[0-9A-Z]{6,20}$` | 100 | | web (Ninja Van codes on Shopee) |
+| cainiao | `^LP\d{14}$`, `^[A-Z]{2}\d{9}CN$`, `^YT\d{13}$` | 100 | | `YT` + 13 digits: Lazada `<order>_YT…` |
+| cainiao | `^\d{15}$` | 60 | | every 15-digit number (2.0) |
+| fourpx | `^4PX[0-9A-Z]{10,20}$` | 100 | | open-source tracker |
+| yunexpress | `^YT\d{16}$` | 100 | | web |
+| vnpost | `^[A-Z]{2}\d{9}VN$` | 100 | | UPU S10 |
+| lex | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | 100 | | web, unverified |
+| ghtk | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | 100 | | web |
+| jt | `^JNTX[A-Z]?\d{8,12}$` | 100 | | observed (Lazada cross-border) |
+| sf | `^SF\d{13}$` | 100 | | observed |
+| best | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | 100 | | observed (`BESTMP…VNA`) |
+| best | `^\d{13}$` | 60 | | web |
+| jt / best / viettelpost | `^\d{12}$` | 40 | 0 / 1 / 2 | observed (J&T); web |
+| ghn / ninjavan | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | 10 | 0 / 1 | standalone only |
 
-  No rule matches → `[]`.
-- `is_order_number(code)`: `^\d{15}$`. Marketplace order numbers (Lazada, TikTok Shop) have this shape; they are not shipping codes and are never tracked.
+  Nothing matches → `[]`.
+- `is_order_number(code)`: `^\d{15}$`. Since 2.0 every 15-digit number is detected as Cainiao; `is_order_number` only separates order numbers from codes in `extract_codes` and in the screenshot reader's free-text fallback.
 - Lazada composite codes: after upper-casing and removing spaces/dashes, `normalize_code` turns `^\d{15}_([0-9A-Z]{8,30})$` into the part after the underscore (the waybill). `extract_codes` tokens may contain `_` so the composite stays one token.
-- `is_lazada_cainiao(code)`: `^YT\d{13}$` (rule 11); pending add replies append `LAZADA_CAINIAO_HINT`.
-- `is_jt_cross_border(code)`: `^JNTX[A-Z]?\d{8,12}$` (rule 10). Such parcels are J&T parcels; add replies (pending and phone question) append `JT_CROSS_BORDER_HINT`.
+- Carrier notes on pending and phone-question replies come from the module's `pending_hint` (J&T for `JNTX…`, Cainiao for `YT` + 13 digits).
 - `is_seller_fleet(code)`: `^84\d{12}$`. TikTok Shop seller own fleet codes; no public tracking page, never tracked.
 - `is_code_like(code)`: `^[0-9A-Z]{8,40}$` with at least 6 digits.
-- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 16** match only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including rule-16 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
+- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a detection from the carrier snapshot (a standalone-only match, such as the generic GHN/Ninja Van rule, only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including standalone-only matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
 - `is_valid_last4(s)`: `^\d{4}$`.
 - `mask_code(code)`: `code[:5] + "…" + code[-3:]`, used in logs.
 
-Prompt 10A updates this section and `tracking_codes.py` together when real codes contradict a rule.
+Rules live in the carrier module files; fix a rule there and the running bot reloads it (§9.5). Update this table in the same change.
 
 ### 5.3 SPX Express Vietnam
 
@@ -533,8 +540,7 @@ CREATE TABLE users (
 CREATE TABLE parcels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
-  carrier TEXT CHECK (carrier IS NULL OR carrier IN ('spx', 'jt', 'cainiao', 'fourpx', 'ninjavan', 'ghn',
-                                                    'best', 'yunexpress', 'ghtk', 'viettelpost', 'vnpost', 'lex')),
+  carrier TEXT,
   candidates TEXT NOT NULL CHECK (length(candidates) > 0),
   tracking_number TEXT NOT NULL,
   phone_last4 TEXT CHECK (phone_last4 IS NULL OR phone_last4 GLOB '[0-9][0-9][0-9][0-9]'),
@@ -575,7 +581,7 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 
 - `carrier IS NULL` means **unresolved**: the parcel has several candidates and none has returned data yet. Unresolved parcels can only be `pending` or `expired`.
 - `candidates` stores tracked carrier codes in try order, comma-separated (`ghn,ninjavan`). A resolved parcel stores exactly its carrier.
-- The `carrier` CHECK lists the twelve original codes so that promoting one of them needs no migration. `sf` (added in 1.8) is link-only and never stored; promoting it would need a migration that widens the CHECK.
+- Schema v2 (2.0) has no `carrier` CHECK: carrier codes come from the loaded modules, so a new module can store parcels without a migration. Migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first.
 - `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
 **Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
@@ -754,59 +760,77 @@ class SingleInstanceLock:
     def __exit__(self, *exc) -> None: ...  # unlock + close
 ```
 
-### 9.5 `carrier_catalog.py` and `tracking_codes.py` (pure, no I/O)
+### 9.5 Carrier modules, registry and `tracking_codes.py`
+
+Carrier modules are Python files in `src/vn_parcel_bot/carriers/modules/`, one per carrier, each defining `MODULE`. The running bot checks them every 30 s (`MODULE_REFRESH_SECONDS`); a file whose new content is seen on two consecutive checks is loaded, validated against every module's `examples`, and swapped in. A module that fails keeps the last working version, logs `carrier module rejected code=… hash=… error=…` (error type and line only) and sends the admin `MODULE_REJECTED` once per file version. Module files must not do I/O at import time. Changes outside `modules/` need a restart.
 
 ```python
-# carrier_catalog.py
-CarrierCode = Literal[
-    "spx",
-    "jt",
-    "cainiao",
-    "fourpx",
-    "ninjavan",
-    "ghn",
-    "best",
-    "yunexpress",
-    "ghtk",
-    "viettelpost",
-    "vnpost",
-    "lex",
-    "sf",
-]
+# carriers/api.py
+PRIORITY_PREFIXED = 100
+PRIORITY_NUMERIC = 60
+PRIORITY_SHARED_NUMERIC = 40
+PRIORITY_GENERIC = 10
 
 
 @dataclass(frozen=True)
-class CarrierInfo:
-    code: CarrierCode
-    display_name: str  # plain text: "SPX", "J&T", "LEX VN"
-    tracked: bool
-    needs_phone: bool
-    link_template: str | None  # §5.1; "{code}" placeholder; None for tracked carriers
+class Rule:
+    pattern: str  # re.fullmatch on the normalized code, re.ASCII
+    priority: int
+    rank: int = 0  # order between modules sharing a priority
+    standalone_only: bool = False
 
 
-CATALOG: dict[CarrierCode, CarrierInfo]  # insertion order = §5.1 table order
-TRACKED: tuple[CarrierCode, ...]  # ("spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn")
-SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"
+@dataclass(frozen=True)
+class CarrierModule:
+    code: str  # [a-z0-9]{2,20}, equals the file name
+    display_name: str  # plain text; formatting escapes it
+    rules: tuple[Rule, ...]
+    order: int = 100  # display order (/help)
+    needs_phone: bool = False
+    link_template: str | None = None  # https URL, optional {code}; required when link-only
+    examples: tuple[tuple[str, bool], ...] = ()
+    build_client: Callable[[], Carrier | None] = no_client  # a client makes the carrier tracked
+    pending_hint: Callable[[str], str | None] = no_hint
 
 
-def is_tracked(carrier: CarrierCode) -> bool: ...
-def needs_phone(carrier: CarrierCode) -> bool: ...
-def official_url(carrier: CarrierCode, code: str) -> str | None: ...
-def seventeen_track_url(code: str) -> str: ...
+# carriers/registry.py
+class CarrierSnapshot:  # immutable
+    def detect(self, code: str) -> Detection: ...  # Detection(candidates, standalone_only)
+    def get(self, code: str) -> CarrierModule | None: ...
+    def ordered(self) -> list[CarrierModule]: ...
+    def is_tracked(self, code: str) -> bool: ...
+    def client(self, code: str) -> Carrier | None: ...
+    def needs_phone(self, code: str) -> bool: ...
+    def display_name(self, code: str) -> str: ...  # the code itself when no module is loaded
+    def link(self, code: str, tracking_number: str) -> str | None: ...
+    def pending_hint(self, carriers: Iterable[str], tracking_number: str) -> str | None: ...
+
+
+class CarrierRegistry:
+    current: CarrierSnapshot
+    startup_rejections: list[Rejection]
+
+    @classmethod
+    def load(cls, directory: Path = MODULES_DIR) -> "CarrierRegistry": ...
+    def refresh(self) -> RefreshReport: ...  # RefreshReport(reloaded, rejected)
+
+
+def get_registry() -> CarrierRegistry: ...  # process-wide; set_registry() at startup
+def current_snapshot() -> CarrierSnapshot: ...
 
 
 # tracking_codes.py
 def normalize_code(raw: str) -> str: ...
-def detect_carriers(code: str) -> list[CarrierCode]: ...
+def detect_carriers(code: str) -> list[str]: ...  # current_snapshot().detect(code).candidates
 def is_order_number(code: str) -> bool: ...
 def is_seller_fleet(code: str) -> bool: ...
-def is_jt_cross_border(code: str) -> bool: ...
-def is_lazada_cainiao(code: str) -> bool: ...
 def is_code_like(code: str) -> bool: ...
 def extract_codes(text: str) -> list[str]: ...
 def is_valid_last4(value: str) -> bool: ...
 def mask_code(code: str) -> str: ...  # code[:5] + "…" + code[-3:]
 ```
+
+`ParcelService` and `Poller` receive the registry and read `registry.current` once per operation; formatting, parsing and code extraction use `current_snapshot()`. A parcel whose carrier has no loaded module is skipped by the poller with `carrier module missing carrier=… parcels=…`. With `SEVENTEEN_TRACK_KEY` set, the `best`, `sf` and `jt` modules use `carriers/seventeen_track.py` (J&T only for `JNTX…` codes).
 
 ### 9.6 `carriers/models.py`
 
@@ -1412,7 +1436,7 @@ See §9.2. They are code constants, not env vars.
 10. `/label 1 Áo khoác` → `/list` and future updates show "Áo khoác"; `/label 1` clears it.
 11. `/status 1` → history newest first; `/remove 1` → `REMOVED`, gone from `/list`.
 12. Paste a real Cainiao (`LP…`) or 4PX (`4PX…`) code → `ADDED_FOUND` naming Cainiao / 4PX.
-13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 16 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
+13. With `/phone` set, paste a real GHN or Ninja Van code that matches the generic rule (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
 14. Paste a VNPost-shaped code (`EB123456789VN`) → `LINK_ONLY` with a VNPost link and a 17TRACK link; `/list` unchanged.
 15. Paste a 15-digit marketplace order number → `ORDER_NUMBER` with a 17TRACK link, nothing added; paste a 14-digit `84…` code → `SELLER_FLEET`; paste an unrecognised code-like string → `UNKNOWN_CARRIER`; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
 16. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
@@ -1451,6 +1475,8 @@ See §9.2. They are code constants, not env vars.
 ---
 
 ## 17. Text catalog (`texts.py`)
+
+> **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`.
 
 All messages are sent with `parse_mode=HTML`. `{placeholders}` are filled with **already-escaped** values by `services/formatting.py`. Copy verbatim.
 

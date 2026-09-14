@@ -1,6 +1,6 @@
 # Carrier modules with hot reload, BEST through 17TRACK, 15-digit Cainiao codes — design
 
-Date: 2026-09-14 · Branch: `main` · Status: approved 2026-09-14; Part C (BEST through 17TRACK) dropped by the user; not built
+Date: 2026-09-14 · Branch: `main` · Status: Parts A and B built (`2aa4ba4`, `8c76d2d`, `1ca8d76`, `829a31c`, `3824184`) and verified live on 2026-09-14; Part C was dropped from this plan, but agy's 17TRACK client was kept at the user's choice and reviewed (`de07e97`)
 
 ## 1. Why
 
@@ -19,6 +19,8 @@ Date: 2026-09-14 · Branch: `main` · Status: approved 2026-09-14; Part C (BEST 
 | Typed or read 15-digit numbers | Always added as pending Cainiao parcels. Order numbers that get no Cainiao data expire after `PENDING_EXPIRY` (7 days) with the usual expiry message. |
 | Carrier words / hint lines | None. Users never name the carrier; no new reply lines. The existing JNTX and Lazada pending notes stay. |
 | Screenshot order numbers | Codes the reader returns under `order_ids` keep today's order-only reply. |
+
+Planning changes (2026-09-14): `build_client()` takes no argument; `CarrierModule.order` sets display order; `/help` lists carriers through `format_help()`; the reply-to-label and prompt clean-up work was added to the same plan as Task 8 (`fea23f3`).
 
 Out of scope: captcha or anti-bot tooling of any kind (including insane-search), BEST Express tracking and any 17TRACK client, hot reload of shared code (contract, registry, `carriers/common.py`, services, bot), SF Express or JNTX through 17TRACK (possible later by editing only their module files; 17TRACK keys `100012` and `100295`), 17TRACK `stoptrack`/webhooks, per-user carrier settings.
 
