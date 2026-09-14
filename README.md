@@ -94,6 +94,8 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 - **Automatic detection:** if a code matches several carriers, `/list` shows "Đang xác định hãng" until one of them has data; the update message then names the carrier. Use `/track <mã> <hãng>` to force a carrier.
 - **Link-only carriers:** codes from YunExpress, GHTK, Viettel Post, VNPost and LEX VN get an official tracking link plus a 17TRACK link; they are not tracked. BEST Express and SF Express are the same unless `SEVENTEEN_TRACK_KEY` is set, in which case they are tracked through the 17TRACK API.
 - **15-digit numbers** are tracked as Cainiao. A number that turns out to be an order number never gets data and stops after 7 days.
+- **Hidden codes:** tracking codes and order numbers in bot messages are blurred (Telegram spoiler); tap to reveal.
+- **Progress:** `/list`, digests and updates show how far a parcel has come (` · 80%` and a bar) from its latest status: 10% order created, 30% picked up, 50% at a hub, 60% cleared customs, 80% at the delivery post office, 95% out for delivery, 100% delivered. SPX uses its status codes, other carriers use status keywords; a carrier module can override this with `progress=`.
 - **Tidy chat:** questions that need a second message (phone digits, a parcel name, `/remove` confirmation) are deleted together with your answer once handled. Telegram only lets bots delete messages younger than 48 hours.
 - **Quiet hours:** between 22:00 and 07:00 updates still arrive, but silently.
 

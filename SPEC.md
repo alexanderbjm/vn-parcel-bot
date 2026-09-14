@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.0). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 2.1). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -424,7 +424,7 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 
 - `carrier IS NULL` means **unresolved**: the parcel has several candidates and none has returned data yet. Unresolved parcels can only be `pending` or `expired`.
 - `candidates` stores tracked carrier codes in try order, comma-separated (`ghn,ninjavan`). A resolved parcel stores exactly its carrier.
-- Schema v2 (2.0) has no `carrier` CHECK: carrier codes come from the loaded modules, so a new module can store parcels without a migration. Migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first.
+- Schema v2 (2.0) has no `carrier` CHECK: carrier codes come from the loaded modules, so a new module can store parcels without a migration. Migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first. Schema v3 (2.1) adds `progress INTEGER` (0–100, only increases; `<db_path>.bak-v2` is written first).
 - `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
 **Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
@@ -634,6 +634,7 @@ class CarrierModule:
     examples: tuple[tuple[str, bool], ...] = ()
     build_client: Callable[[], Carrier | None] = no_client  # a client makes the carrier tracked
     pending_hint: Callable[[str], str | None] = no_hint
+    progress: Callable[[TrackingResult], int | None] = stage_progress  # 0-100 or None
 
 
 # carriers/registry.py
@@ -647,6 +648,7 @@ class CarrierSnapshot:  # immutable
     def display_name(self, code: str) -> str: ...  # the code itself when no module is loaded
     def link(self, code: str, tracking_number: str) -> str | None: ...
     def pending_hint(self, carriers: Iterable[str], tracking_number: str) -> str | None: ...
+    def progress(self, carrier: str, result: TrackingResult) -> int | None: ...  # delivered 100, returned None
 
 
 class CarrierRegistry:
@@ -1319,7 +1321,7 @@ See §9.2. They are code constants, not env vars.
 
 ## 17. Text catalog (`texts.py`)
 
-> **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`.
+> **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`. 2.1: templates take `{code}`, `{ref}` and `{order_id}` without `<code>` because formatting wraps them in a spoiler; `LIST_ITEM` gains `{bar}`; new `PROGRESS_SUFFIX` and `PROGRESS_BAR_LINE`.
 
 All messages are sent with `parse_mode=HTML`. `{placeholders}` are filled with **already-escaped** values by `services/formatting.py`. Copy verbatim.
 

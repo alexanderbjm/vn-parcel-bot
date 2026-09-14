@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 2.0 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
+Version 2.1 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,11 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 2.1 (2026-09-14)
+
+- **Blurred codes** (§17): every full tracking code, order number, seller-fleet code and code-like reference in bot messages is wrapped in `<span class="tg-spoiler">` (Telegram spoiler). List numbers stay readable; masked codes in `/label` replies are unchanged.
+- **Delivery progress** (§9.5): `CarrierModule.progress` (default: shared stage keywords in `carriers/progress.py`; SPX maps F-codes: F000 10, F100 30, F4xx/F5xx 50, F599 80, F6xx 95). Delivered is 100 and returned shows none. Schema v3 adds `parcels.progress` (0–100, only increases); `/list`, digests and updates show ` · 80%` and a 10-block bar.
 
 ## Changes in 2.0 (2026-09-14)
 
@@ -581,7 +586,7 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 
 - `carrier IS NULL` means **unresolved**: the parcel has several candidates and none has returned data yet. Unresolved parcels can only be `pending` or `expired`.
 - `candidates` stores tracked carrier codes in try order, comma-separated (`ghn,ninjavan`). A resolved parcel stores exactly its carrier.
-- Schema v2 (2.0) has no `carrier` CHECK: carrier codes come from the loaded modules, so a new module can store parcels without a migration. Migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first.
+- Schema v2 (2.0) has no `carrier` CHECK: carrier codes come from the loaded modules, so a new module can store parcels without a migration. Migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first. Schema v3 (2.1) adds `progress INTEGER` (0–100, only increases; `<db_path>.bak-v2` is written first).
 - `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
 **Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
@@ -791,6 +796,7 @@ class CarrierModule:
     examples: tuple[tuple[str, bool], ...] = ()
     build_client: Callable[[], Carrier | None] = no_client  # a client makes the carrier tracked
     pending_hint: Callable[[str], str | None] = no_hint
+    progress: Callable[[TrackingResult], int | None] = stage_progress  # 0-100 or None
 
 
 # carriers/registry.py
@@ -804,6 +810,7 @@ class CarrierSnapshot:  # immutable
     def display_name(self, code: str) -> str: ...  # the code itself when no module is loaded
     def link(self, code: str, tracking_number: str) -> str | None: ...
     def pending_hint(self, carriers: Iterable[str], tracking_number: str) -> str | None: ...
+    def progress(self, carrier: str, result: TrackingResult) -> int | None: ...  # delivered 100, returned None
 
 
 class CarrierRegistry:
@@ -1476,7 +1483,7 @@ See §9.2. They are code constants, not env vars.
 
 ## 17. Text catalog (`texts.py`)
 
-> **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`.
+> **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`. 2.1: templates take `{code}`, `{ref}` and `{order_id}` without `<code>` because formatting wraps them in a spoiler; `LIST_ITEM` gains `{bar}`; new `PROGRESS_SUFFIX` and `PROGRESS_BAR_LINE`.
 
 All messages are sent with `parse_mode=HTML`. `{placeholders}` are filled with **already-escaped** values by `services/formatting.py`. Copy verbatim.
 
