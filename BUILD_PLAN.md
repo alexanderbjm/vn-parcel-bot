@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.6 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
+Version 1.7 · 2026-09-14 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,11 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 1.7 (2026-09-14)
+
+- **Lazada Cainiao codes** (§5.2, §17): Lazada shows Cainiao parcels as `<15-digit order number>_<waybill>`. `normalize_code` drops the order-number prefix, tokens keep underscores, and `YT` + 13 digits is a Cainiao waybill tracked on Cainiao. On 2026-09-14 Cainiao's public endpoint had no events yet for a real one; pending replies add `LAZADA_CAINIAO_HINT`.
+- **Screenshot model** (§10): `VISION_MODEL` defaults to `sonnet`; Haiku misread long Lazada codes in tests.
 
 ## Changes in 1.6 (2026-09-14)
 
@@ -289,17 +294,20 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 | 8 | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | lex | web, unverified |
 | 9 | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | ghtk | web |
 | 10 | `^JNTX[A-Z]?\d{8,12}$` | jt | observed (`JNTXB…`, Lazada cross-border via J&T VN) |
-| 11 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
-| 12 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
-| 13 | `^\d{13}$` | best | web |
-| 14 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
+| 11 | `^YT\d{13}$` | cainiao | observed (Lazada `<order>_YT…` shown as Cainiao) |
+| 12 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
+| 13 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
+| 14 | `^\d{13}$` | best | web |
+| 15 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
 
   No rule matches → `[]`.
 - `is_order_number(code)`: `^\d{15}$`. Marketplace order numbers (Lazada, TikTok Shop) have this shape; they are not shipping codes and are never tracked.
+- Lazada composite codes: after upper-casing and removing spaces/dashes, `normalize_code` turns `^\d{15}_([0-9A-Z]{8,30})$` into the part after the underscore (the waybill). `extract_codes` tokens may contain `_` so the composite stays one token.
+- `is_lazada_cainiao(code)`: `^YT\d{13}$` (rule 11); pending add replies append `LAZADA_CAINIAO_HINT`.
 - `is_jt_cross_border(code)`: `^JNTX[A-Z]?\d{8,12}$` (rule 10). Such parcels are J&T parcels; add replies (pending and phone question) append `JT_CROSS_BORDER_HINT`.
 - `is_seller_fleet(code)`: `^84\d{12}$`. TikTok Shop seller own fleet codes; no public tracking page, never tracked.
 - `is_code_like(code)`: `^[0-9A-Z]{8,40}$` with at least 6 digits.
-- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 14** match only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including rule-14 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
+- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 15** match only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including rule-15 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
 - `is_valid_last4(s)`: `^\d{4}$`.
 - `mask_code(code)`: `code[:5] + "…" + code[-3:]`, used in logs.
 
@@ -784,6 +792,7 @@ def detect_carriers(code: str) -> list[CarrierCode]: ...
 def is_order_number(code: str) -> bool: ...
 def is_seller_fleet(code: str) -> bool: ...
 def is_jt_cross_border(code: str) -> bool: ...
+def is_lazada_cainiao(code: str) -> bool: ...
 def is_code_like(code: str) -> bool: ...
 def extract_codes(text: str) -> list[str]: ...
 def is_valid_last4(value: str) -> bool: ...
@@ -1331,7 +1340,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `TELEGRAM_PROXY_URL` | no | – | `http://`, `https://`, `socks5://` or `socks5h://` URL |
 | `VISION_ENGINE` | no | `claude_code` | `claude_code` or `api` |
 | `CLAUDE_CODE_PATH` | no | `claude` on `PATH`, else `%USERPROFILE%\.local\bin\claude.exe` | path to the Claude Code executable |
-| `VISION_MODEL` | no | `haiku` | Claude Code model alias or id |
+| `VISION_MODEL` | no | `sonnet` | Claude Code model alias or id |
 | `VISION_TIMEOUT_SECONDS` | no | `90` | 10..300 |
 | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
@@ -1394,7 +1403,7 @@ See §9.2. They are code constants, not env vars.
 10. `/label 1 Áo khoác` → `/list` and future updates show "Áo khoác"; `/label 1` clears it.
 11. `/status 1` → history newest first; `/remove 1` → `REMOVED`, gone from `/list`.
 12. Paste a real Cainiao (`LP…`) or 4PX (`4PX…`) code → `ADDED_FOUND` naming Cainiao / 4PX.
-13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 14 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
+13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 15 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
 14. Paste a VNPost-shaped code (`EB123456789VN`) → `LINK_ONLY` with a VNPost link and a 17TRACK link; `/list` unchanged.
 15. Paste a 15-digit marketplace order number → `ORDER_NUMBER` with a 17TRACK link, nothing added; paste a 14-digit `84…` code → `SELLER_FLEET`; paste an unrecognised code-like string → `UNKNOWN_CARRIER`; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
 16. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
@@ -1543,6 +1552,10 @@ ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu
 JT_CROSS_BORDER_HINT = (
     "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
     "thông quan về Việt Nam. Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
+)
+LAZADA_CAINIAO_HINT = (
+    "\n🌏 Đơn quốc tế Lazada qua Cainiao: Cainiao có thể chưa công bố hành trình ngay. "
+    "Trong lúc chờ, bạn xem hành trình trong app Lazada nhé."
 )
 ADDED_ERROR = (
     "✅ Đã thêm <b>{title}</b> · {carrier}\n"

@@ -47,7 +47,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `DIGEST_TIMES` | no | `07:00,12:00,19:00,22:00` | Local times for the daily digest; empty disables it |
    | `VISION_ENGINE` | no | `claude_code` | `claude_code` reads screenshots with Claude Code on this PC (your Claude plan); `api` uses Anthropic API credit |
    | `CLAUDE_CODE_PATH` | no | found automatically | Path to `claude.exe` if it is not on `PATH` or in `%USERPROFILE%\.local\bin` |
-   | `VISION_MODEL` | no | `haiku` | Claude Code model for screenshots |
+   | `VISION_MODEL` | no | `sonnet` | Claude Code model for screenshots (Haiku misread long codes) |
    | `VISION_TIMEOUT_SECONDS` | no | `90` | Seconds to wait for one screenshot (10..300) |
    | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
    | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |

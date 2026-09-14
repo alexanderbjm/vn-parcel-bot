@@ -13,7 +13,7 @@ Date: 2026-09-14 · Branch: `build/v1` · Status: Part C built and verified live
 | Topic | Decision |
 |---|---|
 | SPX | Use the endpoint spx.vn's tracking page itself loads the timeline from: `GET https://spx.vn/shipment/order/open/order/get_order_info?language_code=vi&spx_tn=<code>`. A plain request works (verified 2026-09-14). No browser, no signatures, no page-generated headers. If SPX starts blocking it, the bot backs off, alerts the admin and keeps sending the spx.vn link; no evasion. |
-| Image engine | Claude Code (`claude -p`, Haiku) on this PC with the user's Pro plan login, no tools, image over stdin. agy's Anthropic API path is kept as a backup behind `VISION_ENGINE=api`. (Decided 2026-09-14, replacing "Anthropic API with credit".) |
+| Image engine | Claude Code (`claude -p`, Sonnet by default since 2026-09-14 after Haiku misread long Lazada codes) on this PC with the user's Pro plan login, no tools, image over stdin. agy's Anthropic API path is kept as a backup behind `VISION_ENGINE=api`. (Decided 2026-09-14, replacing "Anthropic API with credit".) |
 | Order number only in a screenshot | Reply with the product name and ask for the "Thông tin vận chuyển" screen; store nothing |
 | Instant updates | Unchanged (sent immediately, silent during quiet hours) |
 | Digest content | Full list of active parcels every time, 🆕 on parcels with new events since the previous digest, parcels that finished since then shown once, nothing sent when there is nothing to show |
@@ -70,7 +70,7 @@ Built in `3c4c617`, spec 1.3 in `d69de90`, verified live on 2026-09-14: the real
 |---|---|---|
 | `VISION_ENGINE` | `claude_code` | `claude_code`, `api` |
 | `CLAUDE_CODE_PATH` | `shutil.which("claude")` or `%USERPROFILE%\.local\bin\claude.exe` | any path |
-| `VISION_MODEL` | `haiku` | non-empty (Claude Code model alias or id) |
+| `VISION_MODEL` | `sonnet` | non-empty (Claude Code model alias or id) |
 | `VISION_TIMEOUT_SECONDS` | `90` | 10–300 |
 | `ANTHROPIC_API_KEY` | – | api engine only |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | api engine only |
