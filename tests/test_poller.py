@@ -564,3 +564,57 @@ async def test_found_result_stores_progress_and_update_shows_bar(poller, repo, f
     text = notifier.sent[0][1]
     assert text.split("\n")[0].endswith(" · 95%")
     assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥" in text
+
+
+async def test_update_message_has_card_buttons_and_is_silent(poller, repo, fakes, notifier):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
+    await poller.run_cycle()
+    assert notifier.sent[0][2] is True
+    assert notifier.markups[0].inline_keyboard[0][0].callback_data == f"p:{parcel.id}:ren"
+
+
+async def test_out_for_delivery_and_delivered_ring(poller, repo, fakes, notifier, clock):
+    await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    await poller.run_cycle()
+    assert notifier.sent[-1][2] is False
+    clock.advance(timedelta(hours=1))
+    fakes["spx"].results[(SPX, None)] = found(
+        "spx", SPX, ev(0, "Đang giao hàng"), ev(5, "Giao hàng thành công"), delivered=True
+    )
+    await poller.run_cycle()
+    assert len(notifier.sent) == 2
+    assert notifier.sent[-1][2] is False
+
+
+async def test_sticker_sent_before_update_and_skipped_after_failure(
+    poller, repo, fakes, notifier, clock, caplog
+):
+    await repo.set_meta("sticker:spx", "file-spx")
+    await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
+    await poller.run_cycle()
+    assert notifier.stickers == [(USER, "file-spx")]
+    notifier.sticker_ok = False
+    clock.advance(timedelta(hours=1))
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"), ev(5, "Rời kho"))
+    await poller.run_cycle()
+    clock.advance(timedelta(hours=1))
+    fakes["spx"].results[(SPX, None)] = found(
+        "spx", SPX, ev(0, "Đã đến kho"), ev(5, "Rời kho"), ev(9, "Đến kho 2")
+    )
+    await poller.run_cycle()
+    assert len(notifier.stickers) == 2
+    assert caplog.text.count("carrier sticker failed carrier=spx") == 1
+    assert len(notifier.sent) == 3
+
+
+async def test_check_parcel_only_checks_that_parcel(poller, repo, fakes):
+    first = await add(repo, SPX, "spx")
+    await add(repo, "SPXVN000000000002", "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    checked = await poller.check_parcel(USER, first.id)
+    assert checked.progress == 95
+    assert fakes["spx"].calls == [(SPX, None)]
+    assert await poller.check_parcel(999, first.id) is None

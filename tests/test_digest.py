@@ -141,6 +141,7 @@ async def test_send_all_only_allowed_users_with_something_to_show(repo, settings
     notifier = FakeNotifier()
     assert await DigestService(repo, notifier, settings, clock).send_all() == 1
     assert [(chat_id, silent) for chat_id, _, silent in notifier.sent] == [(1, False)]
+    assert notifier.markups[0].inline_keyboard[0][0].callback_data.startswith("p:")
     assert await repo.get_meta(f"{DIGEST_META_PREFIX}1") == T0.isoformat()
     assert await repo.get_meta(f"{DIGEST_META_PREFIX}2") is None
 

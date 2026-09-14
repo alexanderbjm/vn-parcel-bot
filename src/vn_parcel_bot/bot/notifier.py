@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
@@ -7,13 +8,17 @@ from typing import Any
 from telegram import Bot, LinkPreviewOptions
 from telegram.constants import ParseMode
 from telegram.error import BadRequest, Forbidden, RetryAfter
+from telegram.warnings import PTBDeprecationWarning
 
 log = logging.getLogger(__name__)
 
 MAX_RETRY_WAIT_SECONDS = 60
 
 
-def _seconds(value: int | timedelta) -> float:
+def _retry_seconds(exc: RetryAfter) -> float:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PTBDeprecationWarning)
+        value = exc.retry_after
     return value.total_seconds() if isinstance(value, timedelta) else float(value)
 
 
@@ -26,7 +31,7 @@ class TelegramNotifier:
         try:
             await call()
         except RetryAfter as exc:
-            await self._sleep(min(_seconds(exc.retry_after), MAX_RETRY_WAIT_SECONDS))
+            await self._sleep(min(_retry_seconds(exc), MAX_RETRY_WAIT_SECONDS))
             await call()
 
     async def send(

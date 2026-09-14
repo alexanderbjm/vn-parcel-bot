@@ -18,11 +18,13 @@ from vn_parcel_bot.constants import (
     FAILURE_ALERT_THRESHOLD,
     JITTER_SECONDS,
     MAX_BACKOFF,
+    OUT_FOR_DELIVERY_PROGRESS,
     PENDING_EXPIRY,
     PURGE_AFTER,
     STALE_AFTER,
 )
 from vn_parcel_bot.db.repo import Parcel, Repository
+from vn_parcel_bot.keyboards import card_keyboard
 from vn_parcel_bot.services.formatting import (
     format_carrier_alert,
     format_event_update,
@@ -38,7 +40,11 @@ Outcome = TrackingResult | CarrierError
 
 
 class Notifier(Protocol):
-    async def send(self, chat_id: int, text: str, *, silent: bool = False) -> None: ...
+    async def send(
+        self, chat_id: int, text: str, *, silent: bool = False, reply_markup: object = None
+    ) -> None: ...
+
+    async def send_sticker(self, chat_id: int, file_id: str) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,7 @@ class Poller:
         self._sleep = sleep
         self._rand = rand
         self._lock = asyncio.Lock()
+        self._broken_stickers: set[str] = set()
 
     async def run_cycle(self, *, only_user_id: int | None = None, wait: bool = False) -> PollReport:
         if self._lock.locked() and not wait:
@@ -113,6 +120,15 @@ class Poller:
             return PollReport(started_at=now, finished_at=now, skipped=True)
         async with self._lock:
             return await self._cycle(only_user_id)
+
+    async def check_parcel(self, user_id: int, parcel_id: int) -> Parcel | None:
+        async with self._lock:
+            parcel = await self._repo.get_parcel(parcel_id)
+            if parcel is None or parcel.user_id != user_id:
+                return None
+            if parcel.is_active:
+                await self._cycle(None, only_parcels=[parcel])
+            return await self._repo.get_parcel(parcel_id)
 
     def is_quiet(self, at: datetime) -> bool:
         if self._settings.quiet_hours is None:
@@ -123,10 +139,14 @@ class Poller:
             return start <= hour < end
         return hour >= start or hour < end
 
-    async def _cycle(self, only_user_id: int | None) -> PollReport:
+    async def _cycle(
+        self, only_user_id: int | None, only_parcels: list[Parcel] | None = None
+    ) -> PollReport:
         now = self._now()
         report = PollReport(started_at=now, finished_at=now)
-        if only_user_id is None:
+        if only_parcels is not None:
+            parcels = only_parcels
+        elif only_user_id is None:
             parcels = await self._repo.due_parcels(now)
         else:
             parcels = await self._repo.active_parcels_for_user(only_user_id)
@@ -176,7 +196,7 @@ class Poller:
 
         report.finished_at = self._now()
         await self._repo.set_meta("last_poll_report", report.to_json())
-        if only_user_id is None:
+        if only_user_id is None and only_parcels is None:
             await self._repo.set_meta("last_poll_at", report.finished_at.isoformat())
         log.info(
             "poll cycle parcels=%s fetches=%s new_events=%s messages=%s failures=%s",
@@ -314,7 +334,21 @@ class Poller:
                     resolved_carrier=resolved_carrier,
                     progress=_shown_progress(parcel.progress, progress),
                 )
-                await self._notify(parcel.user_id, text, report)
+                reached = (
+                    progress is not None
+                    and progress >= OUT_FOR_DELIVERY_PROGRESS
+                    and (parcel.progress or 0) < OUT_FOR_DELIVERY_PROGRESS
+                )
+                big_moment = newly_delivered or newly_returned or reached
+                current = await self._repo.get_parcel(parcel.id)
+                await self._send_sticker(parcel.user_id, result.carrier)
+                await self._notify(
+                    parcel.user_id,
+                    text,
+                    report,
+                    silent=None if big_moment else True,
+                    reply_markup=card_keyboard(current) if current is not None else None,
+                )
             return
 
         if parcel.carrier is not None and await self._repo.count_events(parcel.id) > 0:
@@ -400,12 +434,34 @@ class Poller:
             await self._notify(self._settings.admin_telegram_id, text, report, silent=False)
             await self._repo.set_meta(meta_key, now.isoformat())
 
+    async def _send_sticker(self, chat_id: int, carrier: str) -> None:
+        if carrier in self._broken_stickers:
+            return
+        file_id = await self._repo.get_meta(f"sticker:{carrier}")
+        if not file_id:
+            return
+        try:
+            ok = await self._notifier.send_sticker(chat_id, file_id)
+        except Exception:
+            ok = False
+        if not ok:
+            self._broken_stickers.add(carrier)
+            log.warning("carrier sticker failed carrier=%s", carrier)
+
     async def _notify(
-        self, chat_id: int, text: str, report: PollReport, *, silent: bool | None = None
+        self,
+        chat_id: int,
+        text: str,
+        report: PollReport,
+        *,
+        silent: bool | None = None,
+        reply_markup: object = None,
     ) -> None:
         quiet = self.is_quiet(self._now()) if silent is None else silent
         try:
-            await self._notifier.send(chat_id, truncate_message(text), silent=quiet)
+            await self._notifier.send(
+                chat_id, truncate_message(text), silent=quiet, reply_markup=reply_markup
+            )
         except Exception:
             log.warning("notification failed chat=%s", chat_id, exc_info=True)
             return
