@@ -205,3 +205,8 @@ VISION_ERROR = (
 VISION_UNSUPPORTED_IMAGE = (
     "📷 Ảnh này quá lớn hoặc không đúng định dạng. Bạn gửi lại dưới dạng ảnh (không phải tệp) nhé."
 )
+
+DIGEST_HEADER = "🗓 <b>Tóm tắt đơn hàng</b> · {time}"
+DIGEST_NEW_MARK = " 🆕"
+DIGEST_FOOTER = "Đang theo dõi {active} đơn"
+DIGEST_FOOTER_FINISHED = " · {finished} đơn vừa kết thúc"

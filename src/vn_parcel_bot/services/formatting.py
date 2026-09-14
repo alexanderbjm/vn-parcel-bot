@@ -95,35 +95,51 @@ def format_event_update(
     return truncate_message("\n".join(lines))
 
 
+def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "") -> str:
+    status = (
+        _escape(parcel.last_status_text)
+        if parcel.last_status_text
+        else texts.STATE_TEXT[parcel.state]
+    )
+    suffix = (
+        texts.LIST_TIME_SUFFIX.format(time=format_time(parcel.last_event_at, tz))
+        if parcel.last_event_at
+        else ""
+    )
+    carrier = (
+        carrier_name(parcel.carrier) if parcel.carrier is not None else texts.CARRIER_UNRESOLVED
+    )
+    return texts.LIST_ITEM.format(
+        index=index,
+        emoji=texts.STATE_EMOJI[parcel.state],
+        title=parcel_title(parcel),
+        carrier=carrier + mark,
+        status=status,
+        time_suffix=suffix,
+    )
+
+
 def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo) -> str:
     if not parcels:
         return texts.LIST_EMPTY
+    items = [_list_item(index, parcel, tz) for index, parcel in enumerate(parcels, start=1)]
+    return truncate_message(texts.LIST_HEADER + "\n\n" + "\n".join(items))
+
+
+def format_digest(
+    parcels: Sequence[Parcel], changed_ids: set[int], at: datetime, tz: ZoneInfo
+) -> str:
     items = []
     for index, parcel in enumerate(parcels, start=1):
-        status = (
-            _escape(parcel.last_status_text)
-            if parcel.last_status_text
-            else texts.STATE_TEXT[parcel.state]
-        )
-        suffix = (
-            texts.LIST_TIME_SUFFIX.format(time=format_time(parcel.last_event_at, tz))
-            if parcel.last_event_at
-            else ""
-        )
-        carrier = (
-            carrier_name(parcel.carrier) if parcel.carrier is not None else texts.CARRIER_UNRESOLVED
-        )
-        items.append(
-            texts.LIST_ITEM.format(
-                index=index,
-                emoji=texts.STATE_EMOJI[parcel.state],
-                title=parcel_title(parcel),
-                carrier=carrier,
-                status=status,
-                time_suffix=suffix,
-            )
-        )
-    return truncate_message(texts.LIST_HEADER + "\n\n" + "\n".join(items))
+        is_new = parcel.id in changed_ids or not parcel.is_active
+        items.append(_list_item(index, parcel, tz, texts.DIGEST_NEW_MARK if is_new else ""))
+    active = sum(1 for parcel in parcels if parcel.is_active)
+    finished = len(parcels) - active
+    footer = texts.DIGEST_FOOTER.format(active=active)
+    if finished:
+        footer += texts.DIGEST_FOOTER_FINISHED.format(finished=finished)
+    header = texts.DIGEST_HEADER.format(time=at.astimezone(tz).strftime("%H:%M"))
+    return truncate_message(header + "\n\n" + "\n".join(items) + "\n\n" + footer)
 
 
 def format_history(parcel: Parcel, events: Sequence[TrackingEvent], tz: ZoneInfo) -> str:

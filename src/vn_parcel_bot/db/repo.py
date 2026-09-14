@@ -272,6 +272,14 @@ class Repository:
         )
         return [_parcel(row) for row in rows]
 
+    async def parcel_ids_with_events_since(self, user_id: int, since: datetime) -> set[int]:
+        rows = await self._fetchall(
+            "SELECT DISTINCT e.parcel_id FROM events e JOIN parcels p ON p.id = e.parcel_id "
+            "WHERE p.user_id = ? AND e.created_at >= ?",
+            (user_id, _to_db(since)),
+        )
+        return {int(row[0]) for row in rows}
+
     async def count_active_parcels(self, user_id: int) -> int:
         row = await self._fetchone(
             "SELECT COUNT(*) FROM parcels WHERE user_id = ? AND state IN ('pending', 'in_transit')",
