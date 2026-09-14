@@ -126,6 +126,7 @@ class ParcelService:
             if cleaned_label and not existing.label:
                 await self._repo.set_label(existing.id, cleaned_label, self._now())
                 existing = await self._repo.get_parcel(existing.id)
+            log.info("duplicate code user=%s code=%s", uid, mask_code(code))
             return AddOutcome("duplicate", code=code, parcel=existing)
         if await self._repo.count_active_parcels(uid) >= self._settings.max_parcels_per_user:
             return AddOutcome("limit", code=code)

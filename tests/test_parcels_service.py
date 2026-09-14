@@ -352,6 +352,14 @@ async def test_add_blank_label_is_ignored(service, user):
     assert outcome.parcel.label is None
 
 
+async def test_add_duplicate_is_logged_with_masked_code(service, user, caplog):
+    caplog.set_level("INFO")
+    await service.add(user, SPX)
+    await service.add(user, SPX)
+    assert "duplicate code user=" in caplog.text
+    assert SPX not in caplog.text
+
+
 async def test_add_duplicate_sets_missing_label_only(service, user):
     await service.add(user, SPX)
     first = await service.add(user, SPX, label="Tai nghe")

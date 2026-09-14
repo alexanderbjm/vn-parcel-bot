@@ -55,6 +55,7 @@ def test_extract_codes_splits_lazada_cainiao_code_in_text():
         ("4PX3000123456789CN", ["fourpx"]),
         ("YT1234567890123456", ["yunexpress"]),
         ("YT0000000000001", ["cainiao"]),
+        ("SF0000000000001", ["sf"]),
         ("EB123456789VN", ["vnpost"]),
         ("LEXVN00123456", ["lex"]),
         ("S1234567.MB12.D5.123456789", ["ghtk"]),

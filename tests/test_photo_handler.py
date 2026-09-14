@@ -150,6 +150,18 @@ async def test_photo_download_failure(deps):
     assert deps.vision.analyzed == []
 
 
+async def test_photo_result_summary_is_logged_without_codes(deps, caplog):
+    caplog.set_level("INFO")
+    deps.vision = FakeVisionEngine(result=VisionResult(order_ids=(ORDER,), product_name="Ốp lưng"))
+    await photo_message(make_update(photo()), make_context(deps))
+    deps.vision = FakeVisionEngine()
+    await photo_message(make_update(photo()), make_context(deps))
+    assert "photo read codes=0 order_ids=1 product=yes" in caplog.text
+    assert "photo read codes=0 order_ids=0 product=no" in caplog.text
+    assert ORDER not in caplog.text
+    assert "Ốp lưng" not in caplog.text
+
+
 async def test_photo_no_data(deps):
     msg = photo()
     await photo_message(make_update(msg), make_context(deps))

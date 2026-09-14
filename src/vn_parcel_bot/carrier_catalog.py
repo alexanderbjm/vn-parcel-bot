@@ -15,6 +15,7 @@ CarrierCode = Literal[
     "viettelpost",
     "vnpost",
     "lex",
+    "sf",
 ]
 
 
@@ -63,6 +64,9 @@ CATALOG: dict[CarrierCode, CarrierInfo] = {
             "#!?tab=tra-cuu-hanh-trinh&code={code}",
         ),
         CarrierInfo("lex", "LEX VN", False, False, "https://logistics.lazada.vn/"),
+        CarrierInfo(
+            "sf", "SF Express", False, False, "https://www.sf-express.com/chn/en/waybill/list"
+        ),
     )
 }
 

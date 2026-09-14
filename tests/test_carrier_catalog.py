@@ -8,7 +8,7 @@ from vn_parcel_bot.carrier_catalog import (
 )
 
 
-def test_catalog_has_twelve_carriers_in_table_order():
+def test_catalog_has_thirteen_carriers_in_table_order():
     assert list(CATALOG) == [
         "spx",
         "jt",
@@ -22,6 +22,7 @@ def test_catalog_has_twelve_carriers_in_table_order():
         "viettelpost",
         "vnpost",
         "lex",
+        "sf",
     ]
     assert all(info.code == code for code, info in CATALOG.items())
 
@@ -48,6 +49,8 @@ def test_display_names():
     assert CATALOG["jt"].display_name == "J&T"
     assert CATALOG["lex"].display_name == "LEX VN"
     assert CATALOG["fourpx"].display_name == "4PX"
+    assert CATALOG["sf"].display_name == "SF Express"
+    assert not is_tracked("sf") and not needs_phone("sf")
 
 
 def test_official_url_quotes_code():

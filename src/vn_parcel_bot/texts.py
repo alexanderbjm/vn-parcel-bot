@@ -13,6 +13,7 @@ CARRIER_NAMES = {
     "viettelpost": "Viettel Post",
     "vnpost": "VNPost",
     "lex": "LEX VN",
+    "sf": "SF Express",
 }
 CARRIER_UNRESOLVED = "Đang xác định hãng"
 CARRIER_SEPARATOR = " / "
@@ -44,7 +45,8 @@ HELP = (
     "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
     "• Gửi ảnh chụp đơn hàng – mình tự đọc mã vận đơn và tên sản phẩm\n"
     "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
-    "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN\n"
+    "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
+    "SF Express\n"
     "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"

@@ -316,6 +316,12 @@ async def _reply_to_vision_result(
     if result.error:
         await reply(update, texts.VISION_ERROR)
         return
+    log.info(
+        "photo read codes=%d order_ids=%d product=%s",
+        len(result.tracking_codes),
+        len(result.order_ids),
+        "yes" if result.product_name else "no",
+    )
     phone_last4 = result.phone_last4 or _caption_last4(caption)
     if result.tracking_codes:
         await _add_codes_from_photo(update, context, result, phone_last4)

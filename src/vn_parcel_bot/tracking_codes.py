@@ -19,6 +19,7 @@ _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tupl
         (r"S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}", ("ghtk",), False),
         (_JT_CROSS_BORDER, ("jt",), False),
         (_LAZADA_CAINIAO, ("cainiao",), False),
+        (r"SF\d{13}", ("sf",), False),
         (r"BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}", ("best",), False),
         (r"\d{12}", ("jt", "best", "viettelpost"), False),
         (r"\d{13}", ("best",), False),
