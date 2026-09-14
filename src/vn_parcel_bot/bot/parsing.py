@@ -7,6 +7,7 @@ from vn_parcel_bot.tracking_codes import (
     detect_carriers,
     extract_codes,
     is_order_number,
+    is_seller_fleet,
     is_valid_last4,
     normalize_code,
 )
@@ -23,7 +24,7 @@ def parse_track_args(args: Sequence[str]) -> tuple[str, str | None] | None:
             last4 = parts[-1]
             parts = parts[:-1]
     joined = normalize_code("".join(parts))
-    if detect_carriers(joined) or is_order_number(joined):
+    if detect_carriers(joined) or is_order_number(joined) or is_seller_fleet(joined):
         return joined, last4
     codes = extract_codes(" ".join(parts))
     if codes:

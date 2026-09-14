@@ -28,7 +28,7 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 ## Changes in 1.2 (2026-09-14)
 
 - **Detection without carrier names** (§4.1, §4.3, §5.2): the `/track <mã> <hãng>` alias override is removed; every code is recognised automatically. Extra words after a code are ignored.
-- **New formats seen in real use:** BEST Express `BEST…VN…` codes (link-only) and 14-digit `84…` codes (J&T, e.g. TikTok Shop seller own fleet).
+- **New formats seen in real use:** BEST Express `BEST…VN…` codes (link-only). 14-digit `84…` codes are TikTok Shop seller own fleet codes with no public tracking: `SELLER_FLEET` reply, nothing stored. A live check on 2026-09-14 found no J&T data for one, and J&T's own examples are 12 digits.
 - **Order numbers and unknown codes:** 15-digit numbers are treated as marketplace order numbers (`ORDER_NUMBER` reply), and any other code-like input gets a 17TRACK link (`UNKNOWN_CARRIER` reply) instead of "not recognised". Unrecognised codes are logged masked so new formats can be added.
 - Part 3 prompts describe the original 1.1 build steps; where they mention carrier aliases or `GENERIC_CODE_RE`, Part 2 wins.
 
@@ -168,7 +168,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 |---|---|---|
 | `/start` | – | `WELCOME` (with first name) followed by `HELP`. |
 | `/help` | – | `HELP`. |
-| `/track` | `<code> [last4]` | Add a parcel (§4.3); the carrier is always detected automatically. The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing 4-digit argument is the phone override only when the remaining code has a candidate that needs a phone; otherwise it stays part of the code. If the joined arguments are not a recognised code or order number, the first code found by `extract_codes` in them is used, so extra words are ignored. No args → `USAGE_TRACK`. |
+| `/track` | `<code> [last4]` | Add a parcel (§4.3); the carrier is always detected automatically. The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing 4-digit argument is the phone override only when the remaining code has a candidate that needs a phone; otherwise it stays part of the code. If the joined arguments are not a recognised code, order number or seller fleet code, the first code found by `extract_codes` in them is used, so extra words are ignored. No args → `USAGE_TRACK`. |
 | *(plain text)* | – | Routed per §4.2. |
 | `/list` | – | Active parcels plus terminal parcels updated within `DELIVERED_VISIBLE_FOR` (3 days), numbered 1..n in `created_at` order. Unresolved parcels show `CARRIER_UNRESOLVED`. Empty → `LIST_EMPTY`. |
 | `/status` | `<ref>` | Full history of one parcel, **newest first**, at most `MAX_EVENTS_IN_HISTORY` (30). `ref` = tracking code or the index shown by `/list`. |
@@ -200,7 +200,7 @@ With `codes`:
 
 Inputs: the user, the raw code, an optional phone override. A candidate counts as **tracked** only if it is tracked in §5.1 **and** present in the service's carrier mapping.
 
-1. `code = normalize_code(raw)`; candidates = `detect_carriers(code)`. No candidates → `order_number` if `is_order_number(code)`, else `unknown_carrier` if `is_code_like(code)`, else `invalid_code`. Nothing is stored and no request is made; `order_number` and `unknown_carrier` are logged at INFO with the masked code and its length.
+1. `code = normalize_code(raw)`; candidates = `detect_carriers(code)`. No candidates → `seller_fleet` if `is_seller_fleet(code)`, else `order_number` if `is_order_number(code)`, else `unknown_carrier` if `is_code_like(code)`, else `invalid_code`. Nothing is stored and no request is made; `seller_fleet`, `order_number` and `unknown_carrier` are logged at INFO with the masked code and its length.
 2. Split candidates, preserving order, into `tracked` (tracked in §5.1 and present in the carrier mapping) and `link_only` (link-only in §5.1). Tracked carriers missing from the mapping are dropped. Both lists empty → `invalid_code`.
 3. A phone override that fails `is_valid_last4` → `invalid_phone`.
 4. `tracked` empty → `link_only` outcome with `link_carriers = link_only`. Nothing stored, no request.
@@ -267,13 +267,13 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 | 10 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
 | 11 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
 | 12 | `^\d{13}$` | best | web |
-| 13 | `^84\d{12}$` | jt | observed (14-digit J&T, TikTok Shop seller own fleet) |
-| 14 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
+| 13 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
 
   No rule matches → `[]`.
 - `is_order_number(code)`: `^\d{15}$`. Marketplace order numbers (Lazada, TikTok Shop) have this shape; they are not shipping codes and are never tracked.
+- `is_seller_fleet(code)`: `^84\d{12}$`. TikTok Shop seller own fleet codes; no public tracking page, never tracked.
 - `is_code_like(code)`: `^[0-9A-Z]{8,40}$` with at least 6 digits.
-- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 14** match only when the whole stripped message is that single token) or an order number. **Fallback** tokens: other code-like tokens, including rule-14 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
+- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 13** match only when the whole stripped message is that single token), an order number or a seller fleet code. **Fallback** tokens: other code-like tokens, including rule-13 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
 - `is_valid_last4(s)`: `^\d{4}$`.
 - `mask_code(code)`: `code[:5] + "…" + code[-3:]`, used in logs.
 
@@ -749,6 +749,7 @@ def seventeen_track_url(code: str) -> str: ...
 def normalize_code(raw: str) -> str: ...
 def detect_carriers(code: str) -> list[CarrierCode]: ...
 def is_order_number(code: str) -> bool: ...
+def is_seller_fleet(code: str) -> bool: ...
 def is_code_like(code: str) -> bool: ...
 def extract_codes(text: str) -> list[str]: ...
 def is_valid_last4(value: str) -> bool: ...
@@ -1090,6 +1091,7 @@ AddKind = Literal[
     "added",
     "needs_phone",
     "link_only",
+    "seller_fleet",
     "order_number",
     "unknown_carrier",
     "duplicate",
@@ -1255,7 +1257,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: 
 def main() -> int: ...
 ```
 
-`parse_track_args` rules: blank args are dropped; none left → `None`. If at least 2 args remain, the last is 4 digits, and `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone → it is `last4` (drop it). `joined = normalize_code("".join(remaining args))`; if `detect_carriers(joined)` is non-empty or `is_order_number(joined)` → `(joined, last4)`; else the first result of `extract_codes(" ".join(remaining args))` if any; else `(joined, last4)`.
+`parse_track_args` rules: blank args are dropped; none left → `None`. If at least 2 args remain, the last is 4 digits, and `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone → it is `last4` (drop it). `joined = normalize_code("".join(remaining args))`; if `detect_carriers(joined)` is non-empty or `is_order_number(joined)` or `is_seller_fleet(joined)` → `(joined, last4)`; else the first result of `extract_codes(" ".join(remaining args))` if any; else `(joined, last4)`.
 
 Pending phone question: `context.user_data["pending_phone"] = {"code": str}`.
 
@@ -1350,9 +1352,9 @@ See §9.2. They are code constants, not env vars.
 10. `/label 1 Áo khoác` → `/list` and future updates show "Áo khoác"; `/label 1` clears it.
 11. `/status 1` → history newest first; `/remove 1` → `REMOVED`, gone from `/list`.
 12. Paste a real Cainiao (`LP…`) or 4PX (`4PX…`) code → `ADDED_FOUND` naming Cainiao / 4PX.
-13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 14 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
+13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 13 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
 14. Paste a VNPost-shaped code (`EB123456789VN`) → `LINK_ONLY` with a VNPost link and a 17TRACK link; `/list` unchanged.
-15. Paste a 15-digit marketplace order number → `ORDER_NUMBER` with a 17TRACK link, nothing added; paste an unrecognised code-like string → `UNKNOWN_CARRIER`; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
+15. Paste a 15-digit marketplace order number → `ORDER_NUMBER` with a 17TRACK link, nothing added; paste a 14-digit `84…` code → `SELLER_FLEET`; paste an unrecognised code-like string → `UNKNOWN_CARRIER`; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
 16. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
 17. Disconnect the network for 15 min → no crash, no user messages about errors, recovery after reconnection; after 5 consecutive failures admin gets one `ALERT_CARRIER`.
 18. Start a second instance manually → it exits immediately with the "another instance" log line.
@@ -1457,6 +1459,11 @@ UNKNOWN_CODE = "🤔 Mình không nhận ra mã vận đơn nào.\nGõ /help đ�
 ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
 USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
+SELLER_FLEET = (
+    "🛵 <code>{code}</code> có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
+    "không có trang tra cứu công khai.\n"
+    "Hãy xem hành trình trong app nơi bạn đặt hàng. Hoặc thử tra cứu tại:\n{links}"
+)
 ORDER_NUMBER = (
     "🧾 <code>{code}</code> có vẻ là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
     "Trong app (Lazada, TikTok Shop, Shopee…) mở đơn → <b>Thông tin vận chuyển</b> "

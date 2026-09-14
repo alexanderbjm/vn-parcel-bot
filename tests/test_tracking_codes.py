@@ -5,6 +5,7 @@ from vn_parcel_bot.tracking_codes import (
     extract_codes,
     is_code_like,
     is_order_number,
+    is_seller_fleet,
     is_valid_last4,
     mask_code,
     normalize_code,
@@ -39,7 +40,6 @@ def test_normalize_keeps_internal_dots():
         ("BEST0000000001VN", ["best"]),
         ("841000072647", ["jt", "best", "viettelpost"]),
         ("8410000726470", ["best"]),
-        ("84000000000001", ["jt"]),
         ("GAN6DKKU12", ["ghn", "ninjavan"]),
     ],
 )
@@ -62,6 +62,7 @@ def test_detect_first_rule_wins():
         "71426082060",
         "GAN6DKKU12345678",
         "500000000000001",
+        "84000000000001",
         "94000000000001",
     ],
 )
@@ -80,6 +81,20 @@ def test_detect_no_match(code):
 )
 def test_is_order_number(code, expected):
     assert is_order_number(code) is expected
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("84000000000001", True),
+        ("94000000000001", False),
+        ("840000000001", False),
+        ("840000000000011", False),
+        ("84ABC000000001", False),
+    ],
+)
+def test_is_seller_fleet(code, expected):
+    assert is_seller_fleet(code) is expected
 
 
 @pytest.mark.parametrize(
@@ -133,6 +148,13 @@ def test_extract_codes_real_mixed_message():
         "BESTMP0000000001VNA",
         "84000000000001",
         "500000000000002",
+    ]
+
+
+def test_extract_codes_seller_fleet_counts_as_known():
+    assert extract_codes("SPXVN05338454932C và 84000000000001") == [
+        "SPXVN05338454932C",
+        "84000000000001",
     ]
 
 

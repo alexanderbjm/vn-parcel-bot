@@ -277,6 +277,15 @@ def test_add_outcome_order_number_and_unknown_carrier():
     assert texts.UNKNOWN_CODE not in unknown
 
 
+def test_add_outcome_seller_fleet():
+    text = outcome_text(AddOutcome("seller_fleet", code="84000000000001"))
+    assert "<code>84000000000001</code>" in text
+    assert "người bán tự giao" in text
+    assert "TikTok Shop" in text
+    assert 'href="https://t.17track.net/vi#nums=84000000000001"' in text
+    assert "J&amp;T" not in text
+
+
 def test_help_and_usage_do_not_mention_carrier_names_argument():
     assert "[hãng]" not in texts.HELP
     assert "[hãng]" not in texts.USAGE_TRACK

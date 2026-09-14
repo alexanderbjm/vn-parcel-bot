@@ -17,11 +17,11 @@ _RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tupl
         (r"BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}", ("best",), False),
         (r"\d{12}", ("jt", "best", "viettelpost"), False),
         (r"\d{13}", ("best",), False),
-        (r"84\d{12}", ("jt",), False),
         (r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}", ("ghn", "ninjavan"), True),
     )
 )
 _ORDER_NUMBER = re.compile(r"\d{15}", re.ASCII)
+_SELLER_FLEET = re.compile(r"84\d{12}", re.ASCII)
 _CODE_LIKE = re.compile(r"[0-9A-Z]{8,40}", re.ASCII)
 _CODE_LIKE_MIN_DIGITS = 6
 _TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]")
@@ -50,6 +50,10 @@ def is_order_number(code: str) -> bool:
     return _ORDER_NUMBER.fullmatch(code) is not None
 
 
+def is_seller_fleet(code: str) -> bool:
+    return _SELLER_FLEET.fullmatch(code) is not None
+
+
 def is_code_like(code: str) -> bool:
     if _CODE_LIKE.fullmatch(code) is None:
         return False
@@ -64,7 +68,7 @@ def extract_codes(text: str) -> list[str]:
         code = normalize_code(match.group())
         rule = _match(code)
         if (rule is not None and not (rule[1] and code != whole)) or (
-            rule is None and is_order_number(code)
+            rule is None and (is_order_number(code) or is_seller_fleet(code))
         ):
             target = known
         elif is_code_like(code):

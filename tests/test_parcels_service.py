@@ -246,10 +246,11 @@ async def test_add_best_code_is_link_only(service, user, fakes):
     assert total_calls(fakes) == 0
 
 
-async def test_add_14_digit_jt_needs_phone(service, user, fakes):
-    outcome = await service.add(user, "84000000000001")
-    assert outcome.kind == "needs_phone"
-    assert outcome.candidates == ("jt",)
+async def test_add_seller_fleet_is_not_stored(service, user, fakes, repo):
+    outcome = await service.add(user, "84000000000001", "1234")
+    assert outcome.kind == "seller_fleet"
+    assert outcome.code == "84000000000001"
+    assert await repo.find_parcel(1, "84000000000001") is None
     assert total_calls(fakes) == 0
 
 

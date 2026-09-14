@@ -62,6 +62,11 @@ UNKNOWN_CODE = "🤔 Mình không nhận ra mã vận đơn nào.\nGõ /help đ�
 ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
 USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
+SELLER_FLEET = (
+    "🛵 <code>{code}</code> có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
+    "không có trang tra cứu công khai.\n"
+    "Hãy xem hành trình trong app nơi bạn đặt hàng. Hoặc thử tra cứu tại:\n{links}"
+)
 ORDER_NUMBER = (
     "🧾 <code>{code}</code> có vẻ là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
     "Trong app (Lazada, TikTok Shop, Shopee…) mở đơn → <b>Thông tin vận chuyển</b> "

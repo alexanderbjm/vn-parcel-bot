@@ -21,6 +21,7 @@ from vn_parcel_bot.tracking_codes import (
     detect_carriers,
     is_code_like,
     is_order_number,
+    is_seller_fleet,
     is_valid_last4,
     mask_code,
     normalize_code,
@@ -32,6 +33,7 @@ AddKind = Literal[
     "added",
     "needs_phone",
     "link_only",
+    "seller_fleet",
     "order_number",
     "unknown_carrier",
     "duplicate",
@@ -75,8 +77,10 @@ class ParcelService:
         code = normalize_code(raw_code)
         candidates = detect_carriers(code)
         if not candidates:
-            if is_order_number(code):
-                kind: AddKind = "order_number"
+            if is_seller_fleet(code):
+                kind: AddKind = "seller_fleet"
+            elif is_order_number(code):
+                kind = "order_number"
             elif is_code_like(code):
                 kind = "unknown_carrier"
             else:
