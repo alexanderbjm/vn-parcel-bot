@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.3 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
+Version 1.4 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,10 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 1.4 (2026-09-14)
+
+- **Screenshots** (§4.5, §9.10, §9.12, §10, §17): photos and image documents are read by a vision engine, Claude Code on this PC by default or the Anthropic API as a backup; the parcel is added with the product name as its label. Details and tests: `docs/superpowers/specs/2026-09-14-spx-browser-vision-digests-design.md` §4.
 
 ## Changes in 1.3 (2026-09-14)
 
@@ -226,6 +230,14 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 - URL = template with `{code}` replaced by `urllib.parse.quote(code, safe="")`; templates without `{code}` are used as-is.
 - The URL is inserted with `html.escape(url, quote=True)`; the name is the HTML-safe `CARRIER_NAMES` value or `LINK_17TRACK_NAME`.
 - `LINK_ONLY` (outcome `link_only`) and `LINK_EXTRA` (pending replies) use `carrier_names(link_carriers)` and `format_links(code, link_carriers)`.
+
+### 4.5 Screenshots (`photo_message`)
+
+- A photo or image document in a private chat goes to the vision engine chosen by `VISION_ENGINE` (§10), one photo at a time per user. Documents that are not JPEG/PNG/WebP/GIF or exceed `VISION_MAX_IMAGE_BYTES` (5 MB) get `VISION_UNSUPPORTED_IMAGE` without downloading.
+- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. Both parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
+- Error codes: `not_configured` → `VISION_NOT_CONFIGURED`; `timeout`, `cli_error`, `http_status`, `network`, `invalid_response` → `VISION_ERROR`. Logs hold error codes, exit codes and durations only.
+- Shipping codes → the add flow (§4.3) with `label` = the product name (first item, ` +N` for more items, at most 40 characters); a duplicate parcel gets the label only if it has none; a pending phone question keeps the label. Replies start with `VISION_DETECTED_HEADER` and `VISION_PRODUCT`.
+- Only an order number → `VISION_ORDER_ONLY`, nothing stored. Nothing found → `VISION_NO_DATA`.
 
 ## 5. Carriers
 
@@ -1129,6 +1141,7 @@ class ParcelService:
         user: User,
         raw_code: str,
         phone_last4: str | None = None,
+        label: str | None = None,
     ) -> AddOutcome: ...
     async def list_for(self, user_id: int) -> list[Parcel]: ...
     async def resolve(
@@ -1262,7 +1275,7 @@ def main() -> int: ...
 
 `parse_track_args` rules: blank args are dropped; none left → `None`. If at least 2 args remain, the last is 4 digits, and `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone → it is `last4` (drop it). `joined = normalize_code("".join(remaining args))`; if `detect_carriers(joined)` is non-empty or `is_order_number(joined)` or `is_seller_fleet(joined)` → `(joined, last4)`; else the first result of `extract_codes(" ".join(remaining args))` if any; else `(joined, last4)`.
 
-Pending phone question: `context.user_data["pending_phone"] = {"code": str}`.
+Pending phone question: `context.user_data["pending_phone"] = {"code": str, "label": str | None}`.
 
 `BOT_COMMANDS`:
 ```python
@@ -1298,6 +1311,13 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str}`.
 | `QUIET_HOURS` | no | `22-7` | `H-H` with 0..23, `H1 != H2`; empty string → disabled |
 | `MAX_PARCELS_PER_USER` | no | `30` | int 1..200 |
 | `TELEGRAM_PROXY_URL` | no | – | `http://`, `https://`, `socks5://` or `socks5h://` URL |
+| `VISION_ENGINE` | no | `claude_code` | `claude_code` or `api` |
+| `CLAUDE_CODE_PATH` | no | `claude` on `PATH`, else `%USERPROFILE%\.local\bin\claude.exe` | path to the Claude Code executable |
+| `VISION_MODEL` | no | `haiku` | Claude Code model alias or id |
+| `VISION_TIMEOUT_SECONDS` | no | `90` | 10..300 |
+| `ANTHROPIC_API_KEY` | no | – | `api` engine only |
+| `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
+| `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
 
 Note: `QUIET_HOURS` unset → default `(22, 7)`; set to empty → `None`. Relative paths are relative to the working directory (the repo root when run via the scripts).
 
@@ -1442,6 +1462,7 @@ WELCOME = (
 HELP = (
     "<b>📦 Hướng dẫn</b>\n"
     "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
+    "• Gửi ảnh chụp đơn hàng – mình tự đọc mã vận đơn và tên sản phẩm\n"
     "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
     "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN\n"
     "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
@@ -1580,6 +1601,30 @@ ALERT_CARRIER = (
     "Có thể trang tra cứu đã thay đổi hoặc đang chặn. Lỗi gần nhất: <code>{detail}</code>"
 )
 ALERT_ERROR = "⚠️ Bot gặp lỗi: <code>{detail}</code>"
+
+VISION_NOT_CONFIGURED = (
+    "📷 Tính năng đọc ảnh chưa sẵn sàng trên máy chạy bot. Bạn gửi mã vận đơn trực tiếp nhé."
+)
+VISION_NO_DATA = (
+    "🤔 Mình không tìm thấy mã vận đơn hay mã đơn hàng nào trong ảnh này.\n"
+    "Bạn thử chụp màn hình <b>Thông tin vận chuyển</b> rõ hơn hoặc gửi mã trực tiếp nhé."
+)
+VISION_DETECTED_HEADER = "📷 <b>Nhận diện từ hình ảnh:</b>"
+VISION_PRODUCT = "• Sản phẩm: <b>{name}</b>"
+VISION_DETECTED_ITEM = "• Mã vận đơn: <code>{code}</code>{carrier_suffix}"
+VISION_DETECTED_PHONE = "• SĐT người nhận: <code>***{phone}</code>"
+VISION_ORDER_ONLY = (
+    "🧾 Tìm thấy mã đơn hàng: <code>{order_id}</code>\n"
+    "Đây là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
+    "Trong app (Shopee, Lazada, TikTok Shop…) mở đơn → <b>Thông tin vận chuyển</b> "
+    "rồi gửi ảnh chụp hoặc mã vận đơn cho mình nhé! Hoặc thử tra cứu tại:\n{links}"
+)
+VISION_ERROR = (
+    "⚠️ Không phân tích được hình ảnh lúc này. Bạn thử lại sau hoặc gửi mã vận đơn trực tiếp nhé."
+)
+VISION_UNSUPPORTED_IMAGE = (
+    "📷 Ảnh này quá lớn hoặc không đúng định dạng. Bạn gửi lại dưới dạng ảnh (không phải tệp) nhé."
+)
 ```
 
 ---

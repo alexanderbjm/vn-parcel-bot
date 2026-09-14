@@ -44,8 +44,13 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `QUIET_HOURS` | no | `22-7` | Local hours when messages arrive silently; empty disables |
    | `MAX_PARCELS_PER_USER` | no | `30` | Active parcels per person |
    | `TELEGRAM_PROXY_URL` | no | – | e.g. `socks5h://127.0.0.1:1080` if Telegram is blocked |
-   | `ANTHROPIC_API_KEY` | no | – | Claude Vision key to extract tracking info from photos/screenshots |
-   | `ANTHROPIC_MODEL` | no | `claude-3-5-haiku-20241022` | Claude model for vision analysis |
+   | `VISION_ENGINE` | no | `claude_code` | `claude_code` reads screenshots with Claude Code on this PC (your Claude plan); `api` uses Anthropic API credit |
+   | `CLAUDE_CODE_PATH` | no | found automatically | Path to `claude.exe` if it is not on `PATH` or in `%USERPROFILE%\.local\bin` |
+   | `VISION_MODEL` | no | `haiku` | Claude Code model for screenshots |
+   | `VISION_TIMEOUT_SECONDS` | no | `90` | Seconds to wait for one screenshot (10..300) |
+   | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
+   | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
+   | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
 
 5. **Check Telegram and carriers** (optional but recommended before the first run):
    ```powershell
@@ -87,6 +92,10 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 - **Automatic detection:** if a code matches several carriers, `/list` shows "Đang xác định hãng" until one of them has data; the update message then names the carrier. Use `/track <mã> <hãng>` to force a carrier.
 - **Link-only carriers:** codes from BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN get an official tracking link plus a 17TRACK link; they are not tracked.
 - **Quiet hours:** between 22:00 and 07:00 updates still arrive, but silently.
+
+### Screenshots
+
+Send a screenshot of an order (the shop app's shipping details screen works best). The bot reads the shipping code, carrier and product name with Claude Code on this PC, adds the parcel with the product name as its label, and replies. Screenshots are processed in memory and never saved. Claude Code must stay installed and logged in; each screenshot counts toward your Claude plan's usage limits and takes about 10–30 seconds. If the screenshot only shows an order number, the bot asks for the shipping details screen instead.
 
 ## Adding family and friends
 
