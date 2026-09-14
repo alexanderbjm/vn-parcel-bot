@@ -331,3 +331,38 @@ async def test_other_users_parcels_invisible(service, user, repo):
     assert await service.resolve(2, "1") is None
     assert await service.remove(2, SPX) is None
     assert await service.list_for(2) == []
+
+
+async def test_add_found_with_label(service, user, fakes):
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0))
+    outcome = await service.add(user, SPX, label="  Tai nghe Bluetooth  ")
+    assert outcome.kind == "added"
+    assert outcome.parcel.label == "Tai nghe Bluetooth"
+
+
+async def test_add_pending_with_label_cut_to_max(service, user):
+    outcome = await service.add(user, SPX, label="x" * 60)
+    assert outcome.kind == "added"
+    assert outcome.parcel.state == "pending"
+    assert outcome.parcel.label == "x" * 40
+
+
+async def test_add_blank_label_is_ignored(service, user):
+    outcome = await service.add(user, SPX, label="   ")
+    assert outcome.parcel.label is None
+
+
+async def test_add_duplicate_sets_missing_label_only(service, user):
+    await service.add(user, SPX)
+    first = await service.add(user, SPX, label="Tai nghe")
+    assert first.kind == "duplicate"
+    assert first.parcel.label == "Tai nghe"
+    second = await service.add(user, SPX, label="Ốp lưng")
+    assert second.kind == "duplicate"
+    assert second.parcel.label == "Tai nghe"
+
+
+async def test_add_needs_phone_does_not_store_label(service, user, repo):
+    outcome = await service.add(user, JT, label="Tai nghe")
+    assert outcome.kind == "needs_phone"
+    assert await repo.find_parcel(1, JT) is None

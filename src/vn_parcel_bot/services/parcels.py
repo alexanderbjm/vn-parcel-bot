@@ -58,6 +58,10 @@ class AddOutcome:
     link_carriers: tuple[CarrierCode, ...] = ()
 
 
+def _clean_label(label: str | None) -> str | None:
+    return label.strip()[:MAX_LABEL_LENGTH] if label and label.strip() else None
+
+
 class ParcelService:
     def __init__(
         self,
@@ -73,7 +77,13 @@ class ParcelService:
         self._settings = settings
         self._now = now
 
-    async def add(self, user: User, raw_code: str, phone_last4: str | None = None) -> AddOutcome:
+    async def add(
+        self,
+        user: User,
+        raw_code: str,
+        phone_last4: str | None = None,
+        label: str | None = None,
+    ) -> AddOutcome:
         code = normalize_code(raw_code)
         candidates = detect_carriers(code)
         if not candidates:
@@ -102,6 +112,7 @@ class ParcelService:
             return AddOutcome("invalid_phone", code=code)
 
         uid = user.telegram_id
+        cleaned_label = _clean_label(label)
         if not tracked:
             log.info(
                 "link-only code user=%s carriers=%s code=%s",
@@ -110,8 +121,12 @@ class ParcelService:
                 mask_code(code),
             )
             return AddOutcome("link_only", code=code, link_carriers=link_only)
-        if await self._repo.find_parcel(uid, code) is not None:
-            return AddOutcome("duplicate", code=code)
+        existing = await self._repo.find_parcel(uid, code)
+        if existing is not None:
+            if cleaned_label and not existing.label:
+                await self._repo.set_label(existing.id, cleaned_label, self._now())
+                existing = await self._repo.get_parcel(existing.id)
+            return AddOutcome("duplicate", code=code, parcel=existing)
         if await self._repo.count_active_parcels(uid) >= self._settings.max_parcels_per_user:
             return AddOutcome("limit", code=code)
 
@@ -124,10 +139,12 @@ class ParcelService:
             if attempts:
                 winner, outcome = attempts[-1]
                 if isinstance(outcome, TrackingResult) and outcome.found:
-                    return await self._store_found(uid, code, winner, outcome, last4)
+                    return await self._store_found(uid, code, winner, outcome, last4, cleaned_label)
             if phone_missing:
                 return AddOutcome("needs_phone", code=code, candidates=phone_missing)
-            return await self._store_pending(uid, code, tracked, attempts, last4, link_only)
+            return await self._store_pending(
+                uid, code, tracked, attempts, last4, link_only, cleaned_label
+            )
         except DuplicateParcelError:
             return AddOutcome("duplicate", code=code)
 
@@ -154,6 +171,7 @@ class ParcelService:
         carrier: CarrierCode,
         result: TrackingResult,
         last4: str | None,
+        label: str | None,
     ) -> AddOutcome:
         now = self._now()
         interval = self._settings.poll_interval
@@ -166,6 +184,8 @@ class ParcelService:
             now=now,
             next_check_at=now + interval,
         )
+        if label:
+            await self._repo.set_label(parcel.id, label, now)
         await self._repo.insert_events(parcel.id, result.events, now)
         state = "delivered" if result.delivered else "returned" if result.returned else "in_transit"
         latest = result.latest
@@ -193,6 +213,7 @@ class ParcelService:
         attempts: Sequence[Attempt],
         last4: str | None,
         link_only: tuple[CarrierCode, ...],
+        label: str | None,
     ) -> AddOutcome:
         now = self._now()
         interval = self._settings.poll_interval
@@ -205,6 +226,8 @@ class ParcelService:
             now=now,
             next_check_at=now + interval,
         )
+        if label:
+            await self._repo.set_label(parcel.id, label, now)
         errors = [outcome for _, outcome in attempts if isinstance(outcome, CarrierError)]
         if attempts and len(errors) == len(attempts):
             failures = parcel.consecutive_failures + 1
@@ -273,7 +296,7 @@ class ParcelService:
         parcel = await self.resolve(user_id, ref)
         if parcel is None:
             return None
-        cleaned = label.strip()[:MAX_LABEL_LENGTH] if label and label.strip() else None
+        cleaned = _clean_label(label)
         await self._repo.set_label(parcel.id, cleaned, self._now())
         return await self._repo.get_parcel(parcel.id)
 
