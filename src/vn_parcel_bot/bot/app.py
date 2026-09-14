@@ -22,7 +22,13 @@ from vn_parcel_bot import texts
 from vn_parcel_bot.bot.auth import gate
 from vn_parcel_bot.bot.commands import BOT_COMMANDS
 from vn_parcel_bot.bot.deps import Deps, get_deps
-from vn_parcel_bot.bot.handlers_admin import allow_cmd, health_cmd, revoke_cmd, users_cmd
+from vn_parcel_bot.bot.handlers_admin import (
+    allow_cmd,
+    health_cmd,
+    revoke_cmd,
+    sticker_cmd,
+    users_cmd,
+)
 from vn_parcel_bot.bot.handlers_callback import callback_query
 from vn_parcel_bot.bot.handlers_user import (
     cancel_cmd,
@@ -91,6 +97,7 @@ def build_application(settings: Settings) -> Application:
         ("revoke", revoke_cmd),
         ("users", users_cmd),
         ("health", health_cmd),
+        ("sticker", sticker_cmd),
     ]:
         app.add_handler(CommandHandler(name, callback, filters=private))
     app.add_handler(MessageHandler(filters.PHOTO & private, photo_message))

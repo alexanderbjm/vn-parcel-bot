@@ -7,6 +7,7 @@ from vn_parcel_bot.bot.commands import BOT_COMMANDS
 
 ALL_COMMANDS = {
     "start",
+    "sticker",
     "help",
     "track",
     "list",

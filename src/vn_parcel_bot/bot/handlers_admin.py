@@ -13,11 +13,13 @@ from vn_parcel_bot import texts
 from vn_parcel_bot.bot.auth import admin_only
 from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import reply
+from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.services.formatting import format_health, format_users
 
 log = logging.getLogger(__name__)
 
 _USER_ID = re.compile(r"[1-9]\d*", re.ASCII)
+STICKER_KEY = "sticker:"
 
 
 def _target_id(args: list[str]) -> int | None:
@@ -83,3 +85,35 @@ async def health_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             deps.settings.tz,
         ),
     )
+
+
+@admin_only
+async def sticker_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    deps = get_deps(context)
+    snapshot = deps.registry.current if deps.registry is not None else current_snapshot()
+    args = [arg.casefold() for arg in (context.args or [])]
+    if not args:
+        mapped = [
+            escape(module.display_name)
+            for module in snapshot.ordered()
+            if await deps.repo.get_meta(f"{STICKER_KEY}{module.code}")
+        ]
+        await reply(update, texts.STICKER_LIST.format(carriers=", ".join(mapped) or "—"))
+        return
+    module = snapshot.get(args[0])
+    if module is None:
+        codes = ", ".join(item.code for item in snapshot.ordered())
+        await reply(update, texts.STICKER_UNKNOWN.format(carriers=codes))
+        return
+    name = escape(module.display_name)
+    if len(args) > 1 and args[1] == "off":
+        await deps.repo.delete_meta(f"{STICKER_KEY}{module.code}")
+        await reply(update, texts.STICKER_REMOVED.format(carrier=name))
+        return
+    replied = getattr(update.effective_message, "reply_to_message", None)
+    sticker = getattr(replied, "sticker", None)
+    if sticker is None:
+        await reply(update, texts.STICKER_USAGE)
+        return
+    await deps.repo.set_meta(f"{STICKER_KEY}{module.code}", sticker.file_id)
+    await reply(update, texts.STICKER_SET.format(carrier=name))
