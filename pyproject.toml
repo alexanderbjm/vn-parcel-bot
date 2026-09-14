@@ -35,6 +35,7 @@ addopts = "-ra"
 line-length = 100
 target-version = "py313"
 src = ["src", "tests", "scripts"]
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
