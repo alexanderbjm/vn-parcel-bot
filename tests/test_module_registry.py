@@ -141,3 +141,66 @@ def test_rule_taking_another_carriers_codes_is_rejected(tmp_path):
 def test_missing_directory_loads_nothing(tmp_path):
     registry = CarrierRegistry.load(tmp_path / "nope")
     assert dict(registry.current.modules) == {}
+
+
+def test_refresh_waits_for_two_equal_reads_then_swaps(tmp_path):
+    registry = load(tmp_path, alpha=ALPHA)
+    write(tmp_path, "alpha", ALPHA.replace("Alpha & Co", "Alpha Two"))
+    assert registry.refresh().reloaded == []
+    assert registry.current.display_name("alpha") == "Alpha & Co"
+    assert registry.refresh().reloaded == ["alpha"]
+    assert registry.current.display_name("alpha") == "Alpha Two"
+    assert registry.refresh().reloaded == []
+
+
+def test_refresh_keeps_last_version_when_new_one_fails(tmp_path, caplog):
+    registry = load(tmp_path, alpha=ALPHA)
+    before = registry.current
+    write(tmp_path, "alpha", ALPHA + "\nraise RuntimeError('boom')\n")
+    registry.refresh()
+    report = registry.refresh()
+    assert registry.current is before
+    [rejection] = report.rejected
+    assert rejection.code == "alpha"
+    assert rejection.error.startswith("RuntimeError line")
+    assert registry.refresh().rejected == []
+    assert registry.refresh().rejected == []
+    assert "boom" not in caplog.text
+
+
+def test_refresh_adds_new_module_and_keeps_deleted_one(tmp_path, caplog):
+    registry = load(tmp_path, alpha=ALPHA)
+    write(tmp_path, "beta", BETA)
+    registry.refresh()
+    assert registry.refresh().reloaded == ["beta"]
+    assert registry.current.is_tracked("beta")
+    (tmp_path / "alpha.py").unlink()
+    registry.refresh()
+    registry.refresh()
+    assert registry.current.get("alpha") is not None
+    assert caplog.text.count("carrier module file missing code=alpha") == 1
+
+
+def test_refresh_rejects_rule_taking_another_carriers_codes(tmp_path):
+    registry = load(tmp_path, alpha=ALPHA, beta=BETA)
+    stolen = BETA.replace(
+        'Rule(r"BE[0-9A-Z]{8}", 10, standalone_only=True)', r'Rule(r"AL\d{8}", 200)'
+    )
+    write(tmp_path, "beta", stolen)
+    registry.refresh()
+    [rejection] = registry.refresh().rejected
+    assert "alpha: example AL00000001" in rejection.error
+    assert registry.current.detect("AL00000001").candidates == ("alpha",)
+
+
+def test_broken_module_at_startup_is_added_once_fixed(tmp_path):
+    registry = load(tmp_path, alpha=ALPHA, beta="MODULE = 1 / 0\n")
+    assert registry.refresh().rejected == []
+    write(tmp_path, "beta", BETA)
+    registry.refresh()
+    assert registry.refresh().reloaded == ["beta"]
+
+
+def test_static_registry_refresh_does_nothing(tmp_path):
+    snapshot = load(tmp_path, alpha=ALPHA).current
+    assert CarrierRegistry(snapshot).refresh().reloaded == []

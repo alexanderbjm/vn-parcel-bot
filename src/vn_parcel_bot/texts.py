@@ -162,6 +162,7 @@ ALERT_CARRIER = (
     "Có thể trang tra cứu đã thay đổi hoặc đang chặn. Lỗi gần nhất: <code>{detail}</code>"
 )
 ALERT_ERROR = "⚠️ Bot gặp lỗi: <code>{detail}</code>"
+MODULE_REJECTED = "⚠️ Module <code>{code}</code> lỗi, vẫn dùng bản cũ: {error}"
 
 VISION_NOT_CONFIGURED = (
     "📷 Tính năng đọc ảnh chưa sẵn sàng trên máy chạy bot. Bạn gửi mã vận đơn trực tiếp nhé."

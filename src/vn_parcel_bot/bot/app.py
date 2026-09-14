@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from html import escape
 
@@ -37,9 +39,13 @@ from vn_parcel_bot.bot.handlers_user import (
 )
 from vn_parcel_bot.bot.notifier import TelegramNotifier
 from vn_parcel_bot.carriers.http import make_http_client
-from vn_parcel_bot.carriers.registry import CarrierRegistry, set_registry
+from vn_parcel_bot.carriers.registry import CarrierRegistry, Rejection, set_registry
 from vn_parcel_bot.config import Settings
-from vn_parcel_bot.constants import ERROR_ALERT_COOLDOWN, FIRST_POLL_DELAY_SECONDS
+from vn_parcel_bot.constants import (
+    ERROR_ALERT_COOLDOWN,
+    FIRST_POLL_DELAY_SECONDS,
+    MODULE_REFRESH_SECONDS,
+)
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.digest import DigestService
 from vn_parcel_bot.services.parcels import ParcelService
@@ -118,6 +124,7 @@ async def _post_init(app: Application) -> None:
         digests=digests,
         registry=registry,
     )
+    await alert_rejections(app.bot_data["deps"], registry.startup_rejections)
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     schedule_jobs(app.job_queue, settings)
     await app.bot.set_my_commands(BOT_COMMANDS)
@@ -130,6 +137,30 @@ async def _post_shutdown(app: Application) -> None:
         await deps.http.aclose()
         await deps.repo.close()
     log.info("bot stopped")
+
+
+async def alert_rejections(deps: Deps, rejections: Sequence[Rejection]) -> None:
+    for rejection in rejections:
+        key = f"module-rejected:{rejection.code}"
+        if await deps.repo.get_meta(key) == rejection.file_hash:
+            continue
+        text = texts.MODULE_REJECTED.format(
+            code=escape(rejection.code), error=escape(rejection.error)
+        )
+        try:
+            await deps.notifier.send(deps.settings.admin_telegram_id, text, silent=False)
+        except Exception:
+            log.warning("module rejection alert failed code=%s", rejection.code, exc_info=True)
+            continue
+        await deps.repo.set_meta(key, rejection.file_hash)
+
+
+async def carrier_modules_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    deps = get_deps(context)
+    if deps.registry is None:
+        return
+    report = await asyncio.to_thread(deps.registry.refresh)
+    await alert_rejections(deps, report.rejected)
 
 
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -145,6 +176,12 @@ async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 def schedule_jobs(job_queue: JobQueue, settings: Settings) -> None:
     job_queue.run_repeating(
         poll_job, interval=settings.poll_interval, first=FIRST_POLL_DELAY_SECONDS, name="poll"
+    )
+    job_queue.run_repeating(
+        carrier_modules_job,
+        interval=MODULE_REFRESH_SECONDS,
+        first=MODULE_REFRESH_SECONDS,
+        name="carrier modules",
     )
     for slot in settings.digest_times:
         job_queue.run_daily(

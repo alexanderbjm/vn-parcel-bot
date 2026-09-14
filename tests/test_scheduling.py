@@ -3,7 +3,7 @@ from datetime import time
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from vn_parcel_bot.bot.app import digest_job, poll_job, schedule_jobs
+from vn_parcel_bot.bot.app import carrier_modules_job, digest_job, poll_job, schedule_jobs
 
 
 class FakeJobQueue:
@@ -22,8 +22,10 @@ def test_schedule_jobs_registers_poll_and_four_digests(settings):
     queue = FakeJobQueue()
     schedule_jobs(queue, settings)
     assert [(callback, kwargs["name"]) for callback, kwargs in queue.repeating] == [
-        (poll_job, "poll")
+        (poll_job, "poll"),
+        (carrier_modules_job, "carrier modules"),
     ]
+    assert queue.repeating[1][1]["interval"] == 30
     tz = ZoneInfo("Asia/Ho_Chi_Minh")
     assert [kwargs["time"] for _, kwargs in queue.daily] == [
         time(7, tzinfo=tz),
@@ -45,7 +47,7 @@ def test_schedule_jobs_without_digests(settings):
     queue = FakeJobQueue()
     schedule_jobs(queue, replace(settings, digest_times=()))
     assert queue.daily == []
-    assert len(queue.repeating) == 1
+    assert len(queue.repeating) == 2
 
 
 async def test_digest_job_runs_the_service():

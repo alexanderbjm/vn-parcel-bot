@@ -5,7 +5,7 @@ import sys
 import traceback
 import urllib.parse
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
@@ -45,6 +45,12 @@ class Rejection:
     code: str
     file_hash: str
     error: str
+
+
+@dataclass
+class RefreshReport:
+    reloaded: list[str] = field(default_factory=list)
+    rejected: list[Rejection] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -186,10 +192,65 @@ class CarrierRegistry:
         self._directory = directory
         self._rejected: dict[str, str] = {}
         self.startup_rejections: list[Rejection] = []
+        self._seen: dict[str, str] = {}
+        self._missing: set[str] = set()
 
     @property
     def current(self) -> CarrierSnapshot:
         return self._current
+
+    def refresh(self) -> RefreshReport:
+        report = RefreshReport()
+        if self._directory is None:
+            return report
+        files = {path.stem: path for path in module_files(self._directory)}
+        self._warn_missing(files.keys())
+        for code, path in sorted(files.items()):
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue
+            digest = file_hash(data)
+            live = self._current.modules.get(code)
+            if (live is not None and live.file_hash == digest) or self._rejected.get(
+                code
+            ) == digest:
+                self._seen.pop(code, None)
+                continue
+            if self._seen.get(code) != digest:
+                self._seen[code] = digest
+                continue
+            del self._seen[code]
+            self._swap(code, path, data, report)
+        return report
+
+    def _warn_missing(self, present: Iterable[str]) -> None:
+        missing = set(self._current.modules) - set(present)
+        for code in sorted(missing - self._missing):
+            log.warning("carrier module file missing code=%s, keeping last version", code)
+        self._missing = missing
+
+    def _swap(self, code: str, path: Path, data: bytes, report: RefreshReport) -> None:
+        item = None
+        try:
+            item = load_module_file(path, data)
+            candidate = CarrierSnapshot.of({**self._current.modules, code: item})
+            validate_snapshot(candidate)
+        except ModuleLoadError as err:
+            discard(item)
+            report.rejected.append(self._reject(code, file_hash(data), str(err)))
+            return
+        previous = self._current.modules.get(code)
+        self._current = candidate
+        self._rejected.pop(code, None)
+        discard(previous)
+        log.info(
+            "carrier module reloaded code=%s hash=%s tracked=%s",
+            code,
+            item.file_hash[:8],
+            item.tracked,
+        )
+        report.reloaded.append(code)
 
     @classmethod
     def load(cls, directory: Path = MODULES_DIR) -> "CarrierRegistry":
