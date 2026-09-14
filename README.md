@@ -45,10 +45,14 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `MAX_PARCELS_PER_USER` | no | `30` | Active parcels per person |
    | `TELEGRAM_PROXY_URL` | no | – | e.g. `socks5h://127.0.0.1:1080` if Telegram is blocked |
    | `DIGEST_TIMES` | no | `07:00,12:00,19:00,22:00` | Local times for the daily digest; empty disables it |
-   | `VISION_ENGINE` | no | `claude_code` | `claude_code` reads screenshots with Claude Code on this PC (your Claude plan); `api` uses Anthropic API credit |
+   | `VISION_ENGINE` | no | `claude_code` | `claude_code` reads screenshots with Claude Code on this PC (your Claude plan); `api` uses Anthropic API credit; `agy` uses Gemini through agy and the local OCR proxy (see *Screenshots*) |
    | `CLAUDE_CODE_PATH` | no | found automatically | Path to `claude.exe` if it is not on `PATH` or in `%USERPROFILE%\.local\bin` |
    | `VISION_MODEL` | no | `sonnet` | Claude Code model for screenshots (Haiku misread long codes) |
-   | `VISION_TIMEOUT_SECONDS` | no | `90` | Seconds to wait for one screenshot (10..300) |
+   | `VISION_TIMEOUT_SECONDS` | no | `90` | Seconds to wait for one screenshot (10..300); use `150` with `agy` |
+   | `AGY_PROXY_URL` | no | `http://127.0.0.1:8765` | `agy` engine: address of the OCR proxy on this PC |
+   | `AGY_PATH` | no | found automatically | OCR proxy: path to `agy.exe` if it is not on `PATH` or in `%LOCALAPPDATA%\agy\bin` |
+   | `AGY_MODEL` | no | `gemini-3.8-flash-low` | OCR proxy: Gemini model for screenshots |
+   | `AGY_FALLBACK_MODEL` | no | `gemini-3.7-flash-low` | OCR proxy: model tried once when the first one fails or times out; empty disables |
    | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
    | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
    | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
@@ -71,6 +75,8 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
 powershell -ExecutionPolicy Bypass -File scripts\install-task.ps1     # install and start
 powershell -ExecutionPolicy Bypass -File scripts\status-bot.ps1       # task state, process, last log lines
 powershell -ExecutionPolicy Bypass -File scripts\uninstall-task.ps1   # remove
+powershell -ExecutionPolicy Bypass -File scripts\install-proxy-task.ps1                            # OCR proxy for VISION_ENGINE=agy
+powershell -ExecutionPolicy Bypass -File scripts\uninstall-task.ps1 -TaskName "VN Parcel OCR Proxy"  # remove the OCR proxy
 ```
 
 The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minute if it crashes, and never starts a second copy. Keep the PC awake while plugged in (*Settings → System → Power & sleep → Sleep: Never*); after sleep or shutdown the bot catches up on its first check.
@@ -106,6 +112,8 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 
 Send a screenshot of an order (the shop app's shipping details screen works best). The bot reads the shipping code, carrier and product name with Claude Code on this PC, adds the parcel with the product name as its label, and replies. Screenshots are processed in memory and never saved. Claude Code must stay installed and logged in; each screenshot counts toward your Claude plan's usage limits and takes about 10–30 seconds. If the screenshot only shows an order number, the bot asks for the shipping details screen instead.
 
+**Reading screenshots with agy (Gemini) instead.** Set `VISION_ENGINE=agy` and `VISION_TIMEOUT_SECONDS=150` in `.env`, install the OCR proxy task once with `powershell -ExecutionPolicy Bypass -File scripts\install-proxy-task.ps1`, then restart the bot. The bot sends each screenshot to the proxy on this PC (`127.0.0.1:8765`, nothing else can reach it). The proxy saves the image in a new temporary folder, runs `agy` with `AGY_MODEL` in sandboxed plan mode with only that folder added, deletes the folder and hands the result back. If agy tries to use anything other than opening that file (for example because text in the screenshot tells it to), the reply is thrown away and logged as `error=blocked`. agy must stay installed and logged in. Gemini 3.8 Flash often needs 40–100 seconds; when it fails or times out the proxy tries `AGY_FALLBACK_MODEL` once. Flash models sometimes drop a digit from a long run of the same digit, so glance at the code in the reply. Keep agy's own allow list (`%USERPROFILE%\.gemini\antigravity-cli\settings.json`) free of commands you would not want a screenshot to trigger.
+
 ### Daily digests
 
 At 07:00, 12:00, 19:00 and 22:00 every allowed user who has parcels gets one summary message with sound. It lists active parcels with 🆕 on the ones that changed since the previous digest, and parcels that were delivered, returned or stopped since then are shown once. Instant updates still arrive as before. To change the times, set `DIGEST_TIMES` in `.env` (for example `DIGEST_TIMES=08:00,20:00`, or leave it empty to turn digests off) and restart the bot. A digest time missed while the PC was off is skipped; the next digest covers everything since the last one.
@@ -134,8 +142,9 @@ Admin commands: `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sti
 | Stop | `Stop-ScheduledTask "VN Parcel Bot"` |
 | Start | `Start-ScheduledTask "VN Parcel Bot"` |
 | Restart | Stop, then Start |
+| OCR proxy (`agy` engine) | `Stop-ScheduledTask` / `Start-ScheduledTask "VN Parcel OCR Proxy"`; health at `http://127.0.0.1:8765/health` |
 | Update | `git pull`, `.\.venv\Scripts\python -m pip install -e .`, then restart the task |
-| Logs | `logs\bot.log` (rotates at 1 MB, 5 files kept); startup problems in `logs\startup-error.log` |
+| Logs | `logs\bot.log` (rotates at 1 MB, 5 files kept); startup problems in `logs\startup-error.log`; OCR proxy in `logs\agy-proxy.log` |
 | Database | `data\bot.sqlite3` |
 | Reset everything | Stop the task, delete `data\bot.sqlite3`, start the task |
 
@@ -153,6 +162,7 @@ Admin commands: `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sti
 | `/list` shows "Đang xác định hãng" for days | No candidate carrier has data yet | `/status <số>` | Wait, or `/remove` then `/track <mã> [4 số] <hãng>` |
 | Updates arrive late | PC was asleep or off | Power settings | Sleep = Never when plugged in |
 | No sound at night | Quiet hours | `QUIET_HOURS` in `.env` | Change it or set it empty |
+| Screenshot replies with an error (`VISION_ENGINE=agy`) | OCR proxy not running, agy logged out, or Gemini busy | `logs\bot.log` (`vision agy error=`), `logs\agy-proxy.log` | `Start-ScheduledTask "VN Parcel OCR Proxy"`; run `agy` once to log in; `error=blocked` means the screenshot's text tried to steer agy |
 | Family member gets 🔒 | Not allowlisted or revoked | `/users` | `/allow <id> <tên>` |
 | `ZoneInfoNotFoundError` | `tzdata` missing | `pip show tzdata` | `pip install -e .` |
 

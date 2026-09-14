@@ -86,12 +86,36 @@ def test_vision_settings_from_env(valid_env):
         ("VISION_ENGINE", "gemini"),
         ("VISION_TIMEOUT_SECONDS", "5"),
         ("VISION_TIMEOUT_SECONDS", "301"),
+        ("AGY_PROXY_URL", "http://10.0.0.2:8765"),
     ],
 )
 def test_vision_settings_rejected(valid_env, key, value):
     with pytest.raises(ConfigError) as exc:
         Settings.from_env({**valid_env, key: value})
     assert key in str(exc.value)
+
+
+def test_agy_engine_settings(valid_env):
+    s = Settings.from_env(
+        {**valid_env, "VISION_ENGINE": "agy", "AGY_PROXY_URL": "http://localhost:9000/"}
+    )
+    assert s.vision_engine == "agy"
+    assert s.agy_proxy_url == "http://localhost:9000"
+    assert Settings.from_env(valid_env).agy_proxy_url == "http://127.0.0.1:8765"
+
+
+def test_agy_path_prefers_path_lookup_then_local_app_data(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        config.shutil, "which", lambda name: r"C:\bin\agy.exe" if name == "agy" else None
+    )
+    assert config.default_agy_path() == r"C:\bin\agy.exe"
+    monkeypatch.setattr(config.shutil, "which", lambda name: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert config.default_agy_path() is None
+    exe = tmp_path / "agy" / "bin" / "agy.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    assert config.default_agy_path() == str(exe)
 
 
 def test_claude_code_path_prefers_path_lookup(monkeypatch):

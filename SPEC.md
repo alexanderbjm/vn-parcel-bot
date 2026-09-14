@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.2). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 2.3). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -105,10 +105,19 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 ### 4.5 Screenshots (`photo_message`)
 
 - A photo or image document in a private chat goes to the vision engine chosen by `VISION_ENGINE` (§10), one photo at a time per user. Documents that are not JPEG/PNG/WebP/GIF or exceed `VISION_MAX_IMAGE_BYTES` (5 MB) get `VISION_UNSUPPORTED_IMAGE` without downloading.
-- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. Both parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
-- Error codes: `not_configured` → `VISION_NOT_CONFIGURED`; `timeout`, `cli_error`, `http_status`, `network`, `invalid_response` → `VISION_ERROR`. Logs hold error codes, exit codes and durations only.
+- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. `agy`: the image goes to the local OCR proxy (§4.6). All three parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
+- Error codes: `not_configured` → `VISION_NOT_CONFIGURED`; `timeout`, `cli_error`, `http_status`, `network`, `invalid_response`, `blocked` → `VISION_ERROR`. Logs hold error codes, exit codes and durations only.
 - Shipping codes → the add flow (§4.3) with `label` = the product name (first item, ` +N` for more items, at most 40 characters); a duplicate parcel gets the label only if it has none; a pending phone question keeps the label. Replies start with `VISION_DETECTED_HEADER` and `VISION_PRODUCT`.
 - Only an order number → `VISION_ORDER_ONLY`, nothing stored. Nothing found → `VISION_NO_DATA`.
+
+### 4.6 OCR proxy (`agy_proxy.py`)
+
+- Separate process `python -m vn_parcel_bot.agy_proxy` (scheduled task "VN Parcel OCR Proxy", `scripts\install-proxy-task.ps1`). `AgyProxyConfig.from_env` reads `.env` values without copying them into the process environment and needs no bot token. The proxy listens only on the loopback host and port of `AGY_PROXY_URL`; a busy port logs a warning and exits 0.
+- `POST /read` needs header `X-VN-Parcel-Proxy: 1` and no `Origin` header (else 403), `Content-Type` JPEG/PNG/WebP/GIF (else 415) and `Content-Length` 1..`VISION_MAX_IMAGE_BYTES` (else 411, 400 or 413). It answers 200 with `{"text": ...}` or `{"error": <code>}`. `GET /health` answers `{"ok": true, "agy": <executable found>, "model": ...}`.
+- One image at a time: the image is written as `screenshot.<ext>` into a new `vn-parcel-agy-*` temporary folder, then `agy --mode plan --sandbox --model <model> --add-dir <folder> --output-format stream-json --print-timeout <VISION_TIMEOUT_SECONDS>s -p=<file_prompt(path)>` runs in that folder without a console window and with the environment minus `ANTHROPIC_*`, `TELEGRAM_*` and `SEVENTEEN_TRACK_*`. It is killed after the timeout plus 15 s and the folder is removed afterwards. Never pass `--dangerously-skip-permissions`, and never `--disable-slash-commands` (it turns plan mode off).
+- The stream's `result` event gives `status`, `response` and `denied_actions`. Any tool other than `view_file`, or any denied action → `blocked` (the reply is discarded; logs name the tools only). Non-zero exit or a status other than `SUCCESS` → `cli_error`; empty response → `invalid_response`; start failure → `not_configured`. After `cli_error` or `timeout` the run is repeated once with `AGY_FALLBACK_MODEL` when it is set and differs from `AGY_MODEL`.
+- Bot side, `AgyProxyVisionEngine` (`services/vision_agy.py`): `httpx` with `trust_env=False`, waiting `2 × VISION_TIMEOUT_SECONDS + 60` s. Connection failures → `network`, timeouts → `timeout`, non-200 → `http_status`; proxy error codes pass through (unknown ones → `cli_error`); text goes to `parse_vision_text`. Logs hold error codes and durations only.
+- Why a file: agy's print mode accepts text only (image content blocks are refused), so agy opens the saved copy itself. Headless agy auto-denies commands and URL reads unless its `settings.json` allows them; keep that allow list free of commands a screenshot could trick agy into running.
 
 ## 5. Carriers
 
@@ -1216,10 +1225,14 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `QUIET_HOURS` | no | `22-7` | `H-H` with 0..23, `H1 != H2`; empty string → disabled |
 | `MAX_PARCELS_PER_USER` | no | `30` | int 1..200 |
 | `TELEGRAM_PROXY_URL` | no | – | `http://`, `https://`, `socks5://` or `socks5h://` URL |
-| `VISION_ENGINE` | no | `claude_code` | `claude_code` or `api` |
+| `VISION_ENGINE` | no | `claude_code` | `claude_code`, `api` or `agy` |
 | `CLAUDE_CODE_PATH` | no | `claude` on `PATH`, else `%USERPROFILE%\.local\bin\claude.exe` | path to the Claude Code executable |
 | `VISION_MODEL` | no | `sonnet` | Claude Code model alias or id |
 | `VISION_TIMEOUT_SECONDS` | no | `90` | 10..300 |
+| `AGY_PROXY_URL` | no | `http://127.0.0.1:8765` | `http://127.0.0.1:PORT` or `http://localhost:PORT`; bot and proxy |
+| `AGY_PATH` | no | `agy` on `PATH`, else `%LOCALAPPDATA%\agy\bin\agy.exe` | proxy only |
+| `AGY_MODEL` | no | `gemini-3.8-flash-low` | proxy only |
+| `AGY_FALLBACK_MODEL` | no | `gemini-3.7-flash-low` | proxy only; empty disables |
 | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
 | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |

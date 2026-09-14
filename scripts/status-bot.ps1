@@ -13,5 +13,7 @@ Get-CimInstance Win32_Process -Filter "Name like 'python%.exe'" |
     Select-Object ProcessId, CreationDate
 $log = Join-Path $root "logs\bot.log"
 if (Test-Path $log) { Get-Content $log -Tail 20 }
+$proxyLog = Join-Path $root "logs\agy-proxy.log"
+if (Test-Path $proxyLog) { "--- agy-proxy.log ---"; Get-Content $proxyLog -Tail 5 }
 $err = Join-Path $root "logs\startup-error.log"
 if (Test-Path $err) { "--- startup-error.log ---"; Get-Content $err -Tail 5 }

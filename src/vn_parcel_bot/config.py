@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 from collections.abc import Mapping
@@ -5,15 +6,21 @@ from dataclasses import dataclass
 from datetime import time, timedelta
 from pathlib import Path
 from typing import Self
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 _TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 _QUIET_HOURS_RE = re.compile(r"^(\d{1,2})-(\d{1,2})$")
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 _PROXY_SCHEMES = ("http://", "https://", "socks5://", "socks5h://")
-_VISION_ENGINES = ("claude_code", "api")
+_VISION_ENGINES = ("claude_code", "api", "agy")
 _DIGEST_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 DEFAULT_DIGEST_TIMES = (time(7), time(12), time(19), time(22))
+DEFAULT_AGY_PROXY_URL = "http://127.0.0.1:8765"
+DEFAULT_AGY_MODEL = "gemini-3.8-flash-low"
+DEFAULT_AGY_FALLBACK_MODEL = "gemini-3.7-flash-low"
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+_AGY_PROXY_URL_ERROR = "AGY_PROXY_URL must look like http://127.0.0.1:8765 (an address on this PC)"
 
 
 class ConfigError(Exception):
@@ -68,12 +75,51 @@ def _float(
     return value
 
 
+def _log_level(env: Mapping[str, str], errors: list[str]) -> str:
+    log_level = (_get(env, "LOG_LEVEL") or "INFO").upper()
+    if log_level not in _LOG_LEVELS:
+        errors.append(f"LOG_LEVEL must be one of {', '.join(_LOG_LEVELS)}")
+    return log_level
+
+
 def default_claude_code_path() -> str | None:
     found = shutil.which("claude")
     if found:
         return found
     fallback = Path.home() / ".local" / "bin" / "claude.exe"
     return str(fallback) if fallback.is_file() else None
+
+
+def default_agy_path() -> str | None:
+    found = shutil.which("agy")
+    if found:
+        return found
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        return None
+    fallback = Path(local_app_data) / "agy" / "bin" / "agy.exe"
+    return str(fallback) if fallback.is_file() else None
+
+
+def loopback_address(url: str) -> tuple[str, int] | None:
+    """Host and port of an ``http://127.0.0.1:PORT`` or ``http://localhost:PORT`` URL, else None."""
+    parts = urlsplit(url.strip())
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    host = parts.hostname
+    if (
+        parts.scheme != "http"
+        or host not in _LOOPBACK_HOSTS
+        or not port
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+        or parts.username is not None
+    ):
+        return None
+    return host, port
 
 
 def _digest_times(env: Mapping[str, str], errors: list[str]) -> tuple[time, ...]:
@@ -117,6 +163,7 @@ class Settings:
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
     anthropic_workspace_id: str | None = None
+    agy_proxy_url: str = DEFAULT_AGY_PROXY_URL
     seventeen_track_key: str | None = None
 
     @classmethod
@@ -145,10 +192,7 @@ class Settings:
         delay = _float(env, "REQUEST_DELAY_SECONDS", 3.0, 0, 60, errors)
         timeout = _float(env, "HTTP_TIMEOUT_SECONDS", 15.0, 0, 120, errors, low_exclusive=True)
         max_parcels = _int(env, "MAX_PARCELS_PER_USER", 30, 1, 200, errors)
-
-        log_level = (_get(env, "LOG_LEVEL") or "INFO").upper()
-        if log_level not in _LOG_LEVELS:
-            errors.append(f"LOG_LEVEL must be one of {', '.join(_LOG_LEVELS)}")
+        log_level = _log_level(env, errors)
 
         timezone = _get(env, "TIMEZONE") or "Asia/Ho_Chi_Minh"
         try:
@@ -183,6 +227,9 @@ class Settings:
         if vision_engine not in _VISION_ENGINES:
             errors.append(f"VISION_ENGINE must be one of {', '.join(_VISION_ENGINES)}")
         vision_timeout = _int(env, "VISION_TIMEOUT_SECONDS", 90, 10, 300, errors)
+        agy_proxy_url = (_get(env, "AGY_PROXY_URL") or DEFAULT_AGY_PROXY_URL).rstrip("/")
+        if loopback_address(agy_proxy_url) is None:
+            errors.append(_AGY_PROXY_URL_ERROR)
         digest_times = _digest_times(env, errors)
 
         if errors:
@@ -209,6 +256,7 @@ class Settings:
             anthropic_api_key=_get(env, "ANTHROPIC_API_KEY"),
             anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001",
             anthropic_workspace_id=_get(env, "ANTHROPIC_WORKSPACE_ID"),
+            agy_proxy_url=agy_proxy_url,
             seventeen_track_key=_get(env, "SEVENTEEN_TRACK_KEY"),
         )
 
@@ -219,3 +267,43 @@ class Settings:
     @property
     def poll_interval(self) -> timedelta:
         return timedelta(minutes=self.poll_interval_minutes)
+
+
+@dataclass(frozen=True)
+class AgyProxyConfig:
+    """Settings for ``python -m vn_parcel_bot.agy_proxy``; the proxy needs no bot token."""
+
+    host: str = "127.0.0.1"
+    port: int = 8765
+    agy_path: str | None = None
+    model: str = DEFAULT_AGY_MODEL
+    fallback_model: str | None = DEFAULT_AGY_FALLBACK_MODEL
+    timeout_seconds: int = 90
+    log_dir: Path = Path("logs")
+    log_level: str = "INFO"
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> Self:
+        errors: list[str] = []
+        address = loopback_address(_get(env, "AGY_PROXY_URL") or DEFAULT_AGY_PROXY_URL)
+        if address is None:
+            errors.append(_AGY_PROXY_URL_ERROR)
+        timeout = _int(env, "VISION_TIMEOUT_SECONDS", 90, 10, 300, errors)
+        log_level = _log_level(env, errors)
+        if errors or address is None:
+            raise ConfigError("Invalid configuration:\n- " + "\n- ".join(errors))
+        if "AGY_FALLBACK_MODEL" in env:
+            fallback = _get(env, "AGY_FALLBACK_MODEL")
+        else:
+            fallback = DEFAULT_AGY_FALLBACK_MODEL
+        host, port = address
+        return cls(
+            host=host,
+            port=port,
+            agy_path=_get(env, "AGY_PATH") or default_agy_path(),
+            model=_get(env, "AGY_MODEL") or DEFAULT_AGY_MODEL,
+            fallback_model=fallback,
+            timeout_seconds=timeout,
+            log_dir=Path(_get(env, "LOG_DIR") or "logs"),
+            log_level=log_level,
+        )
