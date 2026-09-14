@@ -18,8 +18,9 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import DuplicateParcelError, Parcel, Repository, User
 from vn_parcel_bot.tracking_codes import (
-    GENERIC_CODE_RE,
     detect_carriers,
+    is_code_like,
+    is_order_number,
     is_valid_last4,
     mask_code,
     normalize_code,
@@ -28,7 +29,15 @@ from vn_parcel_bot.tracking_codes import (
 log = logging.getLogger(__name__)
 
 AddKind = Literal[
-    "added", "needs_phone", "link_only", "duplicate", "limit", "invalid_code", "invalid_phone"
+    "added",
+    "needs_phone",
+    "link_only",
+    "order_number",
+    "unknown_carrier",
+    "duplicate",
+    "limit",
+    "invalid_code",
+    "invalid_phone",
 ]
 
 _INDEX_REF = re.compile(r"\d{1,3}", re.ASCII)
@@ -62,20 +71,24 @@ class ParcelService:
         self._settings = settings
         self._now = now
 
-    async def add(
-        self,
-        user: User,
-        raw_code: str,
-        phone_last4: str | None = None,
-        carrier: CarrierCode | None = None,
-    ) -> AddOutcome:
+    async def add(self, user: User, raw_code: str, phone_last4: str | None = None) -> AddOutcome:
         code = normalize_code(raw_code)
-        if carrier is not None:
-            if not GENERIC_CODE_RE.match(code):
+        candidates = detect_carriers(code)
+        if not candidates:
+            if is_order_number(code):
+                kind: AddKind = "order_number"
+            elif is_code_like(code):
+                kind = "unknown_carrier"
+            else:
                 return AddOutcome("invalid_code", code=code or None)
-            candidates = [carrier]
-        else:
-            candidates = detect_carriers(code)
+            log.info(
+                "unrecognised code user=%s kind=%s code=%s length=%s",
+                user.telegram_id,
+                kind,
+                mask_code(code),
+                len(code),
+            )
+            return AddOutcome(kind, code=code)
 
         tracked = [c for c in candidates if is_tracked(c) and c in self._carriers]
         link_only = tuple(c for c in candidates if not is_tracked(c))

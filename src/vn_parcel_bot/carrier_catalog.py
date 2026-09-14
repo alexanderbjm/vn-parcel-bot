@@ -1,4 +1,3 @@
-import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Literal
@@ -71,40 +70,6 @@ TRACKED: tuple[CarrierCode, ...] = tuple(code for code, info in CATALOG.items() 
 
 SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"
 
-_ALIASES: dict[str, CarrierCode] = {
-    "spx": "spx",
-    "shopee": "spx",
-    "shopeeexpress": "spx",
-    "jt": "jt",
-    "jnt": "jt",
-    "jtexpress": "jt",
-    "cainiao": "cainiao",
-    "4px": "fourpx",
-    "fourpx": "fourpx",
-    "ninjavan": "ninjavan",
-    "ninja": "ninjavan",
-    "nv": "ninjavan",
-    "ghn": "ghn",
-    "giaohangnhanh": "ghn",
-    "best": "best",
-    "bestexpress": "best",
-    "yun": "yunexpress",
-    "yunexpress": "yunexpress",
-    "yuntrack": "yunexpress",
-    "ghtk": "ghtk",
-    "giaohangtietkiem": "ghtk",
-    "viettelpost": "viettelpost",
-    "viettel": "viettelpost",
-    "vtp": "viettelpost",
-    "vnpost": "vnpost",
-    "vnp": "vnpost",
-    "ems": "vnpost",
-    "lex": "lex",
-    "lazada": "lex",
-    "lel": "lex",
-}
-_ALIAS_NOISE = re.compile(r"[\s\-_.&]")
-
 
 def is_tracked(carrier: CarrierCode) -> bool:
     return CATALOG[carrier].tracked
@@ -125,7 +90,3 @@ def official_url(carrier: CarrierCode, code: str) -> str | None:
 
 def seventeen_track_url(code: str) -> str:
     return _fill(SEVENTEEN_TRACK_TEMPLATE, code)
-
-
-def parse_carrier_alias(text: str) -> CarrierCode | None:
-    return _ALIASES.get(_ALIAS_NOISE.sub("", text.casefold()))

@@ -5,20 +5,22 @@ from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, rout
 
 def test_track_args_none_when_empty():
     assert parse_track_args([]) is None
+    assert parse_track_args(["  "]) is None
 
 
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
-        (["SPXVN000000000001"], ("SPXVN000000000001", None, None)),
-        (["840000000001", "1234"], ("840000000001", "1234", None)),
-        (["SPXVN", "0000", "0000", "0001"], ("SPXVN000000000001", None, None)),
-        (["8400", "0000", "0001", "1234"], ("840000000001", "1234", None)),
-        (["GA0000000001", "ghn"], ("GA0000000001", None, "ghn")),
-        (["GA0000000001", "1234", "GHN"], ("GA0000000001", "1234", "ghn")),
-        (["ABCD1234", "0001", "ninjavan"], ("ABCD12340001", None, "ninjavan")),
-        (["ghn"], ("GHN", None, None)),
-        (["spxvn000000000001", "J&T"], ("SPXVN000000000001", None, "jt")),
+        (["SPXVN000000000001"], ("SPXVN000000000001", None)),
+        (["840000000001", "1234"], ("840000000001", "1234")),
+        (["SPXVN", "0000", "0000", "0001"], ("SPXVN000000000001", None)),
+        (["8400", "0000", "0001", "1234"], ("840000000001", "1234")),
+        (["84000000000001", "1234"], ("84000000000001", "1234")),
+        (["GA0000000001", "1234"], ("GA0000000001", "1234")),
+        (["BESTMP0000000001VNA", "bestvn"], ("BESTMP0000000001VNA", None)),
+        (["500000000000001"], ("500000000000001", None)),
+        (["SPXVN000000000001", "0001"], ("SPXVN0000000000010001", None)),
+        (["ghn"], ("GHN", None)),
     ],
 )
 def test_track_args(args, expected):
@@ -59,3 +61,8 @@ def test_route_multiple_codes():
 
 def test_route_generic_code_alone():
     assert route_text("GA0000000001", False).codes == ("GA0000000001",)
+
+
+def test_route_order_numbers_and_new_formats():
+    route = route_text("track 500000000000001 /track BESTMP0000000001VNA bestvn", False)
+    assert route.codes == ("500000000000001", "BESTMP0000000001VNA")

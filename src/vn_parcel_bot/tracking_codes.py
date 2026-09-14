@@ -2,36 +2,38 @@ import re
 
 from vn_parcel_bot.carrier_catalog import CarrierCode
 
-GENERIC_CODE_RE = re.compile(r"^[0-9A-Z][0-9A-Z.]{4,38}[0-9A-Z]$", re.ASCII)
-
-_RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...]], ...] = tuple(
-    (re.compile(pattern, re.ASCII), candidates)
-    for pattern, candidates in (
-        (r"SPXVN[0-9A-Z]{8,16}", ("spx",)),
-        (r"SPEVN[0-9A-Z]{6,20}", ("ninjavan",)),
-        (r"LP\d{14}", ("cainiao",)),
-        (r"[A-Z]{2}\d{9}CN", ("cainiao",)),
-        (r"4PX[0-9A-Z]{10,20}", ("fourpx",)),
-        (r"YT\d{16}", ("yunexpress",)),
-        (r"[A-Z]{2}\d{9}VN", ("vnpost",)),
-        (r"(LEXVN|LXVN|LVS)[0-9A-Z]{6,20}", ("lex",)),
-        (r"S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}", ("ghtk",)),
-        (r"\d{12}", ("jt", "best", "viettelpost")),
-        (r"\d{13}", ("best",)),
-        (r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}", ("ghn", "ninjavan")),
+_RULES: tuple[tuple[re.Pattern[str], tuple[CarrierCode, ...], bool], ...] = tuple(
+    (re.compile(pattern, re.ASCII), candidates, standalone_only)
+    for pattern, candidates, standalone_only in (
+        (r"SPXVN[0-9A-Z]{8,16}", ("spx",), False),
+        (r"SPEVN[0-9A-Z]{6,20}", ("ninjavan",), False),
+        (r"LP\d{14}", ("cainiao",), False),
+        (r"[A-Z]{2}\d{9}CN", ("cainiao",), False),
+        (r"4PX[0-9A-Z]{10,20}", ("fourpx",), False),
+        (r"YT\d{16}", ("yunexpress",), False),
+        (r"[A-Z]{2}\d{9}VN", ("vnpost",), False),
+        (r"(LEXVN|LXVN|LVS)[0-9A-Z]{6,20}", ("lex",), False),
+        (r"S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}", ("ghtk",), False),
+        (r"BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}", ("best",), False),
+        (r"\d{12}", ("jt", "best", "viettelpost"), False),
+        (r"\d{13}", ("best",), False),
+        (r"84\d{12}", ("jt",), False),
+        (r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}", ("ghn", "ninjavan"), True),
     )
 )
-_GENERIC_ONLY_RULE_INDEX = 11
+_ORDER_NUMBER = re.compile(r"\d{15}", re.ASCII)
+_CODE_LIKE = re.compile(r"[0-9A-Z]{8,40}", re.ASCII)
+_CODE_LIKE_MIN_DIGITS = 6
 _TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]")
 _SEPARATORS = re.compile(r"[\s\-]")
 _STRIP_CHARS = ",;:()[]<>\"'."
 _LAST4 = re.compile(r"\d{4}", re.ASCII)
 
 
-def _rule_index(code: str) -> int | None:
-    for index, (pattern, _) in enumerate(_RULES):
+def _match(code: str) -> tuple[tuple[CarrierCode, ...], bool] | None:
+    for pattern, candidates, standalone_only in _RULES:
         if pattern.fullmatch(code):
-            return index
+            return candidates, standalone_only
     return None
 
 
@@ -40,21 +42,38 @@ def normalize_code(raw: str) -> str:
 
 
 def detect_carriers(code: str) -> list[CarrierCode]:
-    index = _rule_index(code)
-    return [] if index is None else list(_RULES[index][1])
+    rule = _match(code)
+    return [] if rule is None else list(rule[0])
+
+
+def is_order_number(code: str) -> bool:
+    return _ORDER_NUMBER.fullmatch(code) is not None
+
+
+def is_code_like(code: str) -> bool:
+    if _CODE_LIKE.fullmatch(code) is None:
+        return False
+    return sum(char.isdigit() for char in code) >= _CODE_LIKE_MIN_DIGITS
 
 
 def extract_codes(text: str) -> list[str]:
     whole = normalize_code(text)
-    codes: list[str] = []
+    known: list[str] = []
+    fallback: list[str] = []
     for match in _TOKEN.finditer(text):
         code = normalize_code(match.group())
-        index = _rule_index(code)
-        if index is None or (index == _GENERIC_ONLY_RULE_INDEX and code != whole):
+        rule = _match(code)
+        if (rule is not None and not (rule[1] and code != whole)) or (
+            rule is None and is_order_number(code)
+        ):
+            target = known
+        elif is_code_like(code):
+            target = fallback
+        else:
             continue
-        if code not in codes:
-            codes.append(code)
-    return codes
+        if code not in target:
+            target.append(code)
+    return known or fallback
 
 
 def is_valid_last4(value: str) -> bool:

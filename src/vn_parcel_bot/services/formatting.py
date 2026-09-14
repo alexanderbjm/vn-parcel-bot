@@ -186,6 +186,12 @@ def format_add_outcome(outcome: AddOutcome, tz: ZoneInfo, *, max_parcels: int) -
             return texts.ASK_PHONE.format(code=code, carriers=carrier_names(outcome.candidates))
         case "link_only":
             return format_link_only(outcome.code or "", outcome.link_carriers)
+        case "order_number":
+            return texts.ORDER_NUMBER.format(code=code, links=format_links(outcome.code or "", ()))
+        case "unknown_carrier":
+            return texts.UNKNOWN_CARRIER.format(
+                code=code, links=format_links(outcome.code or "", ())
+            )
         case "duplicate":
             return texts.DUPLICATE.format(code=code)
         case "limit":

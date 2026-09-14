@@ -44,8 +44,7 @@ HELP = (
     "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
     "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
     "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN\n"
-    "• /track &lt;mã&gt; [4 số cuối SĐT] [hãng] – theo dõi đơn "
-    "(hãng: spx, jt, cainiao, 4px, ninjavan, ghn)\n"
+    "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
     "• /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; – đặt tên cho đơn\n"
@@ -59,13 +58,19 @@ NOT_ALLOWED = (
 )
 ADMIN_ONLY = "🔒 Lệnh này chỉ dành cho người quản lý."
 UNKNOWN_COMMAND = "Mình không hiểu lệnh này. Gõ /help để xem hướng dẫn."
-UNKNOWN_CODE = (
-    "🤔 Mình không nhận ra mã vận đơn nào.\n"
-    "Gõ /help để xem các hãng được hỗ trợ, hoặc dùng /track &lt;mã&gt; &lt;hãng&gt;."
-)
+UNKNOWN_CODE = "🤔 Mình không nhận ra mã vận đơn nào.\nGõ /help để xem các hãng được hỗ trợ."
 ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
-USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT] [hãng]"
+USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
+ORDER_NUMBER = (
+    "🧾 <code>{code}</code> có vẻ là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
+    "Trong app (Lazada, TikTok Shop, Shopee…) mở đơn → <b>Thông tin vận chuyển</b> "
+    "để lấy mã vận đơn rồi gửi cho mình. Hoặc thử tra cứu tại:\n{links}"
+)
+UNKNOWN_CARRIER = (
+    "🔍 Mình chưa nhận ra hãng vận chuyển của mã <code>{code}</code>.\n"
+    "Bạn có thể tra cứu tại:\n{links}"
+)
 USAGE_REF = "Cách dùng: /{command} &lt;mã hoặc số thứ tự trong /list&gt;"
 USAGE_LABEL = "Cách dùng: /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; (bỏ trống tên để xóa)"
 

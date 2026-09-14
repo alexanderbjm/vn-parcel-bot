@@ -9,7 +9,6 @@ from telegram.ext import ContextTypes
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
-from vn_parcel_bot.carrier_catalog import CarrierCode
 from vn_parcel_bot.constants import CHECK_COOLDOWN
 from vn_parcel_bot.db.repo import User
 from vn_parcel_bot.services.formatting import (
@@ -67,13 +66,12 @@ async def _add_and_reply(
     context: ContextTypes.DEFAULT_TYPE,
     code: str,
     last4: str | None,
-    carrier: CarrierCode | None,
 ) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
-    outcome = await deps.parcels.add(user, code, last4, carrier)
+    outcome = await deps.parcels.add(user, code, last4)
     if outcome.kind == "needs_phone":
-        user_data(context)[PENDING_PHONE] = {"code": outcome.code, "carrier": carrier}
+        user_data(context)[PENDING_PHONE] = {"code": outcome.code}
     else:
         user_data(context).pop(PENDING_PHONE, None)
     await reply(
@@ -89,8 +87,8 @@ async def track_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if parsed is None:
         await reply(update, texts.USAGE_TRACK)
         return
-    code, last4, carrier = parsed
-    await _add_and_reply(update, context, code, last4, carrier)
+    code, last4 = parsed
+    await _add_and_reply(update, context, code, last4)
 
 
 async def _add_many(
@@ -122,11 +120,11 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     route = route_text(message.text, PENDING_PHONE in data)
     if route.kind == "phone_for_pending":
         pending = data.pop(PENDING_PHONE)
-        await _add_and_reply(update, context, pending["code"], route.last4, pending["carrier"])
+        await _add_and_reply(update, context, pending["code"], route.last4)
     elif route.kind == "codes":
         data.pop(PENDING_PHONE, None)
         if len(route.codes) == 1:
-            await _add_and_reply(update, context, route.codes[0], None, None)
+            await _add_and_reply(update, context, route.codes[0], None)
         else:
             await _add_many(update, context, route.codes)
     elif route.kind == "invalid_phone":

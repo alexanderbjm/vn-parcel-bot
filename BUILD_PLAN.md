@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 1.1 · 2026-09-13 · Status: design approved, build in progress
+Version 1.2 · 2026-09-14 · Status: v1 built on branch build/v1; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost and LEX VN** are recognised and answered with tracking links. Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,13 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 1.2 (2026-09-14)
+
+- **Detection without carrier names** (§4.1, §4.3, §5.2): the `/track <mã> <hãng>` alias override is removed; every code is recognised automatically. Extra words after a code are ignored.
+- **New formats seen in real use:** BEST Express `BEST…VN…` codes (link-only) and 14-digit `84…` codes (J&T, e.g. TikTok Shop seller own fleet).
+- **Order numbers and unknown codes:** 15-digit numbers are treated as marketplace order numbers (`ORDER_NUMBER` reply), and any other code-like input gets a 17TRACK link (`UNKNOWN_CARRIER` reply) instead of "not recognised". Unrecognised codes are logged masked so new formats can be added.
+- Part 3 prompts describe the original 1.1 build steps; where they mention carrier aliases or `GENERIC_CODE_RE`, Part 2 wins.
 
 ---
 
@@ -161,7 +168,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 |---|---|---|
 | `/start` | – | `WELCOME` (with first name) followed by `HELP`. |
 | `/help` | – | `HELP`. |
-| `/track` | `<code> [last4] [carrier]` | Add a parcel (§4.3). The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing carrier alias (§5.2, e.g. `ghn`, `4px`) forces that carrier and skips detection. A trailing 4-digit argument (before the alias, if any) is the phone override only when the forced carrier needs a phone or, without a forced carrier, the remaining code has a candidate that needs one; otherwise it stays part of the code. No args → `USAGE_TRACK`. |
+| `/track` | `<code> [last4]` | Add a parcel (§4.3); the carrier is always detected automatically. The code may contain spaces/dashes (`/track SPXVN 0533 8454 932C`). A trailing 4-digit argument is the phone override only when the remaining code has a candidate that needs a phone; otherwise it stays part of the code. If the joined arguments are not a recognised code or order number, the first code found by `extract_codes` in them is used, so extra words are ignored. No args → `USAGE_TRACK`. |
 | *(plain text)* | – | Routed per §4.2. |
 | `/list` | – | Active parcels plus terminal parcels updated within `DELIVERED_VISIBLE_FOR` (3 days), numbered 1..n in `created_at` order. Unresolved parcels show `CARRIER_UNRESOLVED`. Empty → `LIST_EMPTY`. |
 | `/status` | `<ref>` | Full history of one parcel, **newest first**, at most `MAX_EVENTS_IN_HISTORY` (30). `ref` = tracking code or the index shown by `/list`. |
@@ -187,13 +194,13 @@ Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): sta
 
 With `codes`:
 - **One code** → same as `/track <code>`.
-- **Several codes** → add each with no phone override and no forced carrier. `needs_phone` outcomes are not stored and are listed once in `NEEDS_PHONE_MULTI`; every other outcome gets its own reply. No pending question is created for multi-code messages.
+- **Several codes** → add each with no phone override. `needs_phone` outcomes are not stored and are listed once in `NEEDS_PHONE_MULTI`; every other outcome gets its own reply. No pending question is created for multi-code messages.
 
 ### 4.3 Adding a parcel (`ParcelService.add`)
 
-Inputs: the user, the raw code, an optional phone override, an optional forced carrier. A candidate counts as **tracked** only if it is tracked in §5.1 **and** present in the service's carrier mapping.
+Inputs: the user, the raw code, an optional phone override. A candidate counts as **tracked** only if it is tracked in §5.1 **and** present in the service's carrier mapping.
 
-1. `code = normalize_code(raw)`. Candidates: forced carrier → `[forced]`, and `code` must match `GENERIC_CODE_RE` (§5.2) else `invalid_code`; otherwise `detect_carriers(code)`. No candidates → `invalid_code`.
+1. `code = normalize_code(raw)`; candidates = `detect_carriers(code)`. No candidates → `order_number` if `is_order_number(code)`, else `unknown_carrier` if `is_code_like(code)`, else `invalid_code`. Nothing is stored and no request is made; `order_number` and `unknown_carrier` are logged at INFO with the masked code and its length.
 2. Split candidates, preserving order, into `tracked` (tracked in §5.1 and present in the carrier mapping) and `link_only` (link-only in §5.1). Tracked carriers missing from the mapping are dropped. Both lists empty → `invalid_code`.
 3. A phone override that fails `is_valid_last4` → `invalid_phone`.
 4. `tracked` empty → `link_only` outcome with `link_carriers = link_only`. Nothing stored, no request.
@@ -201,7 +208,7 @@ Inputs: the user, the raw code, an optional phone override, an optional forced c
 6. `last4 = override or user.default_phone_last4`. `tryable` = tracked candidates that do not need a phone, plus those that do when `last4` is set. `phone_missing` = tracked candidates that need a phone while `last4` is `None`.
 7. Fetch the `tryable` candidates **one by one in order**, stopping at the first result with `found=True`. A `CarrierError` is remembered and the next candidate is tried.
 8. **Found** with carrier `c` → insert the parcel with `carrier=c`, `candidates=(c,)`, `phone_last4 = last4 if c needs a phone else None`, `next_check_at = now + poll_interval`; insert all events silently; set state (`delivered` / `returned` / `in_transit`); outcome `added` with the result. Reply `ADDED_FOUND` or `ADDED_DELIVERED`.
-9. **Not found and `phone_missing` non-empty** → `needs_phone` with `candidates = phone_missing` (nothing stored). The handler stores `context.user_data["pending_phone"] = {"code": code, "carrier": forced}` and replies `ASK_PHONE`. The next 4-digit message calls `add` again with those digits (all tryable candidates are fetched again).
+9. **Not found and `phone_missing` non-empty** → `needs_phone` with `candidates = phone_missing` (nothing stored). The handler stores `context.user_data["pending_phone"] = {"code": code}` and replies `ASK_PHONE`. The next 4-digit message calls `add` again with those digits (all tryable candidates are fetched again).
 10. **Otherwise** insert a pending parcel: `candidates = tracked`; `carrier = tracked[0]` if there is exactly one tracked candidate, else `None` (unresolved); `phone_last4 = last4` if any tracked candidate needs a phone, else `None`; `next_check_at = now + poll_interval`.
     - Every attempted fetch raised `CarrierError` → record a failure with backoff (§6.4) and return `added` with `error` = the last error → `ADDED_ERROR`.
     - Else → `record_check_success(state="pending")` and return `added` with the last not-found result → `ADDED_PENDING` (resolved) or `ADDED_PENDING_AUTO` (unresolved).
@@ -241,10 +248,9 @@ Every link list ends with 17TRACK: `https://t.17track.net/vi#nums={code}`.
 
 Link-only carriers are never polled and never stored. The bot does **not** solve captchas, replay cookie challenges, drive headless browsers, or rotate User-Agents.
 
-### 5.2 Code normalization, detection and aliases
+### 5.2 Code normalization, detection, order numbers and fallback
 
 - `normalize_code(raw)`: uppercase; remove all whitespace and `-`; strip surrounding `,;:()[]<>"'.`. Internal dots are kept (GHTK codes contain them).
-- `GENERIC_CODE_RE = ^[0-9A-Z][0-9A-Z.]{4,38}[0-9A-Z]$` — the minimum shape of any code, used for forced carriers.
 - `detect_carriers(code)` on a normalized code — the **first** matching rule wins and returns its candidates in order:
 
 | # | Regex | Candidates | Source |
@@ -258,15 +264,17 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 | 7 | `^[A-Z]{2}\d{9}VN$` | vnpost | UPU S10 |
 | 8 | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | lex | web, unverified |
 | 9 | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | ghtk | web |
-| 10 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
-| 11 | `^\d{13}$` | best | web |
-| 12 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
+| 10 | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | best | observed (`BESTMP…VNA`) |
+| 11 | `^\d{12}$` | jt, best, viettelpost | observed (J&T); web |
+| 12 | `^\d{13}$` | best | web |
+| 13 | `^84\d{12}$` | jt | observed (14-digit J&T, TikTok Shop seller own fleet) |
+| 14 | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | ghn, ninjavan | web; unprefixed alphanumeric codes |
 
   No rule matches → `[]`.
-- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)`; normalize each token; keep tokens with a non-empty `detect_carriers`. A token that only matches **rule 12** is kept only when the whole stripped message is that single token. Return in order of appearance, de-duplicated. No joining of space-separated fragments.
+- `is_order_number(code)`: `^\d{15}$`. Marketplace order numbers (Lazada, TikTok Shop) have this shape; they are not shipping codes and are never tracked.
+- `is_code_like(code)`: `^[0-9A-Z]{8,40}$` with at least 6 digits.
+- `extract_codes(text)`: iterate `re.finditer(r"[0-9A-Za-z][0-9A-Za-z.\-]*[0-9A-Za-z]", text)` and normalize each token. **Known** tokens: a rule match (a **rule 14** match only when the whole stripped message is that single token) or an order number. **Fallback** tokens: other code-like tokens, including rule-14 matches inside longer text. Return the known tokens if there are any, else the fallback tokens; order of appearance, de-duplicated. No joining of space-separated fragments.
 - `is_valid_last4(s)`: `^\d{4}$`.
-- `parse_carrier_alias(text)`: casefold and remove spaces, `-`, `_`, `.`, `&`, then map:
-  `spx`, `shopee`, `shopeeexpress` → spx · `jt`, `jnt`, `jtexpress` → jt · `cainiao` → cainiao · `4px`, `fourpx` → fourpx · `ninjavan`, `ninja`, `nv` → ninjavan · `ghn`, `giaohangnhanh` → ghn · `best`, `bestexpress` → best · `yun`, `yunexpress`, `yuntrack` → yunexpress · `ghtk`, `giaohangtietkiem` → ghtk · `viettelpost`, `viettel`, `vtp` → viettelpost · `vnpost`, `vnp`, `ems` → vnpost · `lex`, `lazada`, `lel` → lex · anything else → `None`.
 - `mask_code(code)`: `code[:5] + "…" + code[-3:]`, used in logs.
 
 Prompt 10A updates this section and `tracking_codes.py` together when real codes contradict a rule.
@@ -534,7 +542,7 @@ Telegram ⇄ python-telegram-bot (long polling, JobQueue)
               │                     │
      db/ Repository (aiosqlite)   carriers/ (SPX, J&T, Cainiao, 4PX, Ninja Van, GHN) ⇄ httpx ⇄ carrier sites
               │
-     carrier_catalog.py + tracking_codes.py (pure: tiers, links, aliases, detection)
+     carrier_catalog.py + tracking_codes.py (pure: tiers, links, detection)
 ```
 
 ### 8.1 Repository layout
@@ -556,7 +564,7 @@ vn-parcel-bot/
 │  ├─ logging_setup.py          setup_logging, RedactTokenFilter
 │  ├─ single_instance.py        SingleInstanceLock, SingleInstanceError
 │  ├─ texts.py                  all user-facing strings (§17)
-│  ├─ carrier_catalog.py        CarrierCode, CarrierInfo, CATALOG, links, aliases
+│  ├─ carrier_catalog.py        CarrierCode, CarrierInfo, CATALOG, links
 │  ├─ tracking_codes.py         normalize/detect/extract codes
 │  ├─ carriers/
 │  │  ├─ __init__.py            CARRIERS registry, get_carrier
@@ -735,15 +743,13 @@ def is_tracked(carrier: CarrierCode) -> bool: ...
 def needs_phone(carrier: CarrierCode) -> bool: ...
 def official_url(carrier: CarrierCode, code: str) -> str | None: ...
 def seventeen_track_url(code: str) -> str: ...
-def parse_carrier_alias(text: str) -> CarrierCode | None: ...
 
 
 # tracking_codes.py
-GENERIC_CODE_RE: re.Pattern[str]
-
-
 def normalize_code(raw: str) -> str: ...
 def detect_carriers(code: str) -> list[CarrierCode]: ...
+def is_order_number(code: str) -> bool: ...
+def is_code_like(code: str) -> bool: ...
 def extract_codes(text: str) -> list[str]: ...
 def is_valid_last4(value: str) -> bool: ...
 def mask_code(code: str) -> str: ...  # code[:5] + "…" + code[-3:]
@@ -1081,7 +1087,15 @@ def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str: ...
 
 ```python
 AddKind = Literal[
-    "added", "needs_phone", "link_only", "duplicate", "limit", "invalid_code", "invalid_phone"
+    "added",
+    "needs_phone",
+    "link_only",
+    "order_number",
+    "unknown_carrier",
+    "duplicate",
+    "limit",
+    "invalid_code",
+    "invalid_phone",
 ]
 
 
@@ -1110,7 +1124,6 @@ class ParcelService:
         user: User,
         raw_code: str,
         phone_last4: str | None = None,
-        carrier: CarrierCode | None = None,
     ) -> AddOutcome: ...
     async def list_for(self, user_id: int) -> list[Parcel]: ...
     async def resolve(
@@ -1183,9 +1196,9 @@ class Poller:
 
 ```python
 # parsing.py
-def parse_track_args(args: Sequence[str]) -> tuple[str, str | None, CarrierCode | None] | None:
+def parse_track_args(args: Sequence[str]) -> tuple[str, str | None] | None:
     ...
-    # (code, last4, forced carrier); rules in §4.1
+    # (code, last4); rules below
 
 
 def parse_ref_and_text(args: Sequence[str]) -> tuple[str, str | None] | None: ...
@@ -1242,16 +1255,16 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: 
 def main() -> int: ...
 ```
 
-`parse_track_args` rules: empty → `None`. If `len(args) >= 2` and `parse_carrier_alias(args[-1])` is not `None` → that is the forced carrier; drop it. Then if at least 2 args remain and the last is 4 digits, it is `last4` (drop it) when the forced carrier needs a phone or, without a forced carrier, `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone. `code = normalize_code("".join(remaining args))`; empty → `None`.
+`parse_track_args` rules: blank args are dropped; none left → `None`. If at least 2 args remain, the last is 4 digits, and `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone → it is `last4` (drop it). `joined = normalize_code("".join(remaining args))`; if `detect_carriers(joined)` is non-empty or `is_order_number(joined)` → `(joined, last4)`; else the first result of `extract_codes(" ".join(remaining args))` if any; else `(joined, last4)`.
 
-Pending phone question: `context.user_data["pending_phone"] = {"code": str, "carrier": CarrierCode | None}`.
+Pending phone question: `context.user_data["pending_phone"] = {"code": str}`.
 
 `BOT_COMMANDS`:
 ```python
 [
     ("start", "Bắt đầu"),
     ("help", "Hướng dẫn"),
-    ("track", "Theo dõi đơn: /track <mã> [4 số] [hãng]"),
+    ("track", "Theo dõi đơn: /track <mã> [4 số cuối SĐT]"),
     ("list", "Danh sách đơn"),
     ("status", "Hành trình đơn"),
     ("label", "Đặt tên cho đơn"),
@@ -1337,9 +1350,9 @@ See §9.2. They are code constants, not env vars.
 10. `/label 1 Áo khoác` → `/list` and future updates show "Áo khoác"; `/label 1` clears it.
 11. `/status 1` → history newest first; `/remove 1` → `REMOVED`, gone from `/list`.
 12. Paste a real Cainiao (`LP…`) or 4PX (`4PX…`) code → `ADDED_FOUND` naming Cainiao / 4PX.
-13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 12 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
+13. With `/phone` set, paste a real GHN or Ninja Van code that matches rule 14 (§5.2) → the bot tries the candidates and replies `ADDED_FOUND` naming the right carrier; `/list` shows that carrier.
 14. Paste a VNPost-shaped code (`EB123456789VN`) → `LINK_ONLY` with a VNPost link and a 17TRACK link; `/list` unchanged.
-15. `/track <real GHN code> <4 digits> ghn` → added as GHN without detection; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
+15. Paste a 15-digit marketplace order number → `ORDER_NUMBER` with a 17TRACK link, nothing added; paste an unrecognised code-like string → `UNKNOWN_CARRIER`; `/track <12-digit J&T code>` with no data yet → `ADDED_PENDING` plus the BEST / Viettel Post links.
 16. Restart the PC and log in → bot running within 1 min; no duplicate notifications for already-seen events.
 17. Disconnect the network for 15 min → no crash, no user messages about errors, recovery after reconnection; after 5 consecutive failures admin gets one `ALERT_CARRIER`.
 18. Start a second instance manually → it exits immediately with the "another instance" log line.
@@ -1360,7 +1373,7 @@ See §9.2. They are code constants, not env vars.
 | R9 | Duplicate bot instances | Low | Medium | Lock file + `MultipleInstances IgnoreNew` + `Conflict` handling |
 | R10 | Timezone errors on Windows | Medium | Low | `tzdata` dependency, aware datetimes enforced by `TrackingEvent` |
 | R11 | Synthetic fixtures differ from real responses (SPX found data, J&T markup, Cainiao, 4PX, Ninja Van, GHN) | High | Medium | Parsers accept documented variants; Prompt 10A replaces fixtures with live captures and fixes parsers test-first |
-| R12 | Detection rules misattribute a code (several formats come from web sources) | Medium | Medium | Auto-try across candidates; forced carrier alias in `/track`; Prompt 10A corrects §5.2 |
+| R12 | Detection rules misattribute a code (several formats come from web sources) | Medium | Medium | Auto-try across candidates; unrecognised codes get a 17TRACK link and are logged masked; Prompt 10A corrects §5.2 |
 | R13 | Unresolved parcels double the requests for their code | Low | Low | At most two candidates per rule; 7-day pending expiry |
 | R14 | A link-only carrier's link template stops working | Medium | Low | Every link list also carries a 17TRACK link |
 
@@ -1426,7 +1439,7 @@ HELP = (
     "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
     "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
     "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN\n"
-    "• /track &lt;mã&gt; [4 số cuối SĐT] [hãng] – theo dõi đơn (hãng: spx, jt, cainiao, 4px, ninjavan, ghn)\n"
+    "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
     "• /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; – đặt tên cho đơn\n"
@@ -1440,13 +1453,19 @@ NOT_ALLOWED = (
 )
 ADMIN_ONLY = "🔒 Lệnh này chỉ dành cho người quản lý."
 UNKNOWN_COMMAND = "Mình không hiểu lệnh này. Gõ /help để xem hướng dẫn."
-UNKNOWN_CODE = (
-    "🤔 Mình không nhận ra mã vận đơn nào.\n"
-    "Gõ /help để xem các hãng được hỗ trợ, hoặc dùng /track &lt;mã&gt; &lt;hãng&gt;."
-)
+UNKNOWN_CODE = "🤔 Mình không nhận ra mã vận đơn nào.\nGõ /help để xem các hãng được hỗ trợ."
 ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
-USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT] [hãng]"
+USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
+ORDER_NUMBER = (
+    "🧾 <code>{code}</code> có vẻ là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
+    "Trong app (Lazada, TikTok Shop, Shopee…) mở đơn → <b>Thông tin vận chuyển</b> "
+    "để lấy mã vận đơn rồi gửi cho mình. Hoặc thử tra cứu tại:\n{links}"
+)
+UNKNOWN_CARRIER = (
+    "🔍 Mình chưa nhận ra hãng vận chuyển của mã <code>{code}</code>.\n"
+    "Bạn có thể tra cứu tại:\n{links}"
+)
 USAGE_REF = "Cách dùng: /{command} &lt;mã hoặc số thứ tự trong /list&gt;"
 USAGE_LABEL = "Cách dùng: /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; (bỏ trống tên để xóa)"
 
@@ -3083,7 +3102,7 @@ Make carrier <NAME> (code "<code>") tracked:
 | §4.3 Adding a parcel (auto-try) | P8 `ParcelService.add` | P8 tests; P11 scenarios 3–7, 12–15 |
 | §4.4 Link lists | P3 catalog links, P7 `format_links` | P3, P7 tests; P11 scenarios 14–15 |
 | §5.1 Catalog | P3 `carrier_catalog.py`, P5B registry | P3, P5B tests; P10A |
-| §5.2 Detection and aliases | P3 `tracking_codes.py`, `parse_carrier_alias` | P3 tests; P10A corrections |
+| §5.2 Detection, order numbers, code-like fallback | P3 `tracking_codes.py` | P3 tests; P10A corrections |
 | §5.3–5.8 Carrier facts | P2 fixtures, P4, P5, P5A, P5B | Carrier tests; P10A live gate |
 | §5.9 Fetch contract | P2 (`http.py`, `common.py`), P4–P5B | P2 and carrier tests |
 | §5.10 Politeness | P9 | P9 pacing/grouping tests |

@@ -1,12 +1,9 @@
-import pytest
-
 from vn_parcel_bot.carrier_catalog import (
     CATALOG,
     TRACKED,
     is_tracked,
     needs_phone,
     official_url,
-    parse_carrier_alias,
     seventeen_track_url,
 )
 
@@ -68,22 +65,3 @@ def test_official_url_tracked_is_none():
 
 def test_seventeen_track_url():
     assert seventeen_track_url("EB123456789VN") == "https://t.17track.net/vi#nums=EB123456789VN"
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("J&T", "jt"),
-        ("jnt", "jt"),
-        ("4PX", "fourpx"),
-        ("Ninja-Van", "ninjavan"),
-        ("EMS", "vnpost"),
-        ("lazada", "lex"),
-        ("Viettel Post", "viettelpost"),
-        ("ghn", "ghn"),
-        ("abc", None),
-        ("", None),
-    ],
-)
-def test_parse_carrier_alias_variants(text, expected):
-    assert parse_carrier_alias(text) == expected

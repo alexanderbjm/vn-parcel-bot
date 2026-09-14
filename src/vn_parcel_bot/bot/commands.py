@@ -1,7 +1,7 @@
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("start", "Bắt đầu"),
     ("help", "Hướng dẫn"),
-    ("track", "Theo dõi đơn: /track <mã> [4 số] [hãng]"),
+    ("track", "Theo dõi đơn: /track <mã> [4 số cuối SĐT]"),
     ("list", "Danh sách đơn"),
     ("status", "Hành trình đơn"),
     ("label", "Đặt tên cho đơn"),

@@ -265,6 +265,24 @@ def test_add_outcome_other_kinds():
     assert outcome_text(AddOutcome("invalid_phone", code=SPX)) == texts.INVALID_PHONE
 
 
+def test_add_outcome_order_number_and_unknown_carrier():
+    order = outcome_text(AddOutcome("order_number", code="500000000000001"))
+    assert "<code>500000000000001</code>" in order
+    assert "mã đơn hàng" in order
+    assert "Thông tin vận chuyển" in order
+    assert 'href="https://t.17track.net/vi#nums=500000000000001"' in order
+    unknown = outcome_text(AddOutcome("unknown_carrier", code="ABC1234567890DEF"))
+    assert "chưa nhận ra hãng vận chuyển" in unknown
+    assert 'href="https://t.17track.net/vi#nums=ABC1234567890DEF"' in unknown
+    assert texts.UNKNOWN_CODE not in unknown
+
+
+def test_help_and_usage_do_not_mention_carrier_names_argument():
+    assert "[hãng]" not in texts.HELP
+    assert "[hãng]" not in texts.USAGE_TRACK
+    assert "&lt;hãng&gt;" not in texts.UNKNOWN_CODE
+
+
 def test_needs_phone_multi_expired_and_stale():
     multi = format_needs_phone_multi(["840000000001", "GA0000000001"])
     assert "<code>840000000001</code>\n<code>GA0000000001</code>" in multi

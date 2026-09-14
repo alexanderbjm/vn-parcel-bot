@@ -223,28 +223,39 @@ async def test_add_generic_error_then_not_found_is_pending_success(service, repo
     assert outcome.result.found is False
 
 
-async def test_add_forced_carrier_skips_detection(service, user, fakes):
-    outcome = await service.add(user, "ABC123XYZ", carrier="ninjavan")
-    assert fakes["ninjavan"].calls == [("ABC123XYZ", None)]
-    assert fakes["ghn"].calls == []
-    assert outcome.parcel.carrier == "ninjavan"
-
-
-async def test_add_forced_carrier_invalid_shape(service, user, fakes):
-    assert (await service.add(user, "A1", carrier="ghn")).kind == "invalid_code"
+async def test_add_order_number_is_not_stored(service, user, fakes, repo):
+    outcome = await service.add(user, "500000000000001")
+    assert outcome.kind == "order_number"
+    assert outcome.code == "500000000000001"
+    assert await repo.find_parcel(1, "500000000000001") is None
     assert total_calls(fakes) == 0
 
 
-async def test_add_forced_link_only_carrier(service, user):
-    outcome = await service.add(user, "S1234567.MB12", carrier="ghtk")
+async def test_add_unknown_code_like(service, user, fakes, repo):
+    outcome = await service.add(user, "abc1234567890def")
+    assert outcome.kind == "unknown_carrier"
+    assert outcome.code == "ABC1234567890DEF"
+    assert await repo.find_parcel(1, "ABC1234567890DEF") is None
+    assert total_calls(fakes) == 0
+
+
+async def test_add_best_code_is_link_only(service, user, fakes):
+    outcome = await service.add(user, "BESTMP0000000001VNA")
     assert outcome.kind == "link_only"
-    assert outcome.link_carriers == ("ghtk",)
+    assert outcome.link_carriers == ("best",)
+    assert total_calls(fakes) == 0
+
+
+async def test_add_14_digit_jt_needs_phone(service, user, fakes):
+    outcome = await service.add(user, "84000000000001")
+    assert outcome.kind == "needs_phone"
+    assert outcome.candidates == ("jt",)
+    assert total_calls(fakes) == 0
 
 
 async def test_add_duplicate_any_carrier(service, user, fakes):
     assert (await service.add(user, SPX)).kind == "added"
     assert (await service.add(user, SPX)).kind == "duplicate"
-    assert (await service.add(user, SPX, carrier="ninjavan")).kind == "duplicate"
     assert total_calls(fakes) == 1
 
 

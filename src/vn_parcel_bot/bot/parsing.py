@@ -2,34 +2,33 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from vn_parcel_bot.carrier_catalog import CarrierCode, needs_phone, parse_carrier_alias
+from vn_parcel_bot.carrier_catalog import needs_phone
 from vn_parcel_bot.tracking_codes import (
     detect_carriers,
     extract_codes,
+    is_order_number,
     is_valid_last4,
     normalize_code,
 )
 
 
-def parse_track_args(args: Sequence[str]) -> tuple[str, str | None, CarrierCode | None] | None:
+def parse_track_args(args: Sequence[str]) -> tuple[str, str | None] | None:
     parts = [arg for arg in args if arg.strip()]
     if not parts:
         return None
-    carrier = parse_carrier_alias(parts[-1]) if len(parts) >= 2 else None
-    if carrier is not None:
-        parts = parts[:-1]
     last4 = None
     if len(parts) >= 2 and is_valid_last4(parts[-1]):
-        if carrier is not None:
-            wants_phone = needs_phone(carrier)
-        else:
-            rest = normalize_code("".join(parts[:-1]))
-            wants_phone = any(needs_phone(code) for code in detect_carriers(rest))
-        if wants_phone:
+        rest = normalize_code("".join(parts[:-1]))
+        if any(needs_phone(carrier) for carrier in detect_carriers(rest)):
             last4 = parts[-1]
             parts = parts[:-1]
-    code = normalize_code("".join(parts))
-    return (code, last4, carrier) if code else None
+    joined = normalize_code("".join(parts))
+    if detect_carriers(joined) or is_order_number(joined):
+        return joined, last4
+    codes = extract_codes(" ".join(parts))
+    if codes:
+        return codes[0], last4
+    return (joined, last4) if joined else None
 
 
 def parse_ref_and_text(args: Sequence[str]) -> tuple[str, str | None] | None:

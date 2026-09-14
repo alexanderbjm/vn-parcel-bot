@@ -1,9 +1,10 @@
 import pytest
 
 from vn_parcel_bot.tracking_codes import (
-    GENERIC_CODE_RE,
     detect_carriers,
     extract_codes,
+    is_code_like,
+    is_order_number,
     is_valid_last4,
     mask_code,
     normalize_code,
@@ -34,8 +35,11 @@ def test_normalize_keeps_internal_dots():
         ("EB123456789VN", ["vnpost"]),
         ("LEXVN00123456", ["lex"]),
         ("S1234567.MB12.D5.123456789", ["ghtk"]),
+        ("BESTMP0000000001VNA", ["best"]),
+        ("BEST0000000001VN", ["best"]),
         ("841000072647", ["jt", "best", "viettelpost"]),
         ("8410000726470", ["best"]),
+        ("84000000000001", ["jt"]),
         ("GAN6DKKU12", ["ghn", "ninjavan"]),
     ],
 )
@@ -49,16 +53,50 @@ def test_detect_first_rule_wins():
 
 
 @pytest.mark.parametrize(
-    "code", ["", "AB12", "ABCDEFGH", "12345678", "71426082060", "GAN6DKKU12345678"]
+    "code",
+    [
+        "",
+        "AB12",
+        "ABCDEFGH",
+        "12345678",
+        "71426082060",
+        "GAN6DKKU12345678",
+        "500000000000001",
+        "94000000000001",
+    ],
 )
 def test_detect_no_match(code):
     assert detect_carriers(code) == []
 
 
-def test_generic_code_re():
-    assert not GENERIC_CODE_RE.match("AB12C")
-    assert GENERIC_CODE_RE.match("AB1234")
-    assert not GENERIC_CODE_RE.match("A.B")
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("500000000000001", True),
+        ("50000000000000", False),
+        ("5000000000000010", False),
+        ("SPXVN05338454932C", False),
+    ],
+)
+def test_is_order_number(code, expected):
+    assert is_order_number(code) is expected
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("ABC1234567890DEF", True),
+        ("71426082060", True),
+        ("BESTMP0000000001VNA", True),
+        ("IPHONE15PROMAX", False),
+        ("ABCDEFGHIJ", False),
+        ("1234567", False),
+        ("1.250.000", False),
+        ("A" * 41 + "123456", False),
+    ],
+)
+def test_is_code_like(code, expected):
+    assert is_code_like(code) is expected
 
 
 def test_extract_codes_mixed_text_in_order():
@@ -70,8 +108,8 @@ def test_extract_codes_dedupes():
     assert extract_codes("841000072647 và 841000072647") == ["841000072647"]
 
 
-def test_extract_codes_ignores_longer_digit_runs():
-    assert extract_codes("84100007264701") == []
+def test_extract_codes_does_not_pick_digit_substrings():
+    assert extract_codes("9410000726470155") == ["9410000726470155"]
 
 
 def test_extract_codes_generic_only_when_alone():
@@ -85,8 +123,27 @@ def test_extract_codes_dashed_code_in_text():
     assert extract_codes("mã SPXVN-0533-8454-932C nhé") == ["SPXVN05338454932C"]
 
 
+def test_extract_codes_real_mixed_message():
+    text = (
+        "track 500000000000001 /track BESTMP0000000001VNA bestvn "
+        "/track 84000000000001 /track 500000000000002"
+    )
+    assert extract_codes(text) == [
+        "500000000000001",
+        "BESTMP0000000001VNA",
+        "84000000000001",
+        "500000000000002",
+    ]
+
+
+def test_extract_codes_code_like_fallback_only_without_known_codes():
+    assert extract_codes("mã ABC1234567890DEF nhé") == ["ABC1234567890DEF"]
+    assert extract_codes("SPXVN05338454932C gọi 0901234567") == ["SPXVN05338454932C"]
+
+
 def test_extract_codes_none():
     assert extract_codes("xin chào") == []
+    assert extract_codes("giá 1.250.000đ") == []
 
 
 @pytest.mark.parametrize(
