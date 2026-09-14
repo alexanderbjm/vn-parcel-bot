@@ -394,3 +394,16 @@ async def test_add_lazada_cainiao_code_tracks_the_waybill(service, user, fakes, 
     assert outcome.parcel.tracking_number == "YT0000000000001"
     assert fakes["cainiao"].calls == [("YT0000000000001", None)]
     assert await repo.find_parcel(1, "500000000000001") is None
+
+
+async def test_find_in_text_matches_codes_and_names(service, user):
+    await service.add(user, SPX)
+    await service.add(user, SPX2)
+    await service.rename(1, SPX2, "Tai nghe")
+    by_code = await service.find_in_text(1, f"📦 {SPX} · SPX")
+    assert [parcel.tracking_number for parcel in by_code] == [SPX]
+    by_name = await service.find_in_text(1, "📦 <b>Tai nghe</b> · SPX")
+    assert [parcel.tracking_number for parcel in by_name] == [SPX2]
+    both = await service.find_in_text(1, f"1. {SPX}\n2. Tai nghe")
+    assert sorted(parcel.tracking_number for parcel in both) == [SPX, SPX2]
+    assert await service.find_in_text(1, "xin chào") == []

@@ -2,10 +2,12 @@ import asyncio
 import contextlib
 import logging
 import math
+import unicodedata
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from html import escape
 
-from telegram import LinkPreviewOptions, Update
+from telegram import LinkPreviewOptions, Message, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
@@ -22,24 +24,29 @@ from vn_parcel_bot.services.formatting import (
     format_links,
     format_needs_phone_multi,
     format_parcel_list,
-    parcel_title,
+    masked_title,
     truncate_message,
 )
 from vn_parcel_bot.services.vision import VisionResult
-from vn_parcel_bot.tracking_codes import is_valid_last4
+from vn_parcel_bot.tracking_codes import is_valid_last4, mask_code
 
 PENDING_PHONE = "pending_phone"
+PENDING_LABEL = "pending_label"
+PENDING_REMOVE = "pending_remove"
+PENDING_KEYS = (PENDING_PHONE, PENDING_LABEL, PENDING_REMOVE)
 PHOTO_LOCKS = "photo_locks"
 VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+CONFIRM_WORDS = frozenset({"có", "co", "yes", "y", "ok", "xóa", "xoa"})
+CLEAR_LABEL = "-"
 
 log = logging.getLogger(__name__)
 
 
-async def reply(update: Update, text: str) -> None:
+async def reply(update: Update, text: str) -> Message | None:
     message = update.effective_message
     if message is None:
-        return
-    await message.reply_text(
+        return None
+    return await message.reply_text(
         truncate_message(text),
         parse_mode=ParseMode.HTML,
         link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -63,6 +70,34 @@ def user_data(context: ContextTypes.DEFAULT_TYPE) -> dict:
     return data
 
 
+def _chat_id(update: Update) -> int | None:
+    return getattr(update.effective_chat, "id", None)
+
+
+def _message_id(message: object) -> int | None:
+    return getattr(message, "message_id", None)
+
+
+def _drop_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = user_data(context)
+    for key in PENDING_KEYS:
+        data.pop(key, None)
+
+
+async def _delete_messages(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int | None, message_ids: Iterable[int | None]
+) -> None:
+    if chat_id is None:
+        return
+    for message_id in message_ids:
+        if message_id is None:
+            continue
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except TelegramError as exc:
+            log.info("message delete failed type=%s", type(exc).__name__)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     first_name = update.effective_user.first_name if update.effective_user else ""
     await reply(
@@ -84,16 +119,19 @@ async def _add_and_reply(
     deps = get_deps(context)
     user = await current_user(update, deps)
     outcome = await deps.parcels.add(user, code, last4, label=label)
-    if outcome.kind == "needs_phone":
-        user_data(context)[PENDING_PHONE] = {"code": outcome.code, "label": label}
-    else:
-        user_data(context).pop(PENDING_PHONE, None)
-    await reply(
+    _drop_pending(context)
+    sent = await reply(
         update,
         format_add_outcome(
             outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
         ),
     )
+    if outcome.kind == "needs_phone":
+        user_data(context)[PENDING_PHONE] = {
+            "code": outcome.code,
+            "label": label,
+            "prompt_id": _message_id(sent),
+        }
 
 
 async def track_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -126,15 +164,43 @@ async def _add_many(
         await reply(update, format_needs_phone_multi(needs_phone))
 
 
+def _is_confirmation(text: str) -> bool:
+    return unicodedata.normalize("NFC", text.strip()).casefold() in CONFIRM_WORDS
+
+
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None or message.text is None:
         return
     data = user_data(context)
+    chat_id = _chat_id(update)
+    if PENDING_LABEL in data:
+        pending = data.pop(PENDING_LABEL)
+        user = await current_user(update, get_deps(context))
+        await _apply_label(
+            update,
+            context,
+            user,
+            pending["code"],
+            message.text,
+            pending.get("censor"),
+            [pending.get("command_id"), pending.get("prompt_id"), _message_id(message)],
+        )
+        return
+    if PENDING_REMOVE in data:
+        pending = data.pop(PENDING_REMOVE)
+        if _is_confirmation(message.text):
+            await _confirm_remove(update, context, pending, _message_id(message))
+            return
+        await _delete_messages(context, chat_id, [pending.get("prompt_id")])
+        if route_text(message.text, PENDING_PHONE in data).kind != "codes":
+            await reply(update, texts.CANCELLED)
+            return
     route = route_text(message.text, PENDING_PHONE in data)
     if route.kind == "phone_for_pending":
         pending = data.pop(PENDING_PHONE)
         await _add_and_reply(update, context, pending["code"], route.last4, pending.get("label"))
+        await _delete_messages(context, chat_id, [pending.get("prompt_id"), _message_id(message)])
     elif route.kind == "codes":
         data.pop(PENDING_PHONE, None)
         if len(route.codes) == 1:
@@ -169,21 +235,106 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await reply(update, format_history(parcel, events, deps.settings.tz))
 
 
-async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    parsed = parse_ref_and_text(context.args or [])
-    if parsed is None:
-        await reply(update, texts.USAGE_LABEL)
+def _censor_target(context: ContextTypes.DEFAULT_TYPE, replied: Message) -> dict | None:
+    sender = getattr(replied, "from_user", None)
+    if sender is None or sender.id != context.bot.id or not getattr(replied, "text", None):
+        return None
+    return {"message_id": replied.message_id, "text_html": replied.text_html}
+
+
+async def _censor(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int | None,
+    target: dict | None,
+    tracking_number: str,
+) -> None:
+    if chat_id is None or not target or tracking_number not in target["text_html"]:
         return
-    ref, label = parsed
+    text = target["text_html"].replace(tracking_number, escape(mask_code(tracking_number)))
+    try:
+        await context.bot.edit_message_text(
+            text,
+            chat_id=chat_id,
+            message_id=target["message_id"],
+            parse_mode=ParseMode.HTML,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+    except TelegramError as exc:
+        log.info("message censor failed type=%s", type(exc).__name__)
+
+
+async def _apply_label(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user: User,
+    code: str,
+    name: str,
+    target: dict | None,
+    delete_ids: Iterable[int | None],
+) -> None:
+    deps = get_deps(context)
+    label = None if name.strip() == CLEAR_LABEL else name
+    parcel = await deps.parcels.rename(user.telegram_id, code, label)
+    if parcel is None:
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(mask_code(code))))
+        return
+    chat_id = _chat_id(update)
+    await _censor(context, chat_id, target, parcel.tracking_number)
+    masked = escape(mask_code(parcel.tracking_number))
+    if parcel.label:
+        await reply(update, texts.LABEL_SET.format(label=escape(parcel.label), code=masked))
+    else:
+        await reply(update, texts.LABEL_CLEARED.format(code=masked))
+    await _delete_messages(context, chat_id, delete_ids)
+
+
+async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is None:
+        return
     deps = get_deps(context)
     user = await current_user(update, deps)
-    parcel = await deps.parcels.rename(user.telegram_id, ref, label)
-    if parcel is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(ref)))
-    elif parcel.label:
-        await reply(update, texts.LABEL_SET.format(label=escape(parcel.label)))
+    args = [arg for arg in (context.args or []) if arg.strip()]
+    replied = getattr(message, "reply_to_message", None)
+    replied_text = None if replied is None else (replied.text or replied.caption)
+    if replied is not None and replied_text:
+        matches = await deps.parcels.find_in_text(user.telegram_id, replied_text)
+        if not matches:
+            await reply(update, texts.LABEL_REPLY_NOT_FOUND)
+            return
+        if len(matches) > 1:
+            await reply(update, texts.LABEL_AMBIGUOUS)
+            return
+        parcel = matches[0]
+        name = " ".join(args) or None
+        target = _censor_target(context, replied)
     else:
-        await reply(update, texts.LABEL_CLEARED.format(code=escape(parcel.tracking_number)))
+        parsed = parse_ref_and_text(args)
+        if parsed is None:
+            await reply(update, texts.USAGE_LABEL)
+            return
+        ref, name = parsed
+        found = await deps.parcels.resolve(user.telegram_id, ref)
+        if found is None:
+            await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(ref)))
+            return
+        parcel = found
+        target = None
+    if name is None:
+        _drop_pending(context)
+        prompt = await reply(
+            update, texts.LABEL_ASK.format(code=escape(mask_code(parcel.tracking_number)))
+        )
+        user_data(context)[PENDING_LABEL] = {
+            "code": parcel.tracking_number,
+            "censor": target,
+            "command_id": _message_id(message),
+            "prompt_id": _message_id(prompt),
+        }
+        return
+    await _apply_label(
+        update, context, user, parcel.tracking_number, name, target, [_message_id(message)]
+    )
 
 
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -193,11 +344,37 @@ async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     deps = get_deps(context)
     user = await current_user(update, deps)
     ref = " ".join(context.args)
-    parcel = await deps.parcels.remove(user.telegram_id, ref)
+    parcel = await deps.parcels.resolve(user.telegram_id, ref)
     if parcel is None:
         await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(ref)))
+        return
+    _drop_pending(context)
+    prompt = await reply(update, texts.REMOVE_CONFIRM.format(title=masked_title(parcel)))
+    user_data(context)[PENDING_REMOVE] = {
+        "code": parcel.tracking_number,
+        "command_id": _message_id(update.effective_message),
+        "prompt_id": _message_id(prompt),
+    }
+
+
+async def _confirm_remove(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    pending: dict,
+    answer_id: int | None,
+) -> None:
+    deps = get_deps(context)
+    user = await current_user(update, deps)
+    parcel = await deps.parcels.remove(user.telegram_id, pending["code"])
+    if parcel is None:
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(mask_code(pending["code"]))))
     else:
-        await reply(update, texts.REMOVED.format(title=parcel_title(parcel)))
+        await reply(update, texts.REMOVED.format(title=masked_title(parcel)))
+    await _delete_messages(
+        context,
+        _chat_id(update),
+        [pending.get("command_id"), pending.get("prompt_id"), answer_id],
+    )
 
 
 async def phone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -239,10 +416,17 @@ async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if user_data(context).pop(PENDING_PHONE, None) is None:
+    data = user_data(context)
+    pending = [data.pop(key) for key in PENDING_KEYS if key in data]
+    if not pending:
         await reply(update, texts.NOTHING_TO_CANCEL)
-    else:
-        await reply(update, texts.CANCELLED)
+        return
+    await reply(update, texts.CANCELLED)
+    await _delete_messages(
+        context,
+        _chat_id(update),
+        [item.get("prompt_id") for item in pending] + [_message_id(update.effective_message)],
+    )
 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -294,15 +478,19 @@ async def _add_codes_from_photo(
         if outcome.kind == "needs_phone" and not single:
             needs_phone.append(outcome.code or code)
             continue
-        if single:
-            if outcome.kind == "needs_phone":
-                user_data(context)[PENDING_PHONE] = {"code": outcome.code, "label": label}
-            else:
-                user_data(context).pop(PENDING_PHONE, None)
         body = format_add_outcome(
             outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
         )
-        await reply(update, f"{_vision_header(result, code, phone_last4)}\n\n{body}")
+        sent = await reply(update, f"{_vision_header(result, code, phone_last4)}\n\n{body}")
+        if single:
+            if outcome.kind == "needs_phone":
+                user_data(context)[PENDING_PHONE] = {
+                    "code": outcome.code,
+                    "label": label,
+                    "prompt_id": _message_id(sent),
+                }
+            else:
+                user_data(context).pop(PENDING_PHONE, None)
     if needs_phone:
         await reply(update, format_needs_phone_multi(needs_phone))
 

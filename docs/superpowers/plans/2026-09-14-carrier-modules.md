@@ -1827,3 +1827,30 @@ Status line: `Status: Parts A and B built (<task commits>); Part C dropped`. Add
 - [ ] **Step 4: Commit**
 
 Commit `README.md BUILD_PLAN.md SPEC.md docs/superpowers/specs/2026-09-14-carrier-modules-design.md docs/superpowers/plans/2026-09-14-carrier-modules.md` with message `Docs 2.0: carrier modules with hot reload`.
+
+
+---
+
+### Task 8: Reply-to-label, masked codes and two-step cleanup (added 2026-09-14)
+
+Approved in chat: reply to a bot message with `/label <name>` to label the parcel in it; after labelling, edit the replied bot message so the code shows masked and confirm with the masked code; delete every `/label` message; the phone prompt, `/label` without a name and a new `/remove` confirmation delete their prompt and the user's answer.
+
+**Files:** `src/vn_parcel_bot/bot/handlers_user.py`, `src/vn_parcel_bot/services/parcels.py`, `src/vn_parcel_bot/services/formatting.py`, `src/vn_parcel_bot/texts.py`; tests `tests/test_label_flow.py` (new), `tests/test_parcels_service.py`, `tests/test_photo_handler.py`.
+
+**Interfaces:**
+- `ParcelService.find_in_text(user_id, text) -> list[Parcel]`: parcels whose tracking number (via `extract_codes`) or label appears in `text`, de-duplicated.
+- `formatting.masked_title(parcel)`: escaped label, or escaped `mask_code(tracking_number)`.
+- `handlers_user.PENDING_LABEL = "pending_label"`, `PENDING_REMOVE = "pending_remove"`; every pending dict stores `prompt_id` (bot prompt message id) and, for label/remove, `command_id`; `PENDING_LABEL` also stores `code` and `censor` (`{"message_id", "text_html"}` of the replied bot message or `None`).
+- `reply()` returns the sent message; `_delete_messages(context, chat_id, ids)` and the censor edit swallow `TelegramError` (INFO log with the error type only).
+- Texts: `LABEL_SET` gains `· <code>{code}</code>` (masked), `LABEL_CLEARED` uses the masked code, new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM`; `REMOVED` gets `masked_title`; `USAGE_LABEL` and the `/label` help line mention replying.
+
+**Behaviour:**
+- `/label` as a reply: `find_in_text` on the replied text; none → `LABEL_REPLY_NOT_FOUND`, several → `LABEL_AMBIGUOUS` (nothing deleted); one → name = all args (none → prompt). The replied message is edited only if the bot sent it and the full code appears in its `text_html`.
+- `/label <ref> [name]`: as before, except no name → prompt instead of clearing; the name `-` clears.
+- Order after success: censor edit, confirmation reply, then delete (command, prompt, answer).
+- `/remove <ref>` → `REMOVE_CONFIRM`; answer `có`/`co`/`yes`/`y`/`ok`/`xóa`/`xoa` (case-insensitive) removes and deletes command, prompt and answer; any other answer cancels (prompt deleted) and is then handled as a normal message, replying `CANCELLED` when it has no code.
+- Phone prompt: `PENDING_PHONE` stores the prompt id (text and photo flows); after the digits are handled, the prompt and the digits message are deleted.
+- `/cancel` pops every pending flow, replies `CANCELLED`, deletes the prompts and the `/cancel` message. Starting a new two-step flow drops older pending flows.
+
+- [ ] Write the tests above; run red.
+- [ ] Implement; run green; gates; commit `Label by reply, mask codes, clean up two-step prompts`.

@@ -10,6 +10,7 @@ from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.constants import MAX_EVENTS_IN_HISTORY, MAX_EVENTS_IN_UPDATE, TELEGRAM_TEXT_LIMIT
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
+from vn_parcel_bot.tracking_codes import mask_code
 
 
 def _escape(value: object) -> str:
@@ -18,6 +19,10 @@ def _escape(value: object) -> str:
 
 def parcel_title(parcel: Parcel) -> str:
     return _escape(parcel.label) if parcel.label else _escape(parcel.tracking_number)
+
+
+def masked_title(parcel: Parcel) -> str:
+    return _escape(parcel.label) if parcel.label else _escape(mask_code(parcel.tracking_number))
 
 
 SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"

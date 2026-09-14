@@ -204,7 +204,8 @@ async def test_photo_needs_phone_keeps_label_for_pending_reply(deps):
     )
     context = make_context(deps)
     await photo_message(make_update(photo()), context)
-    assert context.user_data[PENDING_PHONE] == {"code": JT, "label": "Ốp lưng"}
+    pending = context.user_data[PENDING_PHONE]
+    assert (pending["code"], pending["label"]) == (JT, "Ốp lưng")
     await text_message(make_update(MessageRecorder(text="1234")), context)
     parcel = await deps.repo.find_parcel(111, JT)
     assert parcel.label == "Ốp lưng"

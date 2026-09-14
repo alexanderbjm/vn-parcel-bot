@@ -24,6 +24,7 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import DuplicateParcelError, Parcel, Repository, User
 from vn_parcel_bot.tracking_codes import (
+    extract_codes,
     is_code_like,
     is_seller_fleet,
     is_valid_last4,
@@ -299,6 +300,17 @@ class ParcelService:
             index = int(ref)
             return parcels[index - 1] if 1 <= index <= len(parcels) else None
         return await self._repo.find_parcel(user_id, normalize_code(ref))
+
+    async def find_in_text(self, user_id: int, text: str) -> list[Parcel]:
+        found: dict[int, Parcel] = {}
+        for code in extract_codes(text):
+            parcel = await self._repo.find_parcel(user_id, code)
+            if parcel is not None:
+                found[parcel.id] = parcel
+        for parcel in await self.list_for(user_id):
+            if parcel.label and parcel.label in text:
+                found.setdefault(parcel.id, parcel)
+        return list(found.values())
 
     async def remove(self, user_id: int, ref: str) -> Parcel | None:
         parcel = await self.resolve(user_id, ref)

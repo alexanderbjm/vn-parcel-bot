@@ -34,7 +34,8 @@ HELP = (
     "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
     "• /list – các đơn đang theo dõi\n"
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
-    "• /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; – đặt tên cho đơn\n"
+    "• /label &lt;mã hoặc số thứ tự&gt; [tên] – đặt tên cho đơn "
+    "(hoặc trả lời tin nhắn của đơn bằng /label)\n"
     "• /remove &lt;mã hoặc số thứ tự&gt; – ngừng theo dõi\n"
     "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
     "• /check – kiểm tra ngay\n"
@@ -59,7 +60,10 @@ UNKNOWN_CARRIER = (
     "Bạn có thể tra cứu tại:\n{links}"
 )
 USAGE_REF = "Cách dùng: /{command} &lt;mã hoặc số thứ tự trong /list&gt;"
-USAGE_LABEL = "Cách dùng: /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; (bỏ trống tên để xóa)"
+USAGE_LABEL = (
+    "Cách dùng: /label &lt;mã hoặc số thứ tự&gt; [tên], "
+    "hoặc trả lời tin nhắn của đơn bằng /label [tên]"
+)
 
 ASK_PHONE = (
     "📱 Mã <code>{code}</code> ({carriers}) cần 4 số cuối SĐT người nhận.\n"
@@ -107,8 +111,15 @@ HISTORY_EMPTY = "Chưa có thông tin vận chuyển."
 PARCEL_NOT_FOUND = "Không tìm thấy đơn <code>{ref}</code> trong danh sách của bạn."
 
 REMOVED = "🗑 Đã ngừng theo dõi <b>{title}</b>."
-LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b>"
+LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b> · <code>{code}</code>"
 LABEL_CLEARED = "🏷 Đã xóa tên của đơn <code>{code}</code>."
+LABEL_ASK = "🏷 Gửi tên cho đơn <code>{code}</code> (gửi - để xóa tên, /cancel để hủy)."
+LABEL_AMBIGUOUS = (
+    "Tin nhắn này có nhiều đơn. Hãy trả lời tin nhắn của một đơn, "
+    "hoặc dùng /label &lt;số thứ tự&gt; &lt;tên&gt;."
+)
+LABEL_REPLY_NOT_FOUND = "Không tìm thấy đơn nào của bạn trong tin nhắn đó."
+REMOVE_CONFIRM = "🗑 Ngừng theo dõi <b>{title}</b>? Gửi <b>có</b> để xác nhận, hoặc /cancel để hủy."
 
 PHONE_SET = "📱 Đã lưu 4 số cuối mặc định: <code>{last4}</code>"
 PHONE_SHOW = "📱 4 số cuối mặc định: <code>{last4}</code>"
