@@ -2,7 +2,7 @@ from pathlib import Path
 
 import aiosqlite
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATIONS: list[str] = [
     """
@@ -96,6 +96,18 @@ COMMIT;
     """
 ALTER TABLE parcels ADD COLUMN progress INTEGER
   CHECK (progress IS NULL OR progress BETWEEN 0 AND 100);
+""",
+    """
+ALTER TABLE users ADD COLUMN home_lat REAL;
+ALTER TABLE users ADD COLUMN home_lon REAL;
+ALTER TABLE parcels ADD COLUMN place TEXT;
+CREATE TABLE places (
+  name TEXT PRIMARY KEY,
+  lat REAL,
+  lon REAL,
+  source TEXT NOT NULL CHECK (source IN ('osm', 'province', 'none')),
+  looked_up_at TEXT NOT NULL
+);
 """,
 ]
 

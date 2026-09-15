@@ -17,10 +17,12 @@ TERMINAL_STATES: tuple[ParcelState, ...] = ("delivered", "returned", "expired", 
 _PARCEL_COLUMNS = (
     "id, user_id, carrier, candidates, tracking_number, phone_last4, label, state, "
     "last_status_text, last_event_at, consecutive_failures, next_check_at, delivered_at, "
-    "created_at, updated_at, progress"
+    "created_at, updated_at, progress, place"
 )
 _P_PARCEL_COLUMNS = ", ".join(f"p.{name.strip()}" for name in _PARCEL_COLUMNS.split(","))
-_USER_COLUMNS = "telegram_id, name, default_phone_last4, is_admin, is_allowed, created_at"
+_USER_COLUMNS = (
+    "telegram_id, name, default_phone_last4, is_admin, is_allowed, created_at, home_lat, home_lon"
+)
 
 
 class DuplicateParcelError(Exception):
@@ -35,6 +37,17 @@ class User:
     is_admin: bool
     is_allowed: bool
     created_at: datetime
+    home_lat: float | None = None
+    home_lon: float | None = None
+
+
+@dataclass(frozen=True)
+class PlaceRow:
+    name: str
+    lat: float | None
+    lon: float | None
+    source: str
+    looked_up_at: datetime
 
 
 @dataclass(frozen=True)
@@ -55,6 +68,7 @@ class Parcel:
     created_at: datetime
     updated_at: datetime
     progress: int | None = None
+    place: str | None = None
 
     @property
     def is_active(self) -> bool:
@@ -94,6 +108,8 @@ def _user(row: aiosqlite.Row) -> User:
         is_admin=bool(row["is_admin"]),
         is_allowed=bool(row["is_allowed"]),
         created_at=_required(row["created_at"]),
+        home_lat=row["home_lat"],
+        home_lon=row["home_lon"],
     )
 
 
@@ -115,6 +131,7 @@ def _parcel(row: aiosqlite.Row) -> Parcel:
         created_at=_required(row["created_at"]),
         updated_at=_required(row["updated_at"]),
         progress=row["progress"],
+        place=row["place"],
     )
 
 
@@ -200,6 +217,18 @@ class Repository:
     async def set_default_phone(self, telegram_id: int, last4: str | None) -> None:
         await self._write(
             "UPDATE users SET default_phone_last4 = ? WHERE telegram_id = ?", (last4, telegram_id)
+        )
+
+    async def set_home(self, telegram_id: int, lat: float, lon: float) -> None:
+        await self._write(
+            "UPDATE users SET home_lat = ?, home_lon = ? WHERE telegram_id = ?",
+            (round(lat, 2), round(lon, 2), telegram_id),
+        )
+
+    async def clear_home(self, telegram_id: int) -> None:
+        await self._write(
+            "UPDATE users SET home_lat = NULL, home_lon = NULL WHERE telegram_id = ?",
+            (telegram_id,),
         )
 
     # parcels
@@ -331,6 +360,9 @@ class Repository:
             (label, _to_db(now), parcel_id),
         )
 
+    async def set_place(self, parcel_id: int, place: str) -> None:
+        await self._write("UPDATE parcels SET place = ? WHERE id = ?", (place, parcel_id))
+
     async def delete_parcel(self, parcel_id: int) -> None:
         await self._write("DELETE FROM parcels WHERE id = ?", (parcel_id,))
 
@@ -445,6 +477,28 @@ class Repository:
         return int(row[0]) if row else 0
 
     # meta
+
+    # places
+
+    async def get_place(self, name: str) -> PlaceRow | None:
+        row = await self._fetchone(
+            "SELECT name, lat, lon, source, looked_up_at FROM places WHERE name = ?", (name,)
+        )
+        if row is None:
+            return None
+        return PlaceRow(
+            row["name"], row["lat"], row["lon"], row["source"], _required(row["looked_up_at"])
+        )
+
+    async def save_place(
+        self, name: str, lat: float | None, lon: float | None, source: str, now: datetime
+    ) -> None:
+        await self._write(
+            "INSERT INTO places (name, lat, lon, source, looked_up_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET lat = excluded.lat, lon = excluded.lon, "
+            "source = excluded.source, looked_up_at = excluded.looked_up_at",
+            (name, lat, lon, source, _to_db(now)),
+        )
 
     async def get_meta(self, key: str) -> str | None:
         row = await self._fetchone("SELECT value FROM meta WHERE key = ?", (key,))

@@ -53,7 +53,7 @@ async def test_migrate_sets_user_version_and_is_idempotent(tmp_path):
     await first.close()
     second = await Repository.open(path)
     async with second._conn.execute("PRAGMA user_version") as cursor:
-        assert (await cursor.fetchone())[0] == 3
+        assert (await cursor.fetchone())[0] == 4
     await second.close()
 
 
@@ -337,7 +337,7 @@ async def test_migration_2_keeps_rows_and_events(tmp_path):
     repo = await Repository.open(path)
     try:
         async with repo._conn.execute("PRAGMA user_version") as cursor:
-            assert (await cursor.fetchone())[0] == 3
+            assert (await cursor.fetchone())[0] == 4
         parcel = await repo.get_parcel(7)
         assert (parcel.carrier, parcel.tracking_number, parcel.state) == (
             "cainiao",
