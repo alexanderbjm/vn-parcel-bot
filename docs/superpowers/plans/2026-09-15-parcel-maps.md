@@ -13,8 +13,8 @@
 ## Global Constraints
 
 - Home coordinates are stored as `round(value, 2)`; they are never logged, never sent to Nominatim and never shown as numbers.
-- Nominatim: `https://nominatim.openstreetmap.org/search`, params `q`, `countrycodes=vn`, `format=jsonv2`, `limit=1`, `accept-language=vi`; header `User-Agent: vn-parcel-bot/0.1 (personal Telegram parcel tracker)`; timeout 10 s; at least 1.1 s between requests; HTTP errors are not cached; misses (`source='none'`) are retried after 30 days.
-- Tiles: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, same User-Agent, at most 2 concurrent downloads, cached in `data/tiles/{z}/{x}/{y}.png` for 7 days; the picture always shows `© OpenStreetMap contributors`.
+- Place search (amended 2026-09-15, openstreetmap.org is blocked from this PC): Photon `https://photon.komoot.io/api/`, params `q`, `limit=1`, `bbox=102.1,8.1,109.5,23.4`; GeoJSON answer, coordinates `[lon, lat]`; header `User-Agent: vn-parcel-bot/0.1 (personal Telegram parcel tracker)`; timeout 10 s; at least 1.1 s between requests; HTTP errors are not cached (a hub with a province code still gets the province centre); misses (`source='none'`) are retried after 30 days. Task 3's `NOMINATIM_URL` is `PHOTON_URL`.
+- Tiles (amended 2026-09-15): CARTO Voyager `https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png`, same User-Agent, at most 2 concurrent downloads, cached in `data/tiles/{z}/{x}/{y}.png` for 7 days; the picture always shows `© OpenStreetMap contributors © CARTO`.
 - Picture: PNG 600×400, zoom 5..15, user area as a 1 km circle, 40 px margin.
 - `MAPS_ENABLED` (default `true`) turns off place lines, map buttons, automatic maps and lookups.
 - Callback data stays under 64 bytes and never contains a tracking code.

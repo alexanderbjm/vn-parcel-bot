@@ -2,6 +2,15 @@
 
 Date: 2026-09-15 · Branch: `main` · Status: approved in chat, not built
 
+## Amendment (2026-09-15): map data providers
+
+openstreetmap.org is unreachable from the bot's PC (www, tile and nominatim hosts all reset the connection, also with curl: a network-level block). With the user's approval the bot uses:
+
+- **Place search: Photon** (`https://photon.komoot.io/api/`, OpenStreetMap data) instead of Nominatim: params `q`, `limit=1`, `bbox=102.1,8.1,109.5,23.4` (Vietnam); the answer is GeoJSON (`features[0].geometry.coordinates` = `[lon, lat]`). Same User-Agent, 1.1 s spacing, caching and error rules as §5.3.
+- **Map squares: CARTO Voyager** (`https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png`) instead of `tile.openstreetmap.org`; same concurrency and 7-day cache as §6.1. The picture credits `© OpenStreetMap contributors © CARTO`.
+
+Every mention of Nominatim or `tile.openstreetmap.org` below means these providers.
+
 ## 1. Why
 
 The user wants to see how far a parcel is from them: a map picture with the parcel's current hub and their own area, and a distance. The request named agy; agy is used offline to draft the province table (§5.2), not to screenshot maps (Google Maps terms forbid automated screenshots, and agy would need browser and web access that was deliberately removed from it).
