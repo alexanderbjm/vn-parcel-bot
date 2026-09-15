@@ -362,3 +362,39 @@ async def test_empty_17track_answer_is_logged(caplog):
     assert register.called
     assert "17track no data carrier=jt" in jt_log(caplog)
     assert JNTX_CODE not in jt_log(caplog)
+
+
+LIVE_PEOPLE = ("Nguyễn Văn A", "Trần Thị B", "Lê Văn C", "+849")
+
+
+def test_parse_live_layout_reads_events_oldest_first():
+    result = parse_jt_html(load_html("live_layout"), CODE)
+    assert result.found
+    times = [event.time for event in result.events]
+    assert times == sorted(times)
+    assert len(result.events) == 4
+    assert result.events[0].time.isoformat() == "2026-09-13T18:12:45+07:00"
+    assert result.latest.description == "Đơn hàng đã ký nhận."
+    assert result.delivered
+    assert not result.returned
+
+
+def test_parse_live_layout_keeps_hubs_and_drops_people():
+    result = parse_jt_html(load_html("live_layout"), CODE)
+    described = [(event.description, event.location) for event in result.events]
+    assert described == [
+        ("Nhân viên của bưu cục (HNI) Kinh Doanh Mẫu đã nhận hàng.", "(HNI) Kinh Doanh Mẫu"),
+        ("Bưu cục TTKT MẪU đang chuyển hàng đến (HNI) Bưu Cục Mẫu", "(HNI) Bưu Cục Mẫu"),
+        ("Nhân viên của bưu cục (HNI) Bưu Cục Mẫu đang giao hàng.", "(HNI) Bưu Cục Mẫu"),
+        ("Đơn hàng đã ký nhận.", None),
+    ]
+    for event in result.events:
+        for person in LIVE_PEOPLE:
+            assert person not in event.description
+            assert person not in (event.location or "")
+
+
+def test_parse_live_layout_ignores_another_bill():
+    html = load_html("live_layout").replace(">840000000001<", ">840000000009<")
+    with pytest.raises(CarrierError):
+        parse_jt_html(html, CODE)

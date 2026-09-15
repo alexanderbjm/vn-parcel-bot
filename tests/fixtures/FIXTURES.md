@@ -97,3 +97,4 @@ Facts that the parser tests assert. Provenance is either `synthetic` (hand-built
 | `ghn/in_transit.json` | `GA0000000001` | 3 | Đang giao hàng | 10/09 10:15 |
 | `ghn/delivered.json` | `GA0000000002` | 3 | Giao hàng thành công | 11/09 19:00 |
 | `ghn/not_found.json` | – | 0 | – | – |
+- `jt/live_layout.html` (2026-09-15): synthetic copy of the live jtexpress.vn/vi/tracking layout (`.result_vandon` per bill with the code in its header, `.result-vandon-item` rows newest first, `HH:MM:SS` and `YYYY-MM-DD` spans, texts with names, hubs and phones wrapped in 【<font>】). Names and phone numbers are fake; the parser drops them.

@@ -38,6 +38,22 @@ LOCATION_SELECTOR = ".event-location"
 EMPTY_SELECTOR = ".empty-vandon"
 TIME_FORMATS = ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M")
 
+# Live page (jtexpress.vn/vi/tracking, seen 2026-09-15): one .result_vandon per bill with the code
+# in its header, one .result-vandon-item per event (newest first) holding an HH:MM:SS span, a
+# YYYY-MM-DD span and a text in which names, hubs and phone numbers are wrapped in 【 <font> 】.
+LIVE_BILL_SELECTOR = ".result_vandon"
+LIVE_BILL_CODE_SELECTOR = "header span"
+LIVE_EVENT_SELECTOR = ".result-vandon-item"
+LIVE_STAMP_SELECTOR = "div.flex-col span"
+LIVE_TIME = re.compile(r"\d{2}:\d{2}(?::\d{2})?")
+LIVE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+# A highlighted value right after one of these labels is a person's name: never stored.
+PERSON_LABELS = ("nhân viên", "người ký nhận là:", "người ký nhận là")
+PHONE_VALUE = re.compile(r"\+?\d[\d .]{6,}")
+TRAILING_LABELS = re.compile(
+    r"\s*(?:SĐT nhân viên nhận hàng|Người ký nhận là\s*:?)\s*$", re.IGNORECASE
+)
+
 
 def _parse_error(detail: str) -> CarrierError:
     return CarrierError("jt", "parse", detail)
@@ -75,14 +91,7 @@ def _event_nodes(soup: BeautifulSoup, tracking_number: str) -> list[Tag]:
     return []
 
 
-def parse_jt_html(html: str, tracking_number: str) -> TrackingResult:
-    soup = BeautifulSoup(html, "html.parser")
-    nodes = _event_nodes(soup, tracking_number)
-    if not nodes:
-        if NOT_FOUND_MARKER in soup.get_text(" ") or soup.select_one(EMPTY_SELECTOR) is not None:
-            return TrackingResult(carrier="jt", tracking_number=tracking_number, found=False)
-        raise _parse_error("no result or not-found marker")
-
+def _legacy_events(nodes: list[Tag]) -> list[TrackingEvent]:
     events = []
     for node in nodes:
         time_text = _text(node, TIME_SELECTOR)
@@ -96,7 +105,71 @@ def parse_jt_html(html: str, tracking_number: str) -> TrackingResult:
                 location=_text(node, LOCATION_SELECTOR) or None,
             )
         )
+    return events
 
+
+def _live_text(node: Tag) -> tuple[str, str | None]:
+    """The event text without people's names or phone numbers, and the last hub it names."""
+    parts: list[str] = []
+    location = None
+    for child in node.children:
+        if not isinstance(child, Tag):
+            parts.append(str(child))
+            continue
+        value = clean_text(child.get_text(" "))
+        before = clean_text(" ".join(parts).replace("【", " ").replace("】", " ")).casefold()
+        if not value or PHONE_VALUE.fullmatch(value) or before.endswith(PERSON_LABELS):
+            continue
+        parts.append(value)
+        location = value
+    joined = clean_text(" ".join(parts).replace("【", " ").replace("】", " "))
+    joined = TRAILING_LABELS.sub("", joined)
+    return re.sub(r"\s+([.,;:])", r"\1", joined), location
+
+
+def _live_event(item: Tag) -> TrackingEvent:
+    stamps = [clean_text(span.get_text(" ")) for span in item.select(LIVE_STAMP_SELECTOR)]
+    clock = next((stamp for stamp in stamps if LIVE_TIME.fullmatch(stamp)), "")
+    day = next((stamp for stamp in stamps if LIVE_DATE.fullmatch(stamp)), "")
+    blocks = item.find_all("div", recursive=False)
+    if not clock or not day or len(blocks) < 2:
+        raise _parse_error("event without time or date")
+    if len(clock) == 5:
+        clock += ":00"
+    description, location = _live_text(blocks[-1])
+    if not description:
+        raise _parse_error("event without time or description")
+    when = datetime.strptime(f"{day} {clock}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=VN_TZ)
+    return TrackingEvent(time=when, description=description, location=location)
+
+
+def _live_events(soup: BeautifulSoup, tracking_number: str) -> list[TrackingEvent] | None:
+    """Events from the live layout; None when the page does not use it."""
+    container = soup.select_one(RESULT_SELECTOR)
+    bills = container.select(LIVE_BILL_SELECTOR) if container is not None else []
+    if not bills:
+        return None
+    for bill in bills:
+        header = bill.select_one(LIVE_BILL_CODE_SELECTOR)
+        if (
+            header is not None
+            and clean_text(header.get_text(" ")).upper() != tracking_number.upper()
+        ):
+            continue
+        return [_live_event(item) for item in bill.select(LIVE_EVENT_SELECTOR)]
+    return []
+
+
+def parse_jt_html(html: str, tracking_number: str) -> TrackingResult:
+    soup = BeautifulSoup(html, "html.parser")
+    live = _live_events(soup, tracking_number)
+    events = live if live is not None else _legacy_events(_event_nodes(soup, tracking_number))
+    if not events:
+        if NOT_FOUND_MARKER in soup.get_text(" ") or soup.select_one(EMPTY_SELECTOR) is not None:
+            return TrackingResult(carrier="jt", tracking_number=tracking_number, found=False)
+        raise _parse_error("no result or not-found marker")
+
+    events.sort(key=lambda event: event.time)
     result = TrackingResult(
         carrier="jt", tracking_number=tracking_number, found=True, events=tuple(events)
     )
