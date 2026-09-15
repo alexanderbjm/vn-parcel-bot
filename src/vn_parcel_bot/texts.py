@@ -165,6 +165,7 @@ BTN_MAP = "🗺 Bản đồ"
 MAP_NO_PLACE = "Đơn này chưa có vị trí kho để vẽ bản đồ."
 MAP_TOO_SOON = "Bạn vừa xem bản đồ đơn này, thử lại sau ít phút nhé."
 MAP_FAILED = "Không vẽ được bản đồ lúc này, bạn thử lại sau nhé."
+MAP_OFF = "Tính năng bản đồ đang tắt."
 NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."

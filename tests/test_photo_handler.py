@@ -9,7 +9,12 @@ from telegram.error import TelegramError
 from tests.fakes import FakeCarrier, fake_registry
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps
-from vn_parcel_bot.bot.handlers_user import PENDING_PHONE, photo_message, text_message
+from vn_parcel_bot.bot.handlers_user import (
+    PENDING_LOCATION,
+    PENDING_PHONE,
+    photo_message,
+    text_message,
+)
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.parcels import ParcelService
@@ -120,6 +125,14 @@ def make_context(deps: Deps, bot: FakeBot | None = None):
     return SimpleNamespace(
         bot_data={"deps": deps, "settings": deps.settings}, user_data={}, bot=bot or FakeBot()
     )
+
+
+async def test_photo_codes_drop_a_waiting_location_request(deps):
+    deps.vision = FakeVisionEngine(result=VisionResult(tracking_codes=(SPX, JT)))
+    context = make_context(deps)
+    context.user_data[PENDING_LOCATION] = {"map_parcel": 1}
+    await photo_message(make_update(photo()), context)
+    assert PENDING_LOCATION not in context.user_data
 
 
 async def test_photo_engine_missing_or_not_configured(deps):

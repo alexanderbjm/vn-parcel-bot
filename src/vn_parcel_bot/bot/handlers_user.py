@@ -180,25 +180,30 @@ async def send_parcel_map(
 ) -> str | None:
     """Send the parcel's map picture; returns the toast text when no picture went out."""
     deps = get_deps(context)
+    maps = deps.maps if maps_on(deps) else None
+    if maps is None:
+        return texts.MAP_OFF
     parcel = await deps.repo.get_parcel(parcel_id)
     user = await deps.repo.get_user(user_id)
-    if deps.maps is None or parcel is None or user is None or parcel.user_id != user_id:
+    if parcel is None or user is None or parcel.user_id != user_id:
         return texts.CARD_NOT_FOUND
     if not parcel.place:
         return texts.MAP_NO_PLACE
+    # Every try counts, so a map that keeps failing is not redrawn on each tap.
     sends: dict[int, float] = context.bot_data.setdefault(MAP_SENDS, {})
     now = time.monotonic()
-    last = sends.get(parcel_id)
-    if last is not None and now - last < MAP_COOLDOWN_SECONDS:
+    for old in [key for key, sent in sends.items() if now - sent >= MAP_COOLDOWN_SECONDS]:
+        del sends[old]
+    if parcel_id in sends:
         return texts.MAP_TOO_SOON
+    sends[parcel_id] = now
     try:
-        made = await deps.maps.photo(parcel, user)
+        made = await maps.photo(parcel, user)
     except MapError as exc:
         log.warning("map failed type=%s", type(exc).__name__)
         return texts.MAP_FAILED
     if made is None:
         return texts.MAP_NO_PLACE
-    sends[parcel_id] = now
     await deps.notifier.send_photo(chat_id, made[0], made[1])
     return None
 
@@ -276,6 +281,7 @@ async def _add_many(
 ) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
+    drop_pending(context)
     needs_phone: list[str] = []
     for code in codes:
         outcome = await deps.parcels.add(user, code)
@@ -743,6 +749,7 @@ async def _add_codes_from_photo(
     user = await current_user(update, deps)
     label = result.product_name
     single = len(result.tracking_codes) == 1
+    drop_pending(context)
     needs_phone: list[str] = []
     for code in result.tracking_codes:
         outcome = await deps.parcels.add(user, code, phone_last4, label=label)

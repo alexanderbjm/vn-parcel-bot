@@ -495,10 +495,13 @@ class Repository:
         return {row["event_key"] for row in rows}
 
     async def reset_failures(self, parcel_ids: Sequence[int]) -> None:
-        for parcel_id in parcel_ids:
-            await self._write(
-                "UPDATE parcels SET consecutive_failures = 0 WHERE id = ?", (parcel_id,)
-            )
+        if not parcel_ids:
+            return
+        marks = ", ".join("?" for _ in parcel_ids)
+        await self._write(
+            f"UPDATE parcels SET consecutive_failures = 0 WHERE id IN ({marks})",  # noqa: S608
+            parcel_ids,
+        )
 
     async def list_events(self, parcel_id: int, limit: int) -> list[TrackingEvent]:
         rows = await self._fetchall(

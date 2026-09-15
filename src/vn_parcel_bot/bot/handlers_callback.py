@@ -172,9 +172,12 @@ async def _parcel_action(
 
 async def _map(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parcel: Parcel) -> None:
     deps = get_deps(context)
+    if not maps_on(deps):
+        await query.answer(texts.MAP_OFF)
+        return
     user = await deps.repo.get_user(query.from_user.id)
     chat_id = _chat_id(query)
-    if deps.maps is None or user is None or chat_id is None:
+    if user is None or chat_id is None:
         await query.answer()
         return
     if user.home_lat is None:

@@ -47,6 +47,18 @@ async def add(
     )
 
 
+async def test_reset_failures_clears_only_the_given_parcels(repo):
+    await make_user(repo)
+    codes = ("SPXVN000000000001", "SPXVN000000000002", "SPXVN000000000003")
+    parcels = [await add(repo, code=code) for code in codes]
+    for parcel in parcels:
+        await repo.record_check_failure(parcel.id, next_check_at=T0, now=T0)
+    await repo.reset_failures([parcels[0].id, parcels[1].id])
+    await repo.reset_failures([])
+    failures = [(await repo.get_parcel(parcel.id)).consecutive_failures for parcel in parcels]
+    assert failures == [0, 0, 1]
+
+
 async def test_migrate_sets_user_version_and_is_idempotent(tmp_path):
     path = tmp_path / "db" / "t.sqlite3"
     first = await Repository.open(path)

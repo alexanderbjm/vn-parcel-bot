@@ -1,3 +1,5 @@
+import time
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -15,11 +17,18 @@ from tests.test_callback_handler import (  # noqa: F401
 from tests.test_maps import blank_tile
 from tests.test_parcel_maps import FakeGeocoder
 from vn_parcel_bot import texts
-from vn_parcel_bot.bot.handlers_user import PENDING_LOCATION, location_message, text_message
+from vn_parcel_bot.bot.handlers_user import (
+    MAP_COOLDOWN_SECONDS,
+    MAP_SENDS,
+    PENDING_LOCATION,
+    location_message,
+    text_message,
+)
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 
 HUB = "21-HNI Thanh Tri 2 Hub"
+SPX_2 = "SPXVN000000000002"
 
 
 async def tiles(z, x, y):
@@ -104,6 +113,36 @@ async def test_map_without_a_place_or_when_drawing_fails(maps_env, monkeypatch):
     assert maps_env.deps.notifier.photos == []
 
 
+async def test_a_failed_map_still_starts_the_cooldown(maps_env, monkeypatch):
+    parcel = await add_parcel(maps_env)
+    await maps_env.repo.set_home(USER, 21.03, 105.85)
+
+    async def broken(*args, **kwargs):
+        raise MapError("tile")
+
+    monkeypatch.setattr(maps_env.deps.maps, "photo", broken)
+    assert (await tap(maps_env, f"p:{parcel.id}:map")).answers == [texts.MAP_FAILED]
+    assert (await tap(maps_env, f"p:{parcel.id}:map")).answers == [texts.MAP_TOO_SOON]
+
+
+async def test_old_map_cooldowns_are_forgotten(maps_env):
+    parcel = await add_parcel(maps_env)
+    await maps_env.repo.set_home(USER, 21.03, 105.85)
+    old = time.monotonic() - MAP_COOLDOWN_SECONDS - 1
+    maps_env.context.bot_data[MAP_SENDS] = {999: old, parcel.id: old}
+    assert (await tap(maps_env, f"p:{parcel.id}:map")).answers == [None]
+    assert list(maps_env.context.bot_data[MAP_SENDS]) == [parcel.id]
+
+
+async def test_map_button_on_an_old_card_when_maps_are_off(maps_env):
+    parcel = await add_parcel(maps_env)
+    maps_env.deps.settings = replace(maps_env.deps.settings, maps_enabled=False)
+    query = await tap(maps_env, f"p:{parcel.id}:map")
+    assert query.answers == [texts.MAP_OFF]
+    assert PENDING_LOCATION not in maps_env.context.user_data
+    assert texts.LOCATION_ASK not in [sent[1] for sent in maps_env.bot.sent]
+
+
 async def test_map_of_another_users_parcel_is_refused(maps_env):
     parcel = await add_parcel(maps_env)
     query = await tap(maps_env, f"p:{parcel.id}:map", user_id=222)
@@ -129,6 +168,17 @@ async def test_pasted_coordinates_for_a_map_send_that_map(maps_env):
     assert message.sent[0][0] == texts.LOCATION_SAVED
     assert len(maps_env.deps.notifier.photos) == 1
     assert PENDING_LOCATION not in maps_env.context.user_data
+
+
+async def test_several_codes_drop_a_waiting_map_request(maps_env):
+    parcel = await add_parcel(maps_env)
+    await tap(maps_env, f"p:{parcel.id}:map")
+    await text_message(user_update(Msg(96, f"{SPX}\n{SPX_2}", [])), maps_env.context)
+    assert PENDING_LOCATION not in maps_env.context.user_data
+    message = Msg(97, None, [])
+    message.location = SimpleNamespace(latitude=21.03, longitude=105.85)
+    await location_message(user_update(message), maps_env.context)
+    assert maps_env.deps.notifier.photos == []
 
 
 def ends_with_map(markup):
