@@ -32,6 +32,7 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Delivered parcels** keep ` · 100%` but no longer show the progress bar in `/list`, cards and the delivered update.
 - **Kiểm tra rebuilds** (§4): `/check`, 🔄 Kiểm tra tất cả and a card's 🔄 Kiểm tra load changed carrier scripts at once, match carriers again, reset failure counts and replace each listed parcel's stored history, progress and hub with a fresh read, without repeating old updates. The place line and map caption no longer end with "(đường chim bay)".
 - **J&T page layout** (§5.4): the tracking page now lists each bill in `.result-tracking .result_vandon` with newest-first `.result-vandon-item` rows. The parser reads that layout first and keeps the older one as a fallback; courier and recipient names and phone numbers are dropped before events are stored.
+- **Cross-border J&T not yet in Vietnam** (§5.4): when J&T VN answers "not found" for a `JNTX…` code and 17TRACK cannot help (on 2026-09-15 it refuses to register J&T cross-border codes: "The carrier temporarily does not support registration"), the parcel stays pending with the cross-border hint and 17TRACK's reason is logged at INFO. Before, 17TRACK's error counted as a failed check, so these parcels were added with an error and backed off. Without phone digits there is no J&T VN answer and the 17TRACK error still counts.
 
 ## Changes in 2.7 (2026-09-15)
 

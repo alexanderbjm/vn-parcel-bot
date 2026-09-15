@@ -398,3 +398,56 @@ def test_parse_live_layout_ignores_another_bill():
     html = load_html("live_layout").replace(">840000000001<", ">840000000009<")
     with pytest.raises(CarrierError):
         parse_jt_html(html, CODE)
+
+
+REGISTER_REFUSED = {
+    "code": 0,
+    "data": {
+        "accepted": [],
+        "rejected": [
+            {
+                "number": JNTX_CODE,
+                "error": {
+                    "code": -18019909,
+                    "message": "The carrier temporarily does not support registration.",
+                },
+            }
+        ],
+    },
+}
+
+
+@respx.mock
+async def test_cross_border_not_yet_in_vietnam_waits_when_17track_refuses(caplog):
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, REGISTER_URL
+
+    caplog.set_level("INFO")
+    respx.get(url__startswith=JT_TRACKING_URL).mock(
+        return_value=httpx.Response(200, text=load_html("not_found"))
+    )
+    empty = {"code": 0, "data": {"accepted": [], "rejected": []}}
+    respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=empty))
+    register = respx.post(REGISTER_URL).mock(
+        return_value=httpx.Response(200, json=REGISTER_REFUSED)
+    )
+    async with httpx.AsyncClient() as http:
+        result = await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, "1234")
+    assert register.called
+    assert result.found is False
+    line = next(r for r in caplog.records if r.getMessage().startswith("17track error"))
+    assert line.levelname == "INFO"
+    assert "does not support registration" in line.getMessage()
+    assert JNTX_CODE not in jt_log(caplog)
+
+
+@respx.mock
+async def test_cross_border_without_phone_still_fails_when_17track_refuses():
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, REGISTER_URL
+
+    empty = {"code": 0, "data": {"accepted": [], "rejected": []}}
+    respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=empty))
+    respx.post(REGISTER_URL).mock(return_value=httpx.Response(200, json=REGISTER_REFUSED))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(CarrierError) as raised:
+            await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, None)
+    assert "does not support registration" in str(raised.value.detail)

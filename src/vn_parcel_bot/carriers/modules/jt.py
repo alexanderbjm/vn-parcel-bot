@@ -267,10 +267,13 @@ class JtCarrier:
                     return overseas_result
                 log.info("17track no data carrier=jt code=%s", mask_code(tracking_number))
             except CarrierError as err:
-                if domestic_error is None:
+                if domestic_result is None and domestic_error is None:
                     raise err
-                # The J&T VN error is raised below; keep 17TRACK's reason visible too.
-                _log_seventeen_error(err, tracking_number, logging.WARNING)
+                # J&T VN answered: a clean "not found" means the parcel has not reached Vietnam
+                # yet, so it keeps waiting (17TRACK refuses to register J&T cross-border codes,
+                # 2026-09-15). A J&T VN error is raised below; 17TRACK's reason stays in the log.
+                level = logging.WARNING if domestic_error is not None else logging.INFO
+                _log_seventeen_error(err, tracking_number, level)
 
         # If domestic tracking had an error (e.g. network/blocked), propagate it
         if domestic_error is not None:
