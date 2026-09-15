@@ -6,7 +6,13 @@ import respx
 
 from tests.fakes import FakeClock
 from vn_parcel_bot.db.repo import Repository
-from vn_parcel_bot.services.geo import PHOTON_URL, USER_AGENT, VIETNAM_BBOX, Geocoder
+from vn_parcel_bot.services.geo import (
+    PHOTON_URL,
+    USER_AGENT,
+    VIETNAM_BBOX,
+    AreaLookupFailed,
+    Geocoder,
+)
 from vn_parcel_bot.services.geo_provinces import PROVINCES
 
 T0 = datetime(2026, 9, 15, 3, 0, tzinfo=UTC)
@@ -125,3 +131,49 @@ async def test_requests_are_spaced(env):
     await geocoder.coordinates("Bưu cục A2")
     assert len(sleeps) == 1
     assert 0.9 < sleeps[0] <= 1.1
+
+
+@respx.mock
+async def test_written_area_returns_the_point_and_a_readable_name(env):
+    geocoder, repo, _, _ = env
+    feature = {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [105.7906, 21.0362]},
+        "properties": {
+            "countrycode": "VN",
+            "name": "Dịch Vọng",
+            "district": "Cầu Giấy",
+            "city": "Hà Nội",
+            "state": "Hà Nội",
+        },
+    }
+    route = respx.get(PHOTON_URL).mock(
+        return_value=httpx.Response(200, json={"type": "FeatureCollection", "features": [feature]})
+    )
+    found = await geocoder.search_area("  Dịch Vọng,  Cầu Giấy ")
+    assert found == ((21.0362, 105.7906), "Dịch Vọng, Cầu Giấy, Hà Nội")
+    request = route.calls.last.request
+    assert request.url.params["q"] == "Dịch Vọng, Cầu Giấy"
+    assert request.url.params["bbox"] == VIETNAM_BBOX
+    assert request.headers["User-Agent"] == USER_AGENT
+    assert await repo.get_place("|Dịch Vọng, Cầu Giấy") is None
+
+
+@respx.mock
+async def test_written_area_outside_vietnam_or_unknown_is_none(env):
+    geocoder, _, _, _ = env
+    respx.get(PHOTON_URL).mock(
+        side_effect=[hit(48.1, 11.5, countrycode="DE"), httpx.Response(200, json=MISS)]
+    )
+    assert await geocoder.search_area("München") is None
+    assert await geocoder.search_area("Nowhere") is None
+
+
+@respx.mock
+async def test_written_area_errors_raise_without_logging_the_text(env, caplog):
+    geocoder, _, _, _ = env
+    respx.get(PHOTON_URL).mock(side_effect=httpx.ConnectError("reset"))
+    with pytest.raises(AreaLookupFailed):
+        await geocoder.search_area("Cầu Giấy")
+    assert "area lookup failed type=ConnectError" in caplog.text
+    assert "Cầu Giấy" not in caplog.text

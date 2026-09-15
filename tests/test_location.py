@@ -14,6 +14,7 @@ from vn_parcel_bot.bot.handlers_user import (
     text_message,
 )
 from vn_parcel_bot.db.repo import Repository
+from vn_parcel_bot.services.geo import AreaLookupFailed
 
 T0 = datetime(2026, 9, 15, 3, 0, tzinfo=UTC)
 
@@ -161,3 +162,66 @@ async def test_coordinates_without_a_location_prompt_are_not_saved(env):
 def test_location_prompt_explains_the_desktop_way():
     assert "21.03, 105.85" in texts.LOCATION_ASK
     assert "Google Maps" in texts.LOCATION_ASK
+
+
+AREA = "Dịch Vọng, Cầu Giấy, Hà Nội"
+
+
+class FakeAreas:
+    def __init__(self, found=((21.0362, 105.7906), AREA)):
+        self.found = found
+        self.error = None
+        self.queries = []
+
+    async def find_area(self, text):
+        self.queries.append(text)
+        if self.error is not None:
+            raise self.error
+        return self.found
+
+
+async def test_written_area_is_looked_up_and_saved(env, caplog):
+    caplog.set_level(logging.DEBUG)
+    areas = FakeAreas()
+    env.context.bot_data["deps"].maps = areas
+    await location_cmd(update(Msg(env.sent, "/location")), env.context)
+    await text_message(update(Msg(env.sent, "  Cầu Giấy,   Hà Nội ")), env.context)
+    assert areas.queries == ["Cầu Giấy, Hà Nội"]
+    user = await env.repo.get_user(1)
+    assert (user.home_lat, user.home_lon) == (21.04, 105.79)
+    assert env.sent[-1][0] == texts.LOCATION_AREA_SAVED.format(area=AREA)
+    assert isinstance(env.sent[-1][1], ReplyKeyboardRemove)
+    assert PENDING_LOCATION not in env.context.user_data
+    ours = " | ".join(
+        record.getMessage() for record in caplog.records if record.name.startswith("vn_parcel_bot")
+    )
+    assert "Cầu Giấy" not in ours
+    assert "21.0" not in ours
+
+
+async def test_location_command_with_an_area_looks_it_up(env):
+    areas = FakeAreas()
+    env.context.bot_data["deps"].maps = areas
+    env.context.args = ["Cầu", "Giấy,", "Hà", "Nội"]
+    await location_cmd(update(Msg(env.sent, "/location Cầu Giấy, Hà Nội")), env.context)
+    assert areas.queries == ["Cầu Giấy, Hà Nội"]
+    assert (await env.repo.get_user(1)).home_lat == 21.04
+    assert env.sent[-1][0] == texts.LOCATION_AREA_SAVED.format(area=AREA)
+
+
+async def test_unknown_or_failed_area_keeps_waiting(env):
+    areas = FakeAreas(found=None)
+    env.context.bot_data["deps"].maps = areas
+    await location_cmd(update(Msg(env.sent, "/location")), env.context)
+    await text_message(update(Msg(env.sent, "Nơi <không> có")), env.context)
+    assert env.sent[-1][0] == texts.LOCATION_AREA_NOT_FOUND.format(area="Nơi &lt;không&gt; có")
+    assert PENDING_LOCATION in env.context.user_data
+    areas.error = AreaLookupFailed("ConnectError")
+    await text_message(update(Msg(env.sent, "Cầu Giấy")), env.context)
+    assert env.sent[-1][0] == texts.LOCATION_LOOKUP_FAILED
+    assert PENDING_LOCATION in env.context.user_data
+    assert (await env.repo.get_user(1)).home_lat is None
+
+
+def test_location_prompt_mentions_writing_the_area():
+    assert "Cầu Giấy, Hà Nội" in texts.LOCATION_ASK

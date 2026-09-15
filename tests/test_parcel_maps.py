@@ -123,3 +123,21 @@ async def test_prepare_looks_the_place_up_only_when_maps_are_on(env):
     switched_off = FakeGeocoder()
     await ParcelMaps(repo, switched_off, tiles, replace(settings, maps_enabled=False)).prepare(HUB)
     assert switched_off.calls == []
+
+
+class AreaGeocoder(FakeGeocoder):
+    async def search_area(self, text):
+        self.calls.append(text)
+        return (21.0, 105.8), "Hà Nội"
+
+
+async def test_find_area_asks_the_geocoder_only_when_maps_are_on(env):
+    repo, settings, _ = env
+    areas = AreaGeocoder()
+    found = await ParcelMaps(repo, areas, tiles, settings).find_area("Hà Nội")
+    assert found == ((21.0, 105.8), "Hà Nội")
+    assert areas.calls == ["Hà Nội"]
+    switched_off = AreaGeocoder()
+    maps = ParcelMaps(repo, switched_off, tiles, replace(settings, maps_enabled=False))
+    assert await maps.find_area("Hà Nội") is None
+    assert switched_off.calls == []

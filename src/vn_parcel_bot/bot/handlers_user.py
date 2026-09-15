@@ -56,6 +56,7 @@ from vn_parcel_bot.services.formatting import (
     spoiler,
     truncate_message,
 )
+from vn_parcel_bot.services.geo import AreaLookupFailed
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.services.sharing import shared_parcel
@@ -82,6 +83,7 @@ VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 
 MAP_COOLDOWN_SECONDS = 60
 MAP_SENDS = "map_sends"
+MAX_AREA_TEXT = 120
 
 log = logging.getLogger(__name__)
 
@@ -102,12 +104,16 @@ async def reply(
     )
 
 
-def card_markup(outcome: AddOutcome) -> InlineKeyboardMarkup | None:
+def maps_on(deps: Deps) -> bool:
+    return deps.maps is not None and deps.settings.maps_enabled
+
+
+def card_markup(outcome: AddOutcome, *, maps: bool = False) -> InlineKeyboardMarkup | None:
     if outcome.kind == "needs_phone":
         return phone_prompt_keyboard()
     if outcome.parcel is None or outcome.kind not in ("added", "duplicate"):
         return None
-    return card_keyboard(outcome.parcel)
+    return card_keyboard(outcome.parcel, maps=maps)
 
 
 async def current_user(update: Update, deps: Deps) -> User:
@@ -159,7 +165,7 @@ async def card_view(
     deps: Deps, parcel: Parcel, user_id: int, page: int | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
     """The card text and buttons; with maps on, the 📍 line and the 🗺 button are added."""
-    maps = deps.maps if deps.maps is not None and deps.settings.maps_enabled else None
+    maps = deps.maps if maps_on(deps) else None
     line = None
     if maps is not None:
         user = await deps.repo.get_user(user_id)
@@ -245,7 +251,7 @@ async def _add_and_reply(
         format_add_outcome(
             outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
         ),
-        reply_markup=card_markup(outcome),
+        reply_markup=card_markup(outcome, maps=maps_on(deps)),
     )
     if outcome.kind == "needs_phone":
         user_data(context)[PENDING_PHONE] = {
@@ -280,7 +286,7 @@ async def _add_many(
             format_add_outcome(
                 outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
             ),
-            reply_markup=card_markup(outcome),
+            reply_markup=card_markup(outcome, maps=maps_on(deps)),
         )
     if needs_phone:
         await reply(update, format_needs_phone_multi(needs_phone))
@@ -305,6 +311,9 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         if _looks_like_a_location(message.text):
             await reply(update, texts.LOCATION_TYPE_HINT)
+            return
+        if route_text(message.text, PENDING_PHONE in data).kind != "codes":
+            await _save_written_area(update, context, message.text)
             return
     if PENDING_LABEL in data:
         pending = data.pop(PENDING_LABEL)
@@ -586,6 +595,11 @@ async def location_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         log.info("home location cleared user=%s", user.telegram_id)
         await reply(update, texts.LOCATION_CLEARED)
         return
+    written = " ".join(context.args or []).strip()
+    if written:
+        drop_pending(context)
+        await _save_written_area(update, context, written)
+        return
     drop_pending(context)
     user_data(context)[PENDING_LOCATION] = {"map_parcel": None}
     text = texts.LOCATION_STATUS if user.home_lat is not None else texts.LOCATION_ASK
@@ -611,8 +625,40 @@ def _looks_like_a_location(text: str) -> bool:
     )
 
 
+async def _save_written_area(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, written: str
+) -> None:
+    """A written area, looked up on Photon (only the text is sent) and saved rounded to ~1 km."""
+    deps = get_deps(context)
+    area = " ".join(written.split())[:MAX_AREA_TEXT]
+    maps = deps.maps if maps_on(deps) else None
+    if maps is None:
+        await reply(update, texts.LOCATION_LOOKUP_FAILED)
+        return
+    if not any(char.isalpha() for char in area):
+        await reply(update, texts.LOCATION_AREA_NOT_FOUND.format(area=escape(area)))
+        return
+    try:
+        found = await maps.find_area(area)
+    except AreaLookupFailed:
+        await reply(update, texts.LOCATION_LOOKUP_FAILED)
+        return
+    if found is None:
+        await reply(update, texts.LOCATION_AREA_NOT_FOUND.format(area=escape(area)))
+        return
+    (lat, lon), name = found
+    saved = texts.LOCATION_AREA_SAVED.format(area=escape(name))
+    await _save_home(update, context, lat, lon, saved_text=saved)
+    await delete_messages(context, _chat_id(update), [_message_id(update.effective_message)])
+
+
 async def _save_home(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, lat: float, lon: float
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    lat: float,
+    lon: float,
+    *,
+    saved_text: str = texts.LOCATION_SAVED,
 ) -> None:
     """Store the area rounded to ~1 km; the coordinates are never logged."""
     deps = get_deps(context)
@@ -620,7 +666,7 @@ async def _save_home(
     await deps.repo.set_home(user.telegram_id, lat, lon)
     log.info("home location saved user=%s", user.telegram_id)
     pending = user_data(context).pop(PENDING_LOCATION, None) or {}
-    await reply(update, texts.LOCATION_SAVED, reply_markup=ReplyKeyboardRemove())
+    await reply(update, saved_text, reply_markup=ReplyKeyboardRemove())
     parcel_id = pending.get("map_parcel")
     if parcel_id is not None:
         chat_id = _chat_id(update) or user.telegram_id
@@ -701,7 +747,7 @@ async def _add_codes_from_photo(
         sent = await reply(
             update,
             f"{_vision_header(result, code, phone_last4)}\n\n{body}",
-            reply_markup=card_markup(outcome),
+            reply_markup=card_markup(outcome, maps=maps_on(deps)),
         )
         if single:
             if outcome.kind == "needs_phone":

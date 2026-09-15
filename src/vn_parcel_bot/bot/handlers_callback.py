@@ -24,6 +24,7 @@ from vn_parcel_bot.bot.handlers_user import (
     current_user,
     delete_messages,
     drop_pending,
+    maps_on,
     recheck_all,
     send_parcel_map,
     user_data,
@@ -475,7 +476,7 @@ async def _share_answer(
     text = format_add_outcome(
         outcome, deps.settings.tz, max_parcels=deps.settings.max_parcels_per_user
     )
-    await _edit(query, text, card_markup(outcome))
+    await _edit(query, text, card_markup(outcome, maps=maps_on(deps)))
     if outcome.kind == "needs_phone":
         user_data(context)[PENDING_PHONE] = {
             "code": outcome.code,

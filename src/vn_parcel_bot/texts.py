@@ -133,7 +133,8 @@ CANCELLED = "Đã hủy."
 LOCATION_ASK = (
     "📍 Trên điện thoại, bấm nút <b>Gửi vị trí</b> bên dưới. "
     "Mình chỉ lưu khu vực làm tròn ~1 km để tính khoảng cách tới đơn hàng.\n"
-    "💻 Trên máy tính, dán tọa độ (ví dụ <code>21.03, 105.85</code>) hoặc link Google Maps."
+    "💻 Trên máy tính, dán tọa độ (ví dụ <code>21.03, 105.85</code>) hoặc link Google Maps.\n"
+    "✍️ Hoặc gõ khu vực của bạn, ví dụ <code>Cầu Giấy, Hà Nội</code>."
 )
 LOCATION_STATUS = (
     "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
@@ -146,8 +147,18 @@ LOCATION_TYPE_HINT = (
     "💻 Ứng dụng Telegram này không gửi được vị trí. Hãy dán tọa độ khu vực của bạn, "
     "ví dụ <code>21.03, 105.85</code> (trên Google Maps: bấm chuột phải vào bản đồ rồi bấm "
     "dòng tọa độ để sao chép), hoặc link Google Maps có tọa độ. Link rút gọn "
-    "<code>maps.app.goo.gl</code> không dùng được. Bấm ↩ Hủy để thôi."
+    "<code>maps.app.goo.gl</code> không dùng được. Bạn cũng có thể gõ khu vực, "
+    "ví dụ <code>Cầu Giấy, Hà Nội</code>. Bấm ↩ Hủy để thôi."
 )
+LOCATION_AREA_SAVED = (
+    "📍 Đã lưu khu vực: <b>{area}</b> (làm tròn ~1 km). "
+    "Nếu sai chỗ, gửi /location rồi gõ rõ hơn (phường, quận, tỉnh)."
+)
+LOCATION_AREA_NOT_FOUND = (
+    "Không tìm thấy khu vực <b>{area}</b>. Thử ghi rõ hơn, ví dụ "
+    "<code>Dịch Vọng, Cầu Giấy, Hà Nội</code>, hoặc dán tọa độ. Bấm ↩ Hủy để thôi."
+)
+LOCATION_LOOKUP_FAILED = "Không tra được khu vực lúc này. Bạn thử lại sau hoặc dán tọa độ nhé."
 BTN_SEND_LOCATION = "📍 Gửi vị trí"
 BTN_CANCEL_TEXT = "↩ Hủy"
 BTN_MAP = "🗺 Bản đồ"

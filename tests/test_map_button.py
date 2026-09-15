@@ -129,3 +129,36 @@ async def test_pasted_coordinates_for_a_map_send_that_map(maps_env):
     assert message.sent[0][0] == texts.LOCATION_SAVED
     assert len(maps_env.deps.notifier.photos) == 1
     assert PENDING_LOCATION not in maps_env.context.user_data
+
+
+def ends_with_map(markup):
+    return any((data or "").endswith(":map") for data in callback_data(markup))
+
+
+async def test_add_reply_has_the_map_button(maps_env):
+    message = Msg(93, SPX, [])
+    await text_message(user_update(message), maps_env.context)
+    _, markup = message.sent[-1]
+    assert ends_with_map(markup)
+
+
+async def test_add_reply_without_maps_has_no_map_button(env):  # noqa: F811
+    message = Msg(94, SPX, [])
+    await text_message(user_update(message), env.context)
+    _, markup = message.sent[-1]
+    assert not ends_with_map(markup)
+
+
+async def test_tracking_code_while_waiting_for_a_location_is_added(maps_env, monkeypatch):
+    queries = []
+
+    async def find_area(text):
+        queries.append(text)
+        return None
+
+    monkeypatch.setattr(maps_env.deps.maps, "find_area", find_area)
+    maps_env.context.user_data[PENDING_LOCATION] = {"map_parcel": None}
+    message = Msg(95, SPX, [])
+    await text_message(user_update(message), maps_env.context)
+    assert queries == []
+    assert ends_with_map(message.sent[-1][1])

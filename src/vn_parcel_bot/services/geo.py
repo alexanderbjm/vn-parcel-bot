@@ -27,6 +27,7 @@ USER_AGENT = "vn-parcel-bot/0.1 (personal Telegram parcel tracker)"
 VIETNAM_BBOX = "102.1,8.1,109.5,23.4"
 MISS_RETRY_AFTER = timedelta(days=30)
 MIN_REQUEST_GAP_SECONDS = 1.1
+AREA_NAME_KEYS = ("name", "district", "city", "county", "state")
 LOOKUP_TIMEOUT_SECONDS = 10
 
 
@@ -81,19 +82,30 @@ def format_distance(km: float) -> str:
     return f"~{round(km)} km"
 
 
-def _first_vietnam_point(data: object) -> tuple[float, float] | None:
+class AreaLookupFailed(Exception):
+    """A written area could not be looked up (network or service error)."""
+
+
+def _first_vietnam_feature(data: object) -> tuple[tuple[float, float], dict] | None:
     features = data.get("features") if isinstance(data, dict) else None
     if not isinstance(features, list) or not features or not isinstance(features[0], dict):
         return None
     feature = features[0]
     properties = feature.get("properties")
-    if isinstance(properties, dict) and properties.get("countrycode") not in (None, "VN"):
+    props = properties if isinstance(properties, dict) else {}
+    if props.get("countrycode") not in (None, "VN"):
         return None
     try:
         lon, lat = feature["geometry"]["coordinates"][:2]
-        return float(lat), float(lon)
+        return (float(lat), float(lon)), props
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _area_name(props: dict, fallback: str) -> str:
+    parts = (props.get(key) for key in AREA_NAME_KEYS)
+    names = dict.fromkeys(" ".join(part.split()) for part in parts if isinstance(part, str))
+    return ", ".join(name for name in names if name) or fallback
 
 
 class Geocoder:
@@ -144,7 +156,24 @@ class Geocoder:
         await self._repo.save_place(parts.key, None, None, "none", now)
         return None
 
+    async def search_area(self, text: str) -> tuple[tuple[float, float], str] | None:
+        """A written area's coordinates and readable name; not cached, the text is never logged."""
+        query = " ".join(text.split())
+        try:
+            found = await self._lookup(query)
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning("area lookup failed type=%s", type(exc).__name__)
+            raise AreaLookupFailed(type(exc).__name__) from exc
+        if found is None:
+            return None
+        point, props = found
+        return point, _area_name(props, query)
+
     async def _search(self, query: str) -> tuple[float, float] | None:
+        found = await self._lookup(query)
+        return found[0] if found is not None else None
+
+    async def _lookup(self, query: str) -> tuple[tuple[float, float], dict] | None:
         async with self._lock:
             if self._last_request is not None:
                 wait = MIN_REQUEST_GAP_SECONDS - (self._monotonic() - self._last_request)
@@ -160,4 +189,4 @@ class Geocoder:
             finally:
                 self._last_request = self._monotonic()
         response.raise_for_status()
-        return _first_vietnam_point(response.json())
+        return _first_vietnam_feature(response.json())

@@ -38,6 +38,12 @@ class ParcelMaps:
         if self._settings.maps_enabled:
             await self._geocoder.coordinates(place)
 
+    async def find_area(self, text: str) -> tuple[tuple[float, float], str] | None:
+        """Look a written area up; None when maps are off or nothing was found."""
+        if not self._settings.maps_enabled:
+            return None
+        return await self._geocoder.search_area(text)
+
     async def place_line(self, parcel: Parcel, user: User) -> str | None:
         """The 📍 line for cards and updates. Reads cached coordinates only, never the network."""
         shown = self._shown_place(parcel)
