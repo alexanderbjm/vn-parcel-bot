@@ -223,7 +223,7 @@ async def test_list_page_navigation(env):
     assert "Trang 2/2" in text
     assert markup.inline_keyboard[0][0].text == "6"
     assert [b.callback_data for b in markup.inline_keyboard[-2]] == ["l:1", "l:2", "l:1"]
-    assert last_row_data(markup) == ["r:2"]
+    assert last_row_data(markup) == ["r:2", "m:on:2"]
 
 
 async def test_not_modified_edit_is_ignored(env):
@@ -241,7 +241,7 @@ async def test_list_command_and_add_reply_carry_buttons(env):
     listed = []
     await list_cmd(user_update(Msg(61, "/list", listed)), env.context)
     assert first_data(listed[-1][1]) == f"p:{parcel.id}:card:1"
-    assert last_row_data(listed[-1][1]) == ["r:1"]
+    assert last_row_data(listed[-1][1]) == ["r:1", "m:on:1"]
 
 
 def other_update(message):
@@ -312,7 +312,7 @@ async def test_recheck_button_checks_all_and_redraws_the_list(env):
     assert text.startswith(format_check_done(1, 1, 0) + "\n\n")
     assert "📋" in text
     assert first_data(markup) == f"p:{parcel.id}:card:1"
-    assert last_row_data(markup) == ["r:1"]
+    assert last_row_data(markup) == ["r:1", "m:on:1"]
     again = await tap(env, "r:1")
     assert again.answers == [texts.CHECK_TOO_SOON.format(minutes=2)]
     assert again.edits == []

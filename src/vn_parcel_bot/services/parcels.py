@@ -349,6 +349,46 @@ class ParcelService:
         log.info("parcel removed user=%s code=%s", user_id, mask_code(parcel.tracking_number))
         return parcel
 
+    async def resolve_many(
+        self, user_id: int, args: Sequence[str]
+    ) -> tuple[list[Parcel], list[str]]:
+        """Parcels for /list numbers and codes (spaces or commas); refs not found come second.
+
+        Numbers use the list as it is before anything is removed; duplicates count once.
+        """
+        tokens = [token for arg in args for token in arg.replace(",", " ").split()]
+        if not tokens:
+            return [], []
+        if not all(_INDEX_REF.fullmatch(token) for token in tokens):
+            whole = await self._repo.find_parcel(user_id, normalize_code("".join(tokens)))
+            if whole is not None:
+                return [whole], []
+        listed = await self.list_for(user_id)
+        found: dict[int, Parcel] = {}
+        missing: list[str] = []
+        for token in tokens:
+            if _INDEX_REF.fullmatch(token):
+                index = int(token)
+                parcel = listed[index - 1] if 1 <= index <= len(listed) else None
+            else:
+                parcel = await self._repo.find_parcel(user_id, normalize_code(token))
+            if parcel is not None:
+                found.setdefault(parcel.id, parcel)
+            elif token not in missing:
+                missing.append(token)
+        return list(found.values()), missing
+
+    async def remove_ids(self, user_id: int, parcel_ids: Sequence[int]) -> list[Parcel]:
+        removed: list[Parcel] = []
+        for parcel_id in parcel_ids:
+            parcel = await self._repo.get_parcel(parcel_id)
+            if parcel is None or parcel.user_id != user_id:
+                continue
+            await self._repo.delete_parcel(parcel.id)
+            log.info("parcel removed user=%s code=%s", user_id, mask_code(parcel.tracking_number))
+            removed.append(parcel)
+        return removed
+
     async def rename(self, user_id: int, ref: str, label: str | None) -> Parcel | None:
         parcel = await self.resolve(user_id, ref)
         if parcel is None:

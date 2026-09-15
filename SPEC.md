@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.6). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 2.7). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -51,11 +51,11 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | *(plain text)* | – | Routed per §4.2. |
 | `/list` | – | Active parcels plus terminal parcels updated within `DELIVERED_VISIBLE_FOR` (3 days), numbered 1..n in `created_at` order. Unresolved parcels show `CARRIER_UNRESOLVED`. Empty → `LIST_EMPTY`. |
 | `/status` | `<ref>` | Full history of one parcel, **newest first**, at most `MAX_EVENTS_IN_HISTORY` (30). `ref` = tracking code or the index shown by `/list`. |
-| `/label` | `<ref> [name…]` | Set nickname (trimmed, max `MAX_LABEL_LENGTH` = 40 chars). No name → clear label. |
-| `/remove` | `<ref>` | Delete the parcel and its events. |
+| `/label` | `<ref> [name…]` | Set nickname (trimmed, max `MAX_LABEL_LENGTH` = 40 chars). No name → `LABEL_ASK` with `[🗑 Xóa tên]` (labelled parcels) and `[↩ Hủy]`; the next text message is the name. As a reply to a bot message: that message's parcel; several parcels → `LABEL_PICK` buttons (2.7). |
+| `/remove` | `<ref> …` | One or more `/list` numbers or codes (spaces or commas). Confirmation with `[✅ Xóa]`/`[✅ Xóa N đơn]` and `[↩ Hủy]`, then the parcels and their events are deleted; unknown refs are listed (2.7). |
 | `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
 | `/check` | – | `ParcelService.redetect_carriers(uid)`, then poll **this user's** active parcels now, ignoring `next_check_at`. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE` (+ `CHECK_REDETECTED` when carriers changed). |
-| `/cancel` | – | Clear a pending phone question → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. |
+| `/cancel` | – | Clear any pending prompt (phone digits, name, name picker, remove confirmation, list selection) → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. Every prompt also has a `[↩ Hủy]` button (2.7). |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
 | `/users` *(admin)* | – | All users with role and active parcel count. |
@@ -88,7 +88,7 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 6. `last4 = override or user.default_phone_last4`. `tryable` = tracked candidates that do not need a phone, plus those that do when `last4` is set. `phone_missing` = tracked candidates that need a phone while `last4` is `None`.
 7. Fetch the `tryable` candidates **one by one in order**, stopping at the first result with `found=True`. A `CarrierError` is remembered and the next candidate is tried.
 8. **Found** with carrier `c` → insert the parcel with `carrier=c`, `candidates=(c,)`, `phone_last4 = last4 if c needs a phone else None`, `next_check_at = now + check_interval(state, progress, poll_interval)` (§6.1); insert all events silently; set state (`delivered` / `returned` / `in_transit`); outcome `added` with the result. Reply `ADDED_FOUND` or `ADDED_DELIVERED`.
-9. **Not found and `phone_missing` non-empty** → `needs_phone` with `candidates = phone_missing` (nothing stored). The handler stores `context.user_data["pending_phone"] = {"code": code}` and replies `ASK_PHONE`. The next 4-digit message calls `add` again with those digits (all tryable candidates are fetched again).
+9. **Not found and `phone_missing` non-empty** → `needs_phone` with `candidates = phone_missing` (nothing stored). The handler stores `context.user_data["pending_phone"] = {"code": code}` and replies `ASK_PHONE` with a `[↩ Hủy]` button (`ph:no`, 2.7). The next 4-digit message calls `add` again with those digits (all tryable candidates are fetched again).
 10. **Otherwise** insert a pending parcel: `candidates = tracked`; `carrier = tracked[0]` if there is exactly one tracked candidate, else `None` (unresolved); `phone_last4 = last4` if any tracked candidate needs a phone, else `None`; `next_check_at = now + poll_interval`.
     - Every attempted fetch raised `CarrierError` → record a failure with backoff (§6.4) and return `added` with `error` = the last error → `ADDED_ERROR`.
     - Else → `record_check_success(state="pending")` and return `added` with the last not-found result → `ADDED_PENDING` (resolved) or `ADDED_PENDING_AUTO` (unresolved).
@@ -1357,6 +1357,8 @@ See §9.2. They are code constants, not env vars.
 ## 17. Text catalog (`texts.py`)
 
 > **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`. 2.1: templates take `{code}`, `{ref}` and `{order_id}` without `<code>` because formatting wraps them in a spoiler; `LIST_ITEM` gains `{bar}`; new `PROGRESS_SUFFIX` and `PROGRESS_BAR_LINE`.
+
+> **2.7 string changes**: `LABEL_AMBIGUOUS` became `LABEL_PICK`; `REMOVE_CONFIRM`, `LABEL_ASK` and `ASK_PHONE` no longer tell the user to type `có`, `-` or `/cancel`; new `REMOVE_CONFIRM_MANY`, `REMOVE_ITEM`, `REMOVE_MISSING`, `REMOVED_MANY`, `SELECT_HEADER`, `SELECT_NONE`, `BUTTON_EXPIRED`, `BTN_SELECT_REMOVE`, `BTN_REMOVE_SELECTED`, `BTN_CONFIRM_REMOVE_MANY`, `BTN_CLEAR_LABEL`, `SELECT_MARK`. `texts.py` has the exact wording.
 
 All messages are sent with `parse_mode=HTML`. `{placeholders}` are filled with **already-escaped** values by `services/formatting.py`. Copy verbatim.
 

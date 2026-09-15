@@ -241,6 +241,26 @@ def format_check_done(checked: int, new_events: int, redetected: int) -> str:
     return text + (texts.CHECK_REDETECTED.format(count=redetected) if redetected else "")
 
 
+def _remove_items(parcels: Sequence[Parcel]) -> str:
+    return "\n".join(texts.REMOVE_ITEM.format(title=parcel_title(p)) for p in parcels)
+
+
+def format_remove_confirm(parcels: Sequence[Parcel], missing: Sequence[str] = ()) -> str:
+    if len(parcels) == 1:
+        text = texts.REMOVE_CONFIRM.format(title=parcel_title(parcels[0]))
+    else:
+        text = texts.REMOVE_CONFIRM_MANY.format(count=len(parcels), items=_remove_items(parcels))
+    if missing:
+        text += texts.REMOVE_MISSING.format(refs=", ".join(ref_text(ref) for ref in missing))
+    return text
+
+
+def format_removed(parcels: Sequence[Parcel]) -> str:
+    if len(parcels) == 1:
+        return texts.REMOVED.format(title=parcel_title(parcels[0]))
+    return texts.REMOVED_MANY.format(count=len(parcels), items=_remove_items(parcels))
+
+
 def format_digest(
     parcels: Sequence[Parcel], changed_ids: set[int], at: datetime, tz: ZoneInfo
 ) -> str:

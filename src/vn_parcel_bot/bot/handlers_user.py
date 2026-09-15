@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import logging
 import math
-import unicodedata
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from html import escape
@@ -17,7 +16,15 @@ from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
 from vn_parcel_bot.constants import RECHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import Parcel, User
-from vn_parcel_bot.keyboards import card_keyboard, list_keyboard, share_open_keyboard
+from vn_parcel_bot.keyboards import (
+    card_keyboard,
+    label_pick_keyboard,
+    label_prompt_keyboard,
+    list_keyboard,
+    phone_prompt_keyboard,
+    remove_confirm_keyboard,
+    share_open_keyboard,
+)
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
     format_check_done,
@@ -27,6 +34,7 @@ from vn_parcel_bot.services.formatting import (
     format_needs_phone_multi,
     format_parcel_card,
     format_parcel_list,
+    format_remove_confirm,
     list_page_items,
     parcel_carrier_label,
     parcel_title,
@@ -42,12 +50,12 @@ from vn_parcel_bot.tracking_codes import is_valid_last4
 PENDING_PHONE = "pending_phone"
 PENDING_LABEL = "pending_label"
 PENDING_REMOVE = "pending_remove"
-PENDING_KEYS = (PENDING_PHONE, PENDING_LABEL, PENDING_REMOVE)
+PENDING_LABEL_PICK = "pending_label_pick"
+SELECTION = "remove_selection"
+PENDING_KEYS = (PENDING_PHONE, PENDING_LABEL, PENDING_REMOVE, PENDING_LABEL_PICK, SELECTION)
 PHOTO_LOCKS = "photo_locks"
 RECHECK_KEY = "check_cooldowns"
 VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
-CONFIRM_WORDS = frozenset({"có", "co", "yes", "y", "ok", "xóa", "xoa"})
-CLEAR_LABEL = "-"
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +75,8 @@ async def reply(
 
 
 def card_markup(outcome: AddOutcome) -> InlineKeyboardMarkup | None:
+    if outcome.kind == "needs_phone":
+        return phone_prompt_keyboard()
     if outcome.parcel is None or outcome.kind not in ("added", "duplicate"):
         return None
     return card_keyboard(outcome.parcel)
@@ -103,7 +113,7 @@ def drop_pending(context: ContextTypes.DEFAULT_TYPE) -> None:
         data.pop(key, None)
 
 
-async def _delete_messages(
+async def delete_messages(
     context: ContextTypes.DEFAULT_TYPE, chat_id: int | None, message_ids: Iterable[int | None]
 ) -> None:
     if chat_id is None:
@@ -210,10 +220,6 @@ async def _add_many(
         await reply(update, format_needs_phone_multi(needs_phone))
 
 
-def _is_confirmation(text: str) -> bool:
-    return unicodedata.normalize("NFC", text.strip()).casefold() in CONFIRM_WORDS
-
-
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None or message.text is None:
@@ -223,7 +229,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if PENDING_LABEL in data:
         pending = data.pop(PENDING_LABEL)
         user = await current_user(update, get_deps(context))
-        await _apply_label(
+        await apply_label(
             update,
             context,
             user,
@@ -234,20 +240,11 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             card=pending.get("card"),
         )
         return
-    if PENDING_REMOVE in data:
-        pending = data.pop(PENDING_REMOVE)
-        if _is_confirmation(message.text):
-            await _confirm_remove(update, context, pending, _message_id(message))
-            return
-        await _delete_messages(context, chat_id, [pending.get("prompt_id")])
-        if route_text(message.text, PENDING_PHONE in data).kind != "codes":
-            await reply(update, texts.CANCELLED)
-            return
     route = route_text(message.text, PENDING_PHONE in data)
     if route.kind == "phone_for_pending":
         pending = data.pop(PENDING_PHONE)
         await _add_and_reply(update, context, pending["code"], route.last4, pending.get("label"))
-        await _delete_messages(context, chat_id, [pending.get("prompt_id"), _message_id(message)])
+        await delete_messages(context, chat_id, [pending.get("prompt_id"), _message_id(message)])
     elif route.kind == "codes":
         data.pop(PENDING_PHONE, None)
         if len(route.codes) == 1:
@@ -338,18 +335,17 @@ async def _refresh_card(
         log.info("card refresh failed type=%s", type(exc).__name__)
 
 
-async def _apply_label(
+async def apply_label(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     user: User,
     code: str,
-    name: str,
+    label: str | None,
     target: dict | None,
     delete_ids: Iterable[int | None],
     card: dict | None = None,
 ) -> None:
     deps = get_deps(context)
-    label = None if name.strip() == CLEAR_LABEL else name
     parcel = await deps.parcels.rename(user.telegram_id, code, label)
     if parcel is None:
         await reply(update, texts.PARCEL_NOT_FOUND.format(ref=spoiler(code)))
@@ -362,7 +358,7 @@ async def _apply_label(
         await reply(update, texts.LABEL_SET.format(label=escape(parcel.label), code=code))
     else:
         await reply(update, texts.LABEL_CLEARED.format(code=code))
-    await _delete_messages(context, chat_id, delete_ids)
+    await delete_messages(context, chat_id, delete_ids)
 
 
 async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -380,7 +376,17 @@ async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await reply(update, texts.LABEL_REPLY_NOT_FOUND)
             return
         if len(matches) > 1:
-            await reply(update, texts.LABEL_AMBIGUOUS)
+            drop_pending(context)
+            picker = await reply(
+                update, texts.LABEL_PICK, reply_markup=label_pick_keyboard(matches)
+            )
+            user_data(context)[PENDING_LABEL_PICK] = {
+                "ids": [match.id for match in matches],
+                "name": " ".join(args) or None,
+                "censor": _censor_target(context, replied),
+                "command_id": _message_id(message),
+                "prompt_id": _message_id(picker),
+            }
             return
         parcel = matches[0]
         name = " ".join(args) or None
@@ -399,7 +405,11 @@ async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         target = None
     if name is None:
         drop_pending(context)
-        prompt = await reply(update, texts.LABEL_ASK.format(code=spoiler(parcel.tracking_number)))
+        prompt = await reply(
+            update,
+            texts.LABEL_ASK.format(code=spoiler(parcel.tracking_number)),
+            reply_markup=label_prompt_keyboard(bool(parcel.label)),
+        )
         user_data(context)[PENDING_LABEL] = {
             "code": parcel.tracking_number,
             "censor": target,
@@ -407,7 +417,7 @@ async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "prompt_id": _message_id(prompt),
         }
         return
-    await _apply_label(
+    await apply_label(
         update, context, user, parcel.tracking_number, name, target, [_message_id(message)]
     )
 
@@ -418,38 +428,22 @@ async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     deps = get_deps(context)
     user = await current_user(update, deps)
-    ref = " ".join(context.args)
-    parcel = await deps.parcels.resolve(user.telegram_id, ref)
-    if parcel is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
+    parcels, missing = await deps.parcels.resolve_many(user.telegram_id, context.args)
+    if not parcels:
+        refs = ", ".join(ref_text(ref) for ref in missing)
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=refs))
         return
     drop_pending(context)
-    prompt = await reply(update, texts.REMOVE_CONFIRM.format(title=parcel_title(parcel)))
+    prompt = await reply(
+        update,
+        format_remove_confirm(parcels, missing),
+        reply_markup=remove_confirm_keyboard(len(parcels)),
+    )
     user_data(context)[PENDING_REMOVE] = {
-        "code": parcel.tracking_number,
+        "ids": [parcel.id for parcel in parcels],
         "command_id": _message_id(update.effective_message),
         "prompt_id": _message_id(prompt),
     }
-
-
-async def _confirm_remove(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    pending: dict,
-    answer_id: int | None,
-) -> None:
-    deps = get_deps(context)
-    user = await current_user(update, deps)
-    parcel = await deps.parcels.remove(user.telegram_id, pending["code"])
-    if parcel is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=spoiler(pending["code"])))
-    else:
-        await reply(update, texts.REMOVED.format(title=parcel_title(parcel)))
-    await _delete_messages(
-        context,
-        _chat_id(update),
-        [pending.get("command_id"), pending.get("prompt_id"), answer_id],
-    )
 
 
 async def phone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -507,7 +501,7 @@ async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await reply(update, texts.NOTHING_TO_CANCEL)
         return
     await reply(update, texts.CANCELLED)
-    await _delete_messages(
+    await delete_messages(
         context,
         _chat_id(update),
         [item.get("prompt_id") for item in pending] + [_message_id(update.effective_message)],

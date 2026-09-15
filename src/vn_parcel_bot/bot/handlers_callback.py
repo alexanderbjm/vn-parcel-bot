@@ -12,10 +12,15 @@ from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
+    PENDING_LABEL_PICK,
     PENDING_PHONE,
+    PENDING_REMOVE,
+    SELECTION,
+    apply_label,
     card_markup,
     claim_recheck,
     current_user,
+    delete_messages,
     drop_pending,
     recheck_all,
     user_data,
@@ -26,14 +31,19 @@ from vn_parcel_bot.keyboards import (
     back_keyboard,
     card_keyboard,
     confirm_remove_keyboard,
+    label_prompt_keyboard,
     list_back_keyboard,
     list_keyboard,
+    remove_confirm_keyboard,
+    select_keyboard,
 )
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
     format_history,
     format_parcel_card,
     format_parcel_list,
+    format_remove_confirm,
+    format_removed,
     list_page_items,
     parcel_title,
     spoiler,
@@ -64,6 +74,14 @@ def _page(value: str | None) -> int | None:
     return int(value) if value is not None and value.isdigit() else None
 
 
+def _message_id(query: CallbackQuery) -> int | None:
+    return query.message.message_id if query.message is not None else None
+
+
+def _chat_id(query: CallbackQuery) -> int | None:
+    return query.message.chat.id if query.message is not None else None
+
+
 async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None or not query.data:
@@ -74,10 +92,18 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _parcel_action(context, query, parts)
     elif kind == "l":
         await _list_page(context, query, parts)
-    elif kind == "s":
-        await _share_answer(update, context, query, parts)
     elif kind == "r":
         await _recheck(context, query, parts)
+    elif kind == "s":
+        await _share_answer(update, context, query, parts)
+    elif kind == "rm":
+        await _remove_answer(context, query, parts)
+    elif kind == "lb":
+        await _label_answer(update, context, query, parts)
+    elif kind == "ph":
+        await _phone_answer(context, query)
+    elif kind == "m":
+        await _select_action(context, query, parts)
     else:
         await query.answer()
 
@@ -166,6 +192,7 @@ async def _ask_rename(
             message.chat.id,
             texts.LABEL_ASK.format(code=spoiler(parcel.tracking_number)),
             parse_mode=ParseMode.HTML,
+            reply_markup=label_prompt_keyboard(bool(parcel.label)),
         )
     except TelegramError as exc:
         log.info("rename prompt failed type=%s", type(exc).__name__)
@@ -179,19 +206,22 @@ async def _ask_rename(
     }
 
 
-async def _list_page(
-    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
-) -> None:
-    await query.answer()
-    requested = (_page(parts[0]) if parts else None) or 1
+async def _show_list(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, page: int) -> None:
     deps = get_deps(context)
     parcels = await deps.parcels.list_for(query.from_user.id)
-    page, pages, numbered = list_page_items(parcels, requested)
+    page, pages, numbered = list_page_items(parcels, page)
     await _edit(
         query,
         format_parcel_list(parcels, deps.settings.tz, page=page),
         list_keyboard(numbered, page, pages, recheck=True),
     )
+
+
+async def _list_page(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    await query.answer()
+    await _show_list(context, query, (_page(parts[0]) if parts else None) or 1)
 
 
 async def _recheck(
@@ -213,6 +243,185 @@ async def _recheck(
         summary + "\n\n" + format_parcel_list(parcels, deps.settings.tz, page=page),
         list_keyboard(numbered, page, pages, recheck=True),
     )
+
+
+def _pending_for(context: ContextTypes.DEFAULT_TYPE, key: str, query: CallbackQuery) -> dict | None:
+    """The pending prompt behind this button, if the button belongs to it."""
+    pending = user_data(context).get(key)
+    if not isinstance(pending, dict) or pending.get("prompt_id") != _message_id(query):
+        return None
+    return pending
+
+
+async def _remove_answer(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    pending = _pending_for(context, PENDING_REMOVE, query)
+    if pending is None:
+        await query.answer(texts.BUTTON_EXPIRED)
+        return
+    user_data(context).pop(PENDING_REMOVE, None)
+    await query.answer()
+    list_page = pending.get("list_page")
+    back = list_back_keyboard(list_page) if list_page is not None else None
+    if parts[:1] == ["ok"]:
+        removed = await get_deps(context).parcels.remove_ids(query.from_user.id, pending["ids"])
+        await _edit(query, format_removed(removed) if removed else texts.CARD_NOT_FOUND, back)
+    else:
+        await _edit(query, texts.CANCELLED, back)
+    await delete_messages(context, _chat_id(query), [pending.get("command_id")])
+
+
+async def _label_answer(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    action = parts[0] if parts else ""
+    deps = get_deps(context)
+    if action == "p":
+        await _label_pick(update, context, query, parts)
+        return
+    pending = _pending_for(context, PENDING_LABEL, query)
+    if pending is None:
+        await query.answer(texts.BUTTON_EXPIRED)
+        return
+    user_data(context).pop(PENDING_LABEL, None)
+    await query.answer()
+    if action == "clr":
+        user = await current_user(update, deps)
+        await apply_label(
+            update,
+            context,
+            user,
+            pending["code"],
+            None,
+            pending.get("censor"),
+            [pending.get("command_id"), pending.get("prompt_id")],
+            card=pending.get("card"),
+        )
+        return
+    await _edit(query, texts.CANCELLED, None)
+    await delete_messages(context, _chat_id(query), [pending.get("command_id")])
+
+
+async def _label_pick(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    pending = _pending_for(context, PENDING_LABEL_PICK, query)
+    chosen = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+    if pending is None or chosen not in pending["ids"]:
+        await query.answer(texts.BUTTON_EXPIRED)
+        return
+    user_data(context).pop(PENDING_LABEL_PICK, None)
+    await query.answer()
+    deps = get_deps(context)
+    parcel = await deps.repo.get_parcel(chosen)
+    if parcel is None or parcel.user_id != query.from_user.id:
+        await _edit(query, texts.CARD_NOT_FOUND, None)
+        return
+    if pending.get("name"):
+        user = await current_user(update, deps)
+        await apply_label(
+            update,
+            context,
+            user,
+            parcel.tracking_number,
+            pending["name"],
+            pending.get("censor"),
+            [pending.get("command_id"), pending.get("prompt_id")],
+        )
+        return
+    user_data(context)[PENDING_LABEL] = {
+        "code": parcel.tracking_number,
+        "censor": pending.get("censor"),
+        "command_id": pending.get("command_id"),
+        "prompt_id": pending.get("prompt_id"),
+    }
+    await _edit(
+        query,
+        texts.LABEL_ASK.format(code=spoiler(parcel.tracking_number)),
+        label_prompt_keyboard(bool(parcel.label)),
+    )
+
+
+async def _phone_answer(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery) -> None:
+    if _pending_for(context, PENDING_PHONE, query) is None:
+        await query.answer(texts.BUTTON_EXPIRED)
+        return
+    user_data(context).pop(PENDING_PHONE, None)
+    await query.answer()
+    await _edit(query, texts.CANCELLED, None)
+
+
+async def _show_selection(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, page: int
+) -> None:
+    deps = get_deps(context)
+    parcels = await deps.parcels.list_for(query.from_user.id)
+    page, pages, numbered = list_page_items(parcels, page)
+    selected = set(user_data(context)[SELECTION]["ids"])
+    header = texts.SELECT_HEADER.format(count=len(selected))
+    await _edit(
+        query,
+        header + "\n\n" + format_parcel_list(parcels, deps.settings.tz, page=page),
+        select_keyboard(numbered, page, pages, selected),
+    )
+
+
+async def _select_action(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    action = parts[0] if parts else ""
+    page = (_page(parts[-1]) if len(parts) > 1 else None) or 1
+    data = user_data(context)
+    if action == "on":
+        data[SELECTION] = {"message_id": _message_id(query), "ids": []}
+        await query.answer()
+        await _show_selection(context, query, page)
+        return
+    selection = data.get(SELECTION)
+    if not isinstance(selection, dict) or selection.get("message_id") != _message_id(query):
+        await query.answer(texts.BUTTON_EXPIRED)
+        return
+    if action == "t" and len(parts) > 2 and parts[1].isdigit():
+        chosen = int(parts[1])
+        ids: list[int] = selection["ids"]
+        if chosen in ids:
+            ids.remove(chosen)
+        else:
+            ids.append(chosen)
+        await query.answer()
+        await _show_selection(context, query, page)
+    elif action == "pg":
+        await query.answer()
+        await _show_selection(context, query, page)
+    elif action == "off":
+        data.pop(SELECTION, None)
+        await query.answer()
+        await _show_list(context, query, page)
+    elif action == "go":
+        await _confirm_selection(context, query, page, selection)
+    else:
+        await query.answer()
+
+
+async def _confirm_selection(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, page: int, selection: dict
+) -> None:
+    listed = await get_deps(context).parcels.list_for(query.from_user.id)
+    chosen = [parcel for parcel in listed if parcel.id in selection["ids"]]
+    if not chosen:
+        await query.answer(texts.SELECT_NONE)
+        return
+    data = user_data(context)
+    data.pop(SELECTION, None)
+    data[PENDING_REMOVE] = {
+        "ids": [parcel.id for parcel in chosen],
+        "command_id": None,
+        "prompt_id": _message_id(query),
+        "list_page": page,
+    }
+    await query.answer()
+    await _edit(query, format_remove_confirm(chosen), remove_confirm_keyboard(len(chosen)))
 
 
 async def _share_answer(
@@ -239,5 +448,5 @@ async def _share_answer(
         user_data(context)[PENDING_PHONE] = {
             "code": outcome.code,
             "label": parcel.label,
-            "prompt_id": None,
+            "prompt_id": _message_id(query),
         }

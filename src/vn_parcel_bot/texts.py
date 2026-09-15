@@ -36,7 +36,7 @@ HELP = (
     "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
     "• /label &lt;mã hoặc số thứ tự&gt; [tên] – đặt tên cho đơn "
     "(hoặc trả lời tin nhắn của đơn bằng /label)\n"
-    "• /remove &lt;mã hoặc số thứ tự&gt; – ngừng theo dõi\n"
+    "• /remove &lt;số thứ tự hoặc mã&gt; … – ngừng theo dõi (nhiều đơn: /remove 1 2 3)\n"
     "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
     "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
     "• /cancel – hủy thao tác đang chờ"
@@ -64,9 +64,7 @@ USAGE_LABEL = (
     "hoặc trả lời tin nhắn của đơn bằng /label [tên]"
 )
 
-ASK_PHONE = (
-    "📱 Mã {code} ({carriers}) cần 4 số cuối SĐT người nhận.\nGửi 4 số đó, hoặc /cancel để hủy."
-)
+ASK_PHONE = "📱 Mã {code} ({carriers}) cần 4 số cuối SĐT người nhận.\nGửi 4 số đó."
 INVALID_PHONE = "Vui lòng nhập đúng 4 chữ số."
 NEEDS_PHONE_MULTI = (
     "📱 Các đơn sau cần 4 số cuối SĐT người nhận. "
@@ -113,13 +111,17 @@ PARCEL_NOT_FOUND = "Không tìm thấy đơn {ref} trong danh sách của bạn.
 REMOVED = "🗑 Đã ngừng theo dõi <b>{title}</b>."
 LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b> · {code}"
 LABEL_CLEARED = "🏷 Đã xóa tên của đơn {code}."
-LABEL_ASK = "🏷 Gửi tên cho đơn {code} (gửi - để xóa tên, /cancel để hủy)."
-LABEL_AMBIGUOUS = (
-    "Tin nhắn này có nhiều đơn. Hãy trả lời tin nhắn của một đơn, "
-    "hoặc dùng /label &lt;số thứ tự&gt; &lt;tên&gt;."
-)
+LABEL_ASK = "🏷 Gửi tên cho đơn {code}."
+LABEL_PICK = "Tin nhắn này có nhiều đơn. Chọn đơn muốn đặt tên:"
 LABEL_REPLY_NOT_FOUND = "Không tìm thấy đơn nào của bạn trong tin nhắn đó."
-REMOVE_CONFIRM = "🗑 Ngừng theo dõi <b>{title}</b>? Gửi <b>có</b> để xác nhận, hoặc /cancel để hủy."
+REMOVE_CONFIRM = "🗑 Ngừng theo dõi <b>{title}</b>?"
+REMOVE_CONFIRM_MANY = "🗑 Ngừng theo dõi {count} đơn?\n{items}"
+REMOVE_ITEM = "• <b>{title}</b>"
+REMOVE_MISSING = "\nKhông tìm thấy: {refs}"
+REMOVED_MANY = "🗑 Đã ngừng theo dõi {count} đơn:\n{items}"
+SELECT_HEADER = "🗑 <b>Chọn các đơn muốn xóa</b> · đã chọn {count}"
+SELECT_NONE = "Bạn chưa chọn đơn nào."
+BUTTON_EXPIRED = "Nút này không còn dùng được."
 
 PHONE_SET = "📱 Đã lưu 4 số cuối mặc định: <code>{last4}</code>"
 PHONE_SHOW = "📱 4 số cuối mặc định: <code>{last4}</code>"
@@ -232,6 +234,11 @@ BTN_SKIP = "↩ Bỏ qua"
 BTN_PREV = "⬅️"
 BTN_NEXT = "➡️"
 BTN_RECHECK = "🔄 Kiểm tra tất cả"
+BTN_SELECT_REMOVE = "🗑 Xóa nhiều"
+BTN_REMOVE_SELECTED = "✅ Xóa đã chọn ({count})"
+BTN_CONFIRM_REMOVE_MANY = "✅ Xóa {count} đơn"
+BTN_CLEAR_LABEL = "🗑 Xóa tên"
+SELECT_MARK = "☑ {number}"
 SHARE_LINK = "📤 Gửi link này để người khác theo dõi <b>{title}</b>:\n{link}"
 SHARE_OPEN = "📦 Bạn được chia sẻ đơn <b>{title}</b> · {carrier}. Theo dõi đơn này?"
 SHARE_NOT_FOUND = "Link chia sẻ này không còn dùng được."

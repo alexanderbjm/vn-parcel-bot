@@ -11,10 +11,8 @@ from vn_parcel_bot.bot.deps import Deps
 from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
     PENDING_PHONE,
-    PENDING_REMOVE,
     cancel_cmd,
     label_cmd,
-    remove_cmd,
     text_message,
     track_cmd,
 )
@@ -142,16 +140,6 @@ async def test_reply_to_users_own_message_is_not_edited(env):
     assert env.context.bot.deleted == [60]
 
 
-async def test_reply_to_a_message_with_several_parcels_is_ambiguous(env):
-    await env.deps.parcels.add(env.user, SPX)
-    await env.deps.parcels.add(env.user, SPX2)
-    bot_message = Msg(env.chat, 50, text=f"1. {SPX}\n2. {SPX2}", from_bot=True)
-    await command(env, label_cmd, 60, "/label Tai nghe", ["Tai", "nghe"], bot_message)
-    assert env.chat.sent[-1] == texts.LABEL_AMBIGUOUS
-    assert env.context.bot.deleted == []
-    assert await label_of(env, SPX) is None
-
-
 async def test_reply_to_a_message_without_parcels(env):
     bot_message = Msg(env.chat, 50, text="xin chào", from_bot=True)
     await command(env, label_cmd, 60, "/label Tai nghe", ["Tai", "nghe"], bot_message)
@@ -192,38 +180,6 @@ async def test_reply_label_without_name_censors_after_the_answer(env):
     await answer(env, 61, "Tai nghe")
     assert await label_of(env, SPX) == "Tai nghe"
     assert env.context.bot.edited == [(50, f"📦 {BLURRED} · SPX")]
-
-
-async def test_dash_clears_the_label(env):
-    await env.deps.parcels.add(env.user, SPX)
-    await env.deps.parcels.rename(USER, SPX, "Tai nghe")
-    await command(env, label_cmd, 60, f"/label {SPX}", [SPX])
-    await answer(env, 61, "-")
-    assert await label_of(env, SPX) is None
-    assert env.chat.sent[-1] == texts.LABEL_CLEARED.format(code=BLURRED)
-
-
-async def test_remove_asks_for_confirmation_then_cleans_up(env):
-    await env.deps.parcels.add(env.user, SPX)
-    await command(env, remove_cmd, 60, "/remove 1", ["1"])
-    assert env.chat.sent[-1] == texts.REMOVE_CONFIRM.format(title=BLURRED)
-    assert await env.repo.find_parcel(USER, SPX) is not None
-    prompt_id = env.context.user_data[PENDING_REMOVE]["prompt_id"]
-    await answer(env, 61, "Có")
-    assert await env.repo.find_parcel(USER, SPX) is None
-    assert env.chat.sent[-1] == texts.REMOVED.format(title=BLURRED)
-    assert sorted(env.context.bot.deleted) == sorted([60, prompt_id, 61])
-
-
-async def test_remove_other_answer_cancels(env):
-    await env.deps.parcels.add(env.user, SPX)
-    await command(env, remove_cmd, 60, "/remove 1", ["1"])
-    prompt_id = env.context.user_data[PENDING_REMOVE]["prompt_id"]
-    await answer(env, 61, "không")
-    assert await env.repo.find_parcel(USER, SPX) is not None
-    assert env.chat.sent[-1] == texts.CANCELLED
-    assert env.context.bot.deleted == [prompt_id]
-    assert PENDING_REMOVE not in env.context.user_data
 
 
 async def test_phone_prompt_and_digits_are_deleted_after_adding(env):

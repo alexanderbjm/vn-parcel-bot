@@ -90,11 +90,11 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 | `/track <mã> [4 số] [hãng]` | Track with phone digits and/or a forced carrier (`spx`, `jt`, `cainiao`, `4px`, `ninjavan`, `ghn`) |
 | `/list` | Your parcels |
 | `/status <mã hoặc số>` | Full history, newest first |
-| `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one (send `-` to clear). The label is shown with the tracking code blurred next to it, and your `/label` message is deleted |
-| `/remove <mã hoặc số>` | Stop tracking after you confirm with `có` |
+| `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one, with buttons to clear the name or cancel. If the replied message holds several parcels, buttons let you pick one. The label is shown with the tracking code blurred next to it, and your `/label` message is deleted |
+| `/remove <số> [số…]` | Stop tracking one or more parcels (e.g. `/remove 1 2 3`, numbers from `/list`, or codes). The bot lists them and asks with ✅ Xóa / ↩ Hủy buttons. On `/list`, **🗑 Xóa nhiều** lets you tick parcels and remove them together |
 | `/phone <4 số>` · `/phone clear` | Save or clear your default last 4 phone digits |
 | `/check` | Check all your parcels now and match their carriers again (once every 2 minutes). The 🔄 Kiểm tra tất cả button under `/list` does the same |
-| `/cancel` | Cancel a pending question (phone digits, name, remove) |
+| `/cancel` | Cancel a pending question (phone digits, name, remove, list selection); every question also has a ↩ Hủy button |
 
 - **Phone digits:** J&T and GHN only show tracking with the last 4 digits of the recipient's phone. Save them once with `/phone 1234`, or give them per parcel with `/track <mã> 1234`.
 - **Automatic detection:** if a code matches several carriers, `/list` shows "Đang xác định hãng" until one of them has data; the update message then names the carrier. Use `/track <mã> <hãng>` to force a carrier.
