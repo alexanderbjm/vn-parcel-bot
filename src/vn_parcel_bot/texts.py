@@ -136,6 +136,8 @@ CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
 CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhật mới"
 CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
 
+DISTANCE_UNDER_1KM = "dưới 1 km"
+
 UPDATE_HEADER = "📦 <b>{title}</b> · {carrier}"
 UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>"
 UPDATE_LINE = "• {time} — {description}"
