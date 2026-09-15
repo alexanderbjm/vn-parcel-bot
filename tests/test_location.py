@@ -113,3 +113,51 @@ async def test_cancel_text_button_and_cancel_command_remove_the_keyboard(env):
     await cancel_cmd(update(Msg(env.sent, "/cancel")), env.context)
     assert env.sent[-1][0] == texts.CANCELLED
     assert isinstance(env.sent[-1][1], ReplyKeyboardRemove)
+
+
+async def test_pasted_coordinates_are_saved_while_waiting_for_a_location(env, caplog):
+    caplog.set_level(logging.DEBUG)
+    await location_cmd(update(Msg(env.sent, "/location")), env.context)
+    await text_message(update(Msg(env.sent, "21.028511, 105.854222")), env.context)
+    user = await env.repo.get_user(1)
+    assert (user.home_lat, user.home_lon) == (21.03, 105.85)
+    assert env.sent[-1][0] == texts.LOCATION_SAVED
+    assert isinstance(env.sent[-1][1], ReplyKeyboardRemove)
+    assert PENDING_LOCATION not in env.context.user_data
+    ours = " | ".join(
+        record.getMessage() for record in caplog.records if record.name.startswith("vn_parcel_bot")
+    )
+    assert "home location saved user=1" in ours
+    assert "21.0" not in ours
+    assert "105.8" not in ours
+
+
+async def test_google_maps_link_is_accepted(env):
+    await location_cmd(update(Msg(env.sent, "/location")), env.context)
+    link = "https://www.google.com/maps/@21.0287,105.8523,17z"
+    await text_message(update(Msg(env.sent, link)), env.context)
+    user = await env.repo.get_user(1)
+    assert (user.home_lat, user.home_lon) == (21.03, 105.85)
+    assert env.sent[-1][0] == texts.LOCATION_SAVED
+
+
+async def test_button_text_or_short_link_explains_how_to_paste_coordinates(env):
+    await location_cmd(update(Msg(env.sent, "/location")), env.context)
+    await text_message(update(Msg(env.sent, texts.BTN_SEND_LOCATION)), env.context)
+    assert env.sent[-1][0] == texts.LOCATION_TYPE_HINT
+    assert PENDING_LOCATION in env.context.user_data
+    await text_message(update(Msg(env.sent, "https://maps.app.goo.gl/AbCdEf123")), env.context)
+    assert env.sent[-1][0] == texts.LOCATION_TYPE_HINT
+    assert PENDING_LOCATION in env.context.user_data
+    assert (await env.repo.get_user(1)).home_lat is None
+
+
+async def test_coordinates_without_a_location_prompt_are_not_saved(env):
+    await text_message(update(Msg(env.sent, "21.03, 105.85")), env.context)
+    assert (await env.repo.get_user(1)).home_lat is None
+    assert env.sent[-1][0] != texts.LOCATION_SAVED
+
+
+def test_location_prompt_explains_the_desktop_way():
+    assert "21.03, 105.85" in texts.LOCATION_ASK
+    assert "Google Maps" in texts.LOCATION_ASK

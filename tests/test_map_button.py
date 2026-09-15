@@ -15,7 +15,7 @@ from tests.test_callback_handler import (  # noqa: F401
 from tests.test_maps import blank_tile
 from tests.test_parcel_maps import FakeGeocoder
 from vn_parcel_bot import texts
-from vn_parcel_bot.bot.handlers_user import PENDING_LOCATION, location_message
+from vn_parcel_bot.bot.handlers_user import PENDING_LOCATION, location_message, text_message
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 
@@ -116,6 +116,16 @@ async def test_location_shared_for_a_map_sends_that_map(maps_env):
     message = Msg(90, None, [])
     message.location = SimpleNamespace(latitude=21.03, longitude=105.85)
     await location_message(user_update(message), maps_env.context)
+    assert message.sent[0][0] == texts.LOCATION_SAVED
+    assert len(maps_env.deps.notifier.photos) == 1
+    assert PENDING_LOCATION not in maps_env.context.user_data
+
+
+async def test_pasted_coordinates_for_a_map_send_that_map(maps_env):
+    parcel = await add_parcel(maps_env)
+    await tap(maps_env, f"p:{parcel.id}:map")
+    message = Msg(91, "21.03, 105.85", [])
+    await text_message(user_update(message), maps_env.context)
     assert message.sent[0][0] == texts.LOCATION_SAVED
     assert len(maps_env.deps.notifier.photos) == 1
     assert PENDING_LOCATION not in maps_env.context.user_data

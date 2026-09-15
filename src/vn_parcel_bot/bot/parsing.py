@@ -1,3 +1,5 @@
+import re
+import urllib.parse
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -11,6 +13,23 @@ from vn_parcel_bot.tracking_codes import (
     is_valid_last4,
     normalize_code,
 )
+
+# A Google Maps place link's pin ("!3d<lat>!4d<lon>"), then a "lat, lon" pair anywhere in the text
+# (plain coordinates, "@lat,lon", "q=lat,lon"). Decimals are required so codes never match.
+_MAPS_PIN = re.compile(r"!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)")
+_COORDINATE_PAIR = re.compile(r"(?<![\d.])(-?\d{1,2}\.\d+)\s*(?:,\s*|\s+)(-?\d{1,3}\.\d+)(?![\d.])")
+
+
+def parse_coordinates(text: str) -> tuple[float, float] | None:
+    """Latitude and longitude from pasted coordinates or a Google Maps link, read locally."""
+    unquoted = urllib.parse.unquote(text)
+    match = _MAPS_PIN.search(unquoted) or _COORDINATE_PAIR.search(unquoted)
+    if match is None:
+        return None
+    lat, lon = float(match.group(1)), float(match.group(2))
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return lat, lon
 
 
 def parse_track_args(args: Sequence[str]) -> tuple[str, str | None] | None:

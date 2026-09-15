@@ -131,8 +131,9 @@ PHONE_CLEARED = "📱 Đã xóa 4 số cuối mặc định."
 
 CANCELLED = "Đã hủy."
 LOCATION_ASK = (
-    "📍 Bấm nút <b>Gửi vị trí</b> bên dưới. Mình chỉ lưu khu vực làm tròn ~1 km "
-    "để tính khoảng cách tới đơn hàng."
+    "📍 Trên điện thoại, bấm nút <b>Gửi vị trí</b> bên dưới. "
+    "Mình chỉ lưu khu vực làm tròn ~1 km để tính khoảng cách tới đơn hàng.\n"
+    "💻 Trên máy tính, dán tọa độ (ví dụ <code>21.03, 105.85</code>) hoặc link Google Maps."
 )
 LOCATION_STATUS = (
     "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
@@ -141,6 +142,12 @@ LOCATION_STATUS = (
 LOCATION_SAVED = "📍 Đã lưu khu vực của bạn (làm tròn ~1 km)."
 LOCATION_CLEARED = "📍 Đã xóa khu vực của bạn."
 LOCATION_NONE = "Bạn chưa lưu khu vực nào. Gửi /location để lưu."
+LOCATION_TYPE_HINT = (
+    "💻 Ứng dụng Telegram này không gửi được vị trí. Hãy dán tọa độ khu vực của bạn, "
+    "ví dụ <code>21.03, 105.85</code> (trên Google Maps: bấm chuột phải vào bản đồ rồi bấm "
+    "dòng tọa độ để sao chép), hoặc link Google Maps có tọa độ. Link rút gọn "
+    "<code>maps.app.goo.gl</code> không dùng được. Bấm ↩ Hủy để thôi."
+)
 BTN_SEND_LOCATION = "📍 Gửi vị trí"
 BTN_CANCEL_TEXT = "↩ Hủy"
 BTN_MAP = "🗺 Bản đồ"

@@ -27,7 +27,7 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 
 ## Changes in 2.8 (2026-09-15)
 
-- **Parcel maps** ([design](docs/superpowers/specs/2026-09-15-parcel-maps-design.md)): `/location` saves the user's area once through Telegram's location button, rounded to 2 decimals (~1 km); `/location off` deletes it (§4). Carrier modules gain a `place` hook (default: the event's location; SPX reads the hub after `đến/rời/tại kho`), and the poller stores the newest hub in `parcels.place`. Hubs are looked up on Photon (OpenStreetMap data, Vietnam bounding box, 1.1 s between requests, misses retried after 30 days) with the province table in `services/geo_provinces.py` as fallback, and cached in `places`. Cards and update messages end with `PLACE_LINE` (`📍 Kho … · cách bạn ~N km (đường chim bay)`, straight line) or `PLACE_ONLY_LINE` without a saved area; cards and updates get `[🗺 Bản đồ]` (`p:<id>:map`, once a minute per parcel), which asks for the location first when none is saved. After an update that moves a parcel to a new hub, a 600×400 map picture follows silently (CARTO Voyager tiles cached 7 days in `data/tiles`, credit `© OpenStreetMap contributors © CARTO`). openstreetmap.org is blocked from the bot's PC, hence Photon and CARTO. The home area is never logged or sent to a lookup service. `MAPS_ENABLED=false` turns all of it off (§10.1). New dependency: Pillow.
+- **Parcel maps** ([design](docs/superpowers/specs/2026-09-15-parcel-maps-design.md)): `/location` saves the user's area once through Telegram's location button, rounded to 2 decimals (~1 km); Telegram Desktop cannot share a location, so coordinates or a Google Maps link with coordinates can be pasted instead; `/location off` deletes it (§4). Carrier modules gain a `place` hook (default: the event's location; SPX reads the hub after `đến/rời/tại kho`), and the poller stores the newest hub in `parcels.place`. Hubs are looked up on Photon (OpenStreetMap data, Vietnam bounding box, 1.1 s between requests, misses retried after 30 days) with the province table in `services/geo_provinces.py` as fallback, and cached in `places`. Cards and update messages end with `PLACE_LINE` (`📍 Kho … · cách bạn ~N km (đường chim bay)`, straight line) or `PLACE_ONLY_LINE` without a saved area; cards and updates get `[🗺 Bản đồ]` (`p:<id>:map`, once a minute per parcel), which asks for the location first when none is saved. After an update that moves a parcel to a new hub, a 600×400 map picture follows silently (CARTO Voyager tiles cached 7 days in `data/tiles`, credit `© OpenStreetMap contributors © CARTO`). openstreetmap.org is blocked from the bot's PC, hence Photon and CARTO. The home area is never logged or sent to a lookup service. `MAPS_ENABLED=false` turns all of it off (§10.1). New dependency: Pillow.
 - **Schema v4** (§7): `users.home_lat`, `users.home_lon`, `parcels.place` and the `places` table; migration 3 writes `<db_path>.bak-v3` first.
 - **Delivered parcels** keep ` · 100%` but no longer show the progress bar in `/list`, cards and the delivered update.
 - **J&T page layout** (§5.4): the tracking page now lists each bill in `.result-tracking .result_vandon` with newest-first `.result-vandon-item` rows. The parser reads that layout first and keeps the older one as a fallback; courier and recipient names and phone numbers are dropped before events are stored.
@@ -260,7 +260,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/label` | `<ref> [name…]` | Set nickname (trimmed, max `MAX_LABEL_LENGTH` = 40 chars). No name → `LABEL_ASK` with `[🗑 Xóa tên]` (labelled parcels) and `[↩ Hủy]`; the next text message is the name. As a reply to a bot message: that message's parcel; several parcels → `LABEL_PICK` buttons (2.7). |
 | `/remove` | `<ref> …` | One or more `/list` numbers or codes (spaces or commas). Confirmation with `[✅ Xóa]`/`[✅ Xóa N đơn]` and `[↩ Hủy]`, then the parcels and their events are deleted; unknown refs are listed (2.7). |
 | `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
-| `/location` | `[off]` | No arg → `LOCATION_ASK` (or `LOCATION_STATUS` when an area is saved) with a one-time reply keyboard `[📍 Gửi vị trí]` (`request_location`) and `[↩ Hủy]`, and sets `PENDING_LOCATION`. A shared location (any time) is saved with `repo.set_home`, rounded to 2 decimals, and answered `LOCATION_SAVED` with the keyboard removed; if the prompt came from a card's 🗺 button, that map is sent next. Coordinates are never logged. `off` → `clear_home` → `LOCATION_CLEARED` (`LOCATION_NONE` when nothing is saved). `↩ Hủy` or `/cancel` → `CANCELLED` with the keyboard removed. |
+| `/location` | `[off]` | No arg → `LOCATION_ASK` (or `LOCATION_STATUS` when an area is saved) with a one-time reply keyboard `[📍 Gửi vị trí]` (`request_location`) and `[↩ Hủy]`, and sets `PENDING_LOCATION`. While `PENDING_LOCATION` is set, pasted coordinates (`21.03, 105.85`) or a Google Maps link with coordinates (`@lat,lon`, `q=lat,lon`, `!3d…!4d…`; `parsing.parse_coordinates`, read locally) count as a shared location and the pasted message is deleted; the button's own text or a link without coordinates (e.g. `maps.app.goo.gl`) gets `LOCATION_TYPE_HINT`, because Telegram Desktop cannot share a location. A shared location (any time) is saved with `repo.set_home`, rounded to 2 decimals, and answered `LOCATION_SAVED` with the keyboard removed; if the prompt came from a card's 🗺 button, that map is sent next. Coordinates are never logged. `off` → `clear_home` → `LOCATION_CLEARED` (`LOCATION_NONE` when nothing is saved). `↩ Hủy` or `/cancel` → `CANCELLED` with the keyboard removed. |
 | `/check` | – | `ParcelService.redetect_carriers(uid)`, then poll **this user's** active parcels now, ignoring `next_check_at`. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE` (+ `CHECK_REDETECTED` when carriers changed). |
 | `/cancel` | – | Clear any pending prompt (phone digits, name, name picker, remove confirmation, list selection) → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. Every prompt also has a `[↩ Hủy]` button (2.7). |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
@@ -1724,8 +1724,9 @@ CANCELLED = "Đã hủy."
 NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 LOCATION_ASK = (
-    "📍 Bấm nút <b>Gửi vị trí</b> bên dưới. Mình chỉ lưu khu vực làm tròn ~1 km "
-    "để tính khoảng cách tới đơn hàng."
+    "📍 Trên điện thoại, bấm nút <b>Gửi vị trí</b> bên dưới. "
+    "Mình chỉ lưu khu vực làm tròn ~1 km để tính khoảng cách tới đơn hàng.\n"
+    "💻 Trên máy tính, dán tọa độ (ví dụ <code>21.03, 105.85</code>) hoặc link Google Maps."
 )
 LOCATION_STATUS = (
     "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
@@ -1734,6 +1735,12 @@ LOCATION_STATUS = (
 LOCATION_SAVED = "📍 Đã lưu khu vực của bạn (làm tròn ~1 km)."
 LOCATION_CLEARED = "📍 Đã xóa khu vực của bạn."
 LOCATION_NONE = "Bạn chưa lưu khu vực nào. Gửi /location để lưu."
+LOCATION_TYPE_HINT = (
+    "💻 Ứng dụng Telegram này không gửi được vị trí. Hãy dán tọa độ khu vực của bạn, "
+    "ví dụ <code>21.03, 105.85</code> (trên Google Maps: bấm chuột phải vào bản đồ rồi bấm "
+    "dòng tọa độ để sao chép), hoặc link Google Maps có tọa độ. Link rút gọn "
+    "<code>maps.app.goo.gl</code> không dùng được. Bấm ↩ Hủy để thôi."
+)
 
 BTN_SEND_LOCATION = "📍 Gửi vị trí"
 BTN_CANCEL_TEXT = "↩ Hủy"

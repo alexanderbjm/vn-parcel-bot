@@ -21,7 +21,12 @@ from telegram.ext import ContextTypes
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps, get_deps
-from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
+from vn_parcel_bot.bot.parsing import (
+    parse_coordinates,
+    parse_ref_and_text,
+    parse_track_args,
+    route_text,
+)
 from vn_parcel_bot.constants import RECHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.keyboards import (
@@ -291,6 +296,16 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         data.pop(PENDING_LOCATION)
         await reply(update, texts.CANCELLED, reply_markup=ReplyKeyboardRemove())
         return
+    if PENDING_LOCATION in data:
+        # Telegram Desktop cannot share a location, so coordinates can be pasted instead.
+        point = parse_coordinates(message.text)
+        if point is not None:
+            await _save_home(update, context, *point)
+            await delete_messages(context, chat_id, [_message_id(message)])
+            return
+        if _looks_like_a_location(message.text):
+            await reply(update, texts.LOCATION_TYPE_HINT)
+            return
     if PENDING_LABEL in data:
         pending = data.pop(PENDING_LABEL)
         user = await current_user(update, get_deps(context))
@@ -583,9 +598,26 @@ async def location_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     shared = getattr(message, "location", None)
     if message is None or shared is None:
         return
+    await _save_home(update, context, shared.latitude, shared.longitude)
+
+
+def _looks_like_a_location(text: str) -> bool:
+    lowered = text.strip().casefold()
+    return (
+        text.strip() == texts.BTN_SEND_LOCATION
+        or lowered.startswith("http")
+        or "maps" in lowered
+        or "goo.gl" in lowered
+    )
+
+
+async def _save_home(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, lat: float, lon: float
+) -> None:
+    """Store the area rounded to ~1 km; the coordinates are never logged."""
     deps = get_deps(context)
     user = await current_user(update, deps)
-    await deps.repo.set_home(user.telegram_id, shared.latitude, shared.longitude)
+    await deps.repo.set_home(user.telegram_id, lat, lon)
     log.info("home location saved user=%s", user.telegram_id)
     pending = user_data(context).pop(PENDING_LOCATION, None) or {}
     await reply(update, texts.LOCATION_SAVED, reply_markup=ReplyKeyboardRemove())
