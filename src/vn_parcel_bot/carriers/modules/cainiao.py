@@ -123,13 +123,14 @@ MODULE = CarrierModule(
     display_name="Cainiao",
     order=30,
     rules=(
-        Rule(r"LP\d{14}", PRIORITY_PREFIXED),
+        Rule(r"LP\d{14,16}", PRIORITY_PREFIXED),
         Rule(r"[A-Z]{2}\d{9}CN", PRIORITY_PREFIXED),
         Rule(LAZADA_WAYBILL.pattern, PRIORITY_PREFIXED),
         Rule(r"\d{15}", PRIORITY_NUMERIC),
     ),
     examples=(
         ("LP00123456789012", True),
+        ("LP0012345678901234", True),
         ("LX123456789CN", True),
         ("YT0000000000001", True),
         ("773440000000001", True),

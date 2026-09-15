@@ -215,9 +215,15 @@ MODULE = CarrierModule(
     needs_phone=True,
     rules=(
         Rule(CROSS_BORDER.pattern, PRIORITY_PREFIXED),
+        Rule(r"(JTE|JNTVN)[0-9A-Z]{7,14}", PRIORITY_PREFIXED),
         Rule(r"\d{12}", PRIORITY_SHARED_NUMERIC, rank=0),
     ),
-    examples=(("JNTXB0000000001", True), ("841000072647", True), ("SPXVN05338454932C", False)),
+    examples=(
+        ("JNTXB0000000001", True),
+        ("JTE1000000001", True),
+        ("841000072647", True),
+        ("SPXVN05338454932C", False),
+    ),
     build_client=JtCarrier,
     pending_hint=cross_border_hint,
 )

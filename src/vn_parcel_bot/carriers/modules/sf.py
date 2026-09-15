@@ -21,8 +21,8 @@ MODULE = CarrierModule(
     code="sf",
     display_name="SF Express",
     order=130,
-    rules=(Rule(r"SF\d{13}", PRIORITY_PREFIXED),),
+    rules=(Rule(r"SF\d{12,15}", PRIORITY_PREFIXED),),
     link_template="https://www.sf-express.com/chn/en/waybill/list",
-    examples=(("SF0000000000001", True),),
+    examples=(("SF0000000000001", True), ("SF123456789012", True)),
     build_client=build_sf_client,
 )

@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 2.4 · 2026-09-15 · Status: v1 built on branch main; live verification in progress
+Version 2.5 · 2026-09-15 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,10 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 2.5 (2026-09-15)
+
+- **More code formats** (§5.2), written by agy and reviewed: `NLVN…`/`NVN…` (Ninja Van), `EMS…` (VNPost), `GHTK…`, `JTE…`/`JNTVN…` (J&T), `VTP…` (Viettel Post), BEST codes without the `VN…` suffix, and wider digit ranges for `LP` Cainiao (14–16), `YT` YunExpress (16–18) and `SF` (12–15). The new prefixes come from web sources and are not verified with real codes. A wider range also means a screenshot read that drops a digit from such a code is no longer re-read (§4.6).
 
 ## Changes in 2.4 (2026-09-15)
 
@@ -337,17 +341,18 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 | Module | Regex | Priority | Rank | Notes |
 |---|---|---|---|---|
 | spx | `^SPXVN[0-9A-Z]{8,16}$` | 100 | | observed |
-| ninjavan | `^SPEVN[0-9A-Z]{6,20}$` | 100 | | web (Ninja Van codes on Shopee) |
-| cainiao | `^LP\d{14}$`, `^[A-Z]{2}\d{9}CN$`, `^YT\d{13}$` | 100 | | `YT` + 13 digits: Lazada `<order>_YT…` |
+| ninjavan | `^(SPEVN\|NLVN\|NVN)[0-9A-Z]{6,20}$` | 100 | | web (`SPEVN`: Ninja Van codes on Shopee); `NLVN`/`NVN` unverified (2.5) |
+| cainiao | `^LP\d{14,16}$`, `^[A-Z]{2}\d{9}CN$`, `^YT\d{13}$` | 100 | | `YT` + 13 digits: Lazada `<order>_YT…` |
 | cainiao | `^\d{15}$` | 60 | | every 15-digit number (2.0) |
 | fourpx | `^4PX[0-9A-Z]{10,20}$` | 100 | | open-source tracker |
-| yunexpress | `^YT\d{16}$` | 100 | | web |
-| vnpost | `^[A-Z]{2}\d{9}VN$` | 100 | | UPU S10 |
+| yunexpress | `^YT\d{16,18}$` | 100 | | web |
+| vnpost | `^[A-Z]{2}\d{9}VN$`, `^EMS[0-9A-Z]{8,12}$` | 100 | | UPU S10; `EMS…` unverified (2.5) |
 | lex | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | 100 | | web, unverified |
-| ghtk | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | 100 | | web |
-| jt | `^JNTX[A-Z]?\d{8,12}$` | 100 | | observed (Lazada cross-border) |
-| sf | `^SF\d{13}$` | 100 | | observed |
-| best | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | 100 | | observed (`BESTMP…VNA`) |
+| ghtk | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$`, `^GHTK[0-9A-Z]{6,16}$` | 100 | | web; `GHTK…` unverified (2.5) |
+| jt | `^JNTX[A-Z]?\d{8,12}$`, `^(JTE\|JNTVN)[0-9A-Z]{7,14}$` | 100 | | `JNTX…` observed (Lazada cross-border); `JTE`/`JNTVN` unverified (2.5) |
+| sf | `^SF\d{12,15}$` | 100 | | observed (13 digits); 12–15 allowed (2.5) |
+| best | `^BEST[A-Z]{0,6}\d{8,16}(VN[A-Z]{0,3})?$` | 100 | | observed (`BESTMP…VNA`); no-suffix form unverified (2.5) |
+| viettelpost | `^VTP[0-9A-Z]{6,14}$` | 100 | | unverified (2.5) |
 | best | `^\d{13}$` | 60 | | web |
 | jt / best / viettelpost | `^\d{12}$` | 40 | 0 / 1 / 2 | observed (J&T); web |
 | ghn / ninjavan | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | 10 | 0 / 1 | standalone only |

@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.4). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 2.5). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -154,17 +154,18 @@ Link-only carriers are never polled and never stored. The bot does **not** solve
 | Module | Regex | Priority | Rank | Notes |
 |---|---|---|---|---|
 | spx | `^SPXVN[0-9A-Z]{8,16}$` | 100 | | observed |
-| ninjavan | `^SPEVN[0-9A-Z]{6,20}$` | 100 | | web (Ninja Van codes on Shopee) |
-| cainiao | `^LP\d{14}$`, `^[A-Z]{2}\d{9}CN$`, `^YT\d{13}$` | 100 | | `YT` + 13 digits: Lazada `<order>_YT…` |
+| ninjavan | `^(SPEVN\|NLVN\|NVN)[0-9A-Z]{6,20}$` | 100 | | web (`SPEVN`: Ninja Van codes on Shopee); `NLVN`/`NVN` unverified (2.5) |
+| cainiao | `^LP\d{14,16}$`, `^[A-Z]{2}\d{9}CN$`, `^YT\d{13}$` | 100 | | `YT` + 13 digits: Lazada `<order>_YT…` |
 | cainiao | `^\d{15}$` | 60 | | every 15-digit number (2.0) |
 | fourpx | `^4PX[0-9A-Z]{10,20}$` | 100 | | open-source tracker |
-| yunexpress | `^YT\d{16}$` | 100 | | web |
-| vnpost | `^[A-Z]{2}\d{9}VN$` | 100 | | UPU S10 |
+| yunexpress | `^YT\d{16,18}$` | 100 | | web |
+| vnpost | `^[A-Z]{2}\d{9}VN$`, `^EMS[0-9A-Z]{8,12}$` | 100 | | UPU S10; `EMS…` unverified (2.5) |
 | lex | `^(LEXVN\|LXVN\|LVS)[0-9A-Z]{6,20}$` | 100 | | web, unverified |
-| ghtk | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$` | 100 | | web |
-| jt | `^JNTX[A-Z]?\d{8,12}$` | 100 | | observed (Lazada cross-border) |
-| sf | `^SF\d{13}$` | 100 | | observed |
-| best | `^BEST[A-Z]{0,6}\d{8,16}VN[A-Z]{0,3}$` | 100 | | observed (`BESTMP…VNA`) |
+| ghtk | `^S\d{5,10}(\.[0-9A-Z]{1,12}){1,4}$`, `^GHTK[0-9A-Z]{6,16}$` | 100 | | web; `GHTK…` unverified (2.5) |
+| jt | `^JNTX[A-Z]?\d{8,12}$`, `^(JTE\|JNTVN)[0-9A-Z]{7,14}$` | 100 | | `JNTX…` observed (Lazada cross-border); `JTE`/`JNTVN` unverified (2.5) |
+| sf | `^SF\d{12,15}$` | 100 | | observed (13 digits); 12–15 allowed (2.5) |
+| best | `^BEST[A-Z]{0,6}\d{8,16}(VN[A-Z]{0,3})?$` | 100 | | observed (`BESTMP…VNA`); no-suffix form unverified (2.5) |
+| viettelpost | `^VTP[0-9A-Z]{6,14}$` | 100 | | unverified (2.5) |
 | best | `^\d{13}$` | 60 | | web |
 | jt / best / viettelpost | `^\d{12}$` | 40 | 0 / 1 / 2 | observed (J&T); web |
 | ghn / ninjavan | `^(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}$` | 10 | 0 / 1 | standalone only |

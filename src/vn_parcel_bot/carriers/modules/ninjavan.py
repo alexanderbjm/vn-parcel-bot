@@ -142,7 +142,7 @@ MODULE = CarrierModule(
     display_name="Ninja Van",
     order=50,
     rules=(
-        Rule(r"SPEVN[0-9A-Z]{6,20}", PRIORITY_PREFIXED),
+        Rule(r"(SPEVN|NLVN|NVN)[0-9A-Z]{6,20}", PRIORITY_PREFIXED),
         Rule(
             r"(?=[0-9A-Z]*[A-Z])(?=[0-9A-Z]*\d)[0-9A-Z]{8,14}",
             PRIORITY_GENERIC,
@@ -150,6 +150,10 @@ MODULE = CarrierModule(
             standalone_only=True,
         ),
     ),
-    examples=(("SPEVN000000000001", True), ("GAN6DKKU12", True)),
+    examples=(
+        ("SPEVN000000000001", True),
+        ("NLVN000000000001", True),
+        ("GAN6DKKU12", True),
+    ),
     build_client=NinjaVanCarrier,
 )

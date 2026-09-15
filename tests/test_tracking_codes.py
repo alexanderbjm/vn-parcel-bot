@@ -46,16 +46,27 @@ def test_extract_codes_splits_lazada_cainiao_code_in_text():
         ("YT1234567890123456", ["yunexpress"]),
         ("YT0000000000001", ["cainiao"]),
         ("SF0000000000001", ["sf"]),
+        ("SF123456789012", ["sf"]),
+        ("SF123456789012345", ["sf"]),
+        ("LP0012345678901234", ["cainiao"]),
         ("EB123456789VN", ["vnpost"]),
+        ("EMS1234567890", ["vnpost"]),
         ("LEXVN00123456", ["lex"]),
         ("S1234567.MB12.D5.123456789", ["ghtk"]),
+        ("GHTK0012345678", ["ghtk"]),
         ("JNTXB0000000001", ["jt"]),
         ("JNTX0000000001", ["jt"]),
+        ("JTE1000000001", ["jt"]),
+        ("JNTVN000000001", ["jt"]),
         ("BESTMP0000000001VNA", ["best"]),
         ("BEST0000000001VN", ["best"]),
+        ("BEST0000000001", ["best"]),
         ("841000072647", ["jt", "best", "viettelpost"]),
         ("8410000726470", ["best"]),
         ("773440000000001", ["cainiao"]),
+        ("VTP0000000001", ["viettelpost"]),
+        ("NLVN000000000001", ["ninjavan"]),
+        ("YT123456789012345678", ["yunexpress"]),
         ("GAN6DKKU12", ["ghn", "ninjavan"]),
     ],
 )
@@ -65,6 +76,19 @@ def test_detect_each_rule(code, expected):
 
 def test_extract_codes_finds_jt_cross_border_code_in_text():
     assert extract_codes("J&T VN: Giao tiêu chuẩn JNTXB0000000001") == ["JNTXB0000000001"]
+
+
+def test_extract_codes_finds_new_carrier_formats():
+    text = (
+        "Đơn SF123456789012345, Viettel Post VTP0000000001, "
+        "GHTK GHTK0012345678 và Ninja NLVN000000000001."
+    )
+    assert extract_codes(text) == [
+        "SF123456789012345",
+        "VTP0000000001",
+        "GHTK0012345678",
+        "NLVN000000000001",
+    ]
 
 
 def test_detect_first_rule_wins():
