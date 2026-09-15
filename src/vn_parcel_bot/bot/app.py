@@ -130,11 +130,11 @@ async def _post_init(app: Application) -> None:
     registry = CarrierRegistry.load()
     set_registry(registry)
     parcels = ParcelService(repo, registry, http, settings, _utc_now)
-    poller = Poller(repo, registry, http, notifier, settings, _utc_now)
-    vision = build_vision_engine(settings, http)
-    digests = DigestService(repo, notifier, settings, _utc_now)
     tile_cache = TileCache(http, settings.db_path.parent / "tiles")
     maps = ParcelMaps(repo, Geocoder(repo, http, _utc_now), tile_cache.get, settings)
+    poller = Poller(repo, registry, http, notifier, settings, _utc_now, maps=maps)
+    vision = build_vision_engine(settings, http)
+    digests = DigestService(repo, notifier, settings, _utc_now)
     app.bot_data["deps"] = Deps(
         settings,
         repo,

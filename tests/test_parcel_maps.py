@@ -113,3 +113,13 @@ async def test_maps_disabled_gives_nothing(env):
     assert await maps.place_line(parcel, user) is None
     assert await maps.photo(parcel, user) is None
     assert geocoder.calls == []
+
+
+async def test_prepare_looks_the_place_up_only_when_maps_are_on(env):
+    repo, settings, _ = env
+    geocoder = FakeGeocoder()
+    await ParcelMaps(repo, geocoder, tiles, settings).prepare(HUB)
+    assert geocoder.calls == [HUB]
+    switched_off = FakeGeocoder()
+    await ParcelMaps(repo, switched_off, tiles, replace(settings, maps_enabled=False)).prepare(HUB)
+    assert switched_off.calls == []

@@ -23,7 +23,7 @@ from vn_parcel_bot.constants import (
     PURGE_AFTER,
     STALE_AFTER,
 )
-from vn_parcel_bot.db.repo import Parcel, Repository
+from vn_parcel_bot.db.repo import Parcel, Repository, User
 from vn_parcel_bot.keyboards import card_keyboard
 from vn_parcel_bot.services.formatting import (
     format_carrier_alert,
@@ -32,6 +32,8 @@ from vn_parcel_bot.services.formatting import (
     format_stale,
     truncate_message,
 )
+from vn_parcel_bot.services.maps import MapError
+from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.scheduling import check_interval
 from vn_parcel_bot.tracking_codes import mask_code
 
@@ -46,6 +48,10 @@ class Notifier(Protocol):
     ) -> None: ...
 
     async def send_sticker(self, chat_id: int, file_id: str) -> bool: ...
+
+    async def send_photo(
+        self, chat_id: int, photo: bytes, caption: str, *, silent: bool = False
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,7 @@ class Poller:
         now: Callable[[], datetime],
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         rand: Callable[[], float] = random.random,
+        maps: ParcelMaps | None = None,
     ) -> None:
         self._repo = repo
         self._registry = registry
@@ -112,6 +119,7 @@ class Poller:
         self._now = now
         self._sleep = sleep
         self._rand = rand
+        self._maps = maps
         self._lock = asyncio.Lock()
         self._broken_stickers: set[str] = set()
 
@@ -330,8 +338,16 @@ class Poller:
                 delivered_at=latest.time if newly_delivered and latest else None,
                 progress=progress,
             )
+            moved = await self._track_place(parcel, result)
             report.new_events += len(new)
             if new or newly_delivered or newly_returned:
+                current = await self._repo.get_parcel(parcel.id)
+                user = await self._repo.get_user(parcel.user_id)
+                place_line = (
+                    await self._maps.place_line(current, user)
+                    if self._maps is not None and current is not None and user is not None
+                    else None
+                )
                 text = format_event_update(
                     parcel,
                     new,
@@ -340,6 +356,7 @@ class Poller:
                     returned=newly_returned,
                     resolved_carrier=resolved_carrier,
                     progress=shown,
+                    place_line=place_line,
                 )
                 reached = (
                     progress is not None
@@ -347,15 +364,18 @@ class Poller:
                     and (parcel.progress or 0) < OUT_FOR_DELIVERY_PROGRESS
                 )
                 big_moment = newly_delivered or newly_returned or reached
-                current = await self._repo.get_parcel(parcel.id)
                 await self._send_sticker(parcel.user_id, result.carrier)
                 await self._notify(
                     parcel.user_id,
                     text,
                     report,
                     silent=None if big_moment else True,
-                    reply_markup=card_keyboard(current) if current is not None else None,
+                    reply_markup=(
+                        card_keyboard(current, maps=self._maps_on) if current is not None else None
+                    ),
                 )
+                if moved and current is not None and user is not None:
+                    await self._send_map(current, user)
             return
 
         if parcel.carrier is not None and await self._repo.count_events(parcel.id) > 0:
@@ -374,6 +394,39 @@ class Poller:
             next_check_at=now + self._settings.poll_interval,
             now=now,
         )
+
+    @property
+    def _maps_on(self) -> bool:
+        return self._maps is not None and self._settings.maps_enabled
+
+    async def _track_place(self, parcel: Parcel, result: TrackingResult) -> bool:
+        """Store the newest hub; True when it changed. Lookup failures never stop the update."""
+        if self._maps is None:
+            return False
+        place = self._registry.current.latest_place(result.carrier, result.events)
+        if place is None or place == parcel.place:
+            return False
+        await self._repo.set_place(parcel.id, place)
+        try:
+            await self._maps.prepare(place)
+        except Exception as exc:
+            log.warning("place lookup failed type=%s", type(exc).__name__)
+        return True
+
+    async def _send_map(self, parcel: Parcel, user: User) -> None:
+        if self._maps is None:
+            return
+        try:
+            made = await self._maps.photo(parcel, user)
+        except MapError as exc:
+            log.warning("map failed type=%s", type(exc).__name__)
+            return
+        if made is None:
+            return
+        try:
+            await self._notifier.send_photo(parcel.user_id, made[0], made[1], silent=True)
+        except Exception as exc:
+            log.warning("map send failed type=%s", type(exc).__name__)
 
     async def _handle_failure(
         self,

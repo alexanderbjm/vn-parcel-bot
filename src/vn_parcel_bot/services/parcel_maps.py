@@ -33,6 +33,11 @@ class ParcelMaps:
         display = parts.display
         return (parts.key, escape(display, quote=False)) if display else None
 
+    async def prepare(self, place: str) -> None:
+        """Look a newly seen hub up, so place lines can show the distance."""
+        if self._settings.maps_enabled:
+            await self._geocoder.coordinates(place)
+
     async def place_line(self, parcel: Parcel, user: User) -> str | None:
         """The 📍 line for cards and updates. Reads cached coordinates only, never the network."""
         shown = self._shown_place(parcel)

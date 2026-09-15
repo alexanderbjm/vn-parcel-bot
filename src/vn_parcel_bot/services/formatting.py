@@ -127,6 +127,7 @@ def format_event_update(
     returned: bool,
     resolved_carrier: CarrierCode | None = None,
     progress: int | None = None,
+    place_line: str | None = None,
 ) -> str:
     carrier = carrier_name(resolved_carrier) if resolved_carrier else parcel_carrier_label(parcel)
     state = "delivered" if delivered else "in_transit"
@@ -147,6 +148,8 @@ def format_event_update(
         lines.extend(["", texts.UPDATE_DELIVERED])
     elif returned:
         lines.extend(["", texts.UPDATE_RETURNED])
+    if place_line:
+        lines.append(place_line)
     return truncate_message("\n".join(lines))
 
 
