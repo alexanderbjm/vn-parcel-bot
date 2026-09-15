@@ -17,7 +17,6 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
-from vn_parcel_bot.tracking_codes import mask_code
 
 _INDEX_REF = re.compile(r"\d{1,3}", re.ASCII)
 
@@ -35,11 +34,9 @@ def ref_text(ref: str) -> str:
 
 
 def parcel_title(parcel: Parcel) -> str:
-    return _escape(parcel.label) if parcel.label else spoiler(parcel.tracking_number)
-
-
-def masked_title(parcel: Parcel) -> str:
-    return _escape(parcel.label) if parcel.label else _escape(mask_code(parcel.tracking_number))
+    """The label, if any, then the blurred tracking code: the code is always shown."""
+    code = spoiler(parcel.tracking_number)
+    return f"{_escape(parcel.label)} · {code}" if parcel.label else code
 
 
 SEVENTEEN_TRACK_TEMPLATE = "https://t.17track.net/vi#nums={code}"
@@ -237,6 +234,11 @@ def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo, *, page: int = 1
     if pages > 1:
         text += "\n\n" + texts.LIST_PAGE.format(page=page, pages=pages)
     return truncate_message(text)
+
+
+def format_check_done(checked: int, new_events: int, redetected: int) -> str:
+    text = texts.CHECK_DONE.format(checked=checked, new_events=new_events)
+    return text + (texts.CHECK_REDETECTED.format(count=redetected) if redetected else "")
 
 
 def format_digest(

@@ -117,3 +117,8 @@ async def sticker_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     await deps.repo.set_meta(f"{STICKER_KEY}{module.code}", sticker.file_id)
     await reply(update, texts.STICKER_SET.format(carrier=name))
+
+
+@admin_only
+async def hozk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await reply(update, texts.ADMIN_HELP)

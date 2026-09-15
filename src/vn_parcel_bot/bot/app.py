@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from html import escape
 
-from telegram import Update
+from telegram import BotCommandScopeChat, Update
 from telegram.error import Conflict, NetworkError, TelegramError
 from telegram.ext import (
     Application,
@@ -20,11 +20,12 @@ from telegram.request import HTTPXRequest
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.auth import gate
-from vn_parcel_bot.bot.commands import BOT_COMMANDS
+from vn_parcel_bot.bot.commands import ADMIN_COMMANDS, BOT_COMMANDS
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.handlers_admin import (
     allow_cmd,
     health_cmd,
+    hozk_cmd,
     revoke_cmd,
     sticker_cmd,
     users_cmd,
@@ -53,6 +54,7 @@ from vn_parcel_bot.constants import (
     ERROR_ALERT_COOLDOWN,
     FIRST_POLL_DELAY_SECONDS,
     MODULE_REFRESH_SECONDS,
+    POLL_TICK_SECONDS,
 )
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.digest import DigestService
@@ -98,6 +100,7 @@ def build_application(settings: Settings) -> Application:
         ("users", users_cmd),
         ("health", health_cmd),
         ("sticker", sticker_cmd),
+        ("hozk", hozk_cmd),
     ]:
         app.add_handler(CommandHandler(name, callback, filters=private))
     app.add_handler(MessageHandler(filters.PHOTO & private, photo_message))
@@ -138,6 +141,12 @@ async def _post_init(app: Application) -> None:
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     schedule_jobs(app.job_queue, settings)
     await app.bot.set_my_commands(BOT_COMMANDS)
+    try:
+        await app.bot.set_my_commands(
+            BOT_COMMANDS + ADMIN_COMMANDS, scope=BotCommandScopeChat(settings.admin_telegram_id)
+        )
+    except TelegramError as exc:
+        log.info("admin command menu not set type=%s", type(exc).__name__)
     log.info("bot started as @%s", app.bot.username)
 
 
@@ -185,7 +194,7 @@ async def digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def schedule_jobs(job_queue: JobQueue, settings: Settings) -> None:
     job_queue.run_repeating(
-        poll_job, interval=settings.poll_interval, first=FIRST_POLL_DELAY_SECONDS, name="poll"
+        poll_job, interval=POLL_TICK_SECONDS, first=FIRST_POLL_DELAY_SECONDS, name="poll"
     )
     job_queue.run_repeating(
         carrier_modules_job,

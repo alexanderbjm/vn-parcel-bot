@@ -14,8 +14,10 @@ from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
     PENDING_PHONE,
     card_markup,
+    claim_recheck,
     current_user,
     drop_pending,
+    recheck_all,
     user_data,
 )
 from vn_parcel_bot.constants import CHECK_COOLDOWN, MAX_EVENTS_IN_HISTORY
@@ -33,10 +35,10 @@ from vn_parcel_bot.services.formatting import (
     format_parcel_card,
     format_parcel_list,
     list_page_items,
-    masked_title,
+    parcel_title,
+    spoiler,
 )
 from vn_parcel_bot.services.sharing import share_token, shared_parcel
-from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +76,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _list_page(context, query, parts)
     elif kind == "s":
         await _share_answer(update, context, query, parts)
+    elif kind == "r":
+        await _recheck(context, query, parts)
     else:
         await query.answer()
 
@@ -109,7 +113,7 @@ async def _parcel_action(
         await query.answer()
         await _edit(
             query,
-            texts.REMOVE_CONFIRM.format(title=masked_title(parcel)),
+            texts.REMOVE_CONFIRM.format(title=parcel_title(parcel)),
             confirm_remove_keyboard(parcel.id, page),
         )
     elif action == "shr":
@@ -118,7 +122,7 @@ async def _parcel_action(
         link = f"https://t.me/{context.bot.username}?start=s_{token}"
         await _edit(
             query,
-            texts.SHARE_LINK.format(title=masked_title(parcel), link=escape(link)),
+            texts.SHARE_LINK.format(title=parcel_title(parcel), link=escape(link)),
             back_keyboard(parcel.id, page),
         )
     elif action == "dok":
@@ -126,7 +130,7 @@ async def _parcel_action(
         await deps.parcels.remove(user_id, parcel.tracking_number)
         await _edit(
             query,
-            texts.REMOVED.format(title=masked_title(parcel)),
+            texts.REMOVED.format(title=parcel_title(parcel)),
             list_back_keyboard(page) if page is not None else None,
         )
     else:
@@ -160,7 +164,7 @@ async def _ask_rename(
     try:
         prompt = await context.bot.send_message(
             message.chat.id,
-            texts.LABEL_ASK.format(code=escape(mask_code(parcel.tracking_number))),
+            texts.LABEL_ASK.format(code=spoiler(parcel.tracking_number)),
             parse_mode=ParseMode.HTML,
         )
     except TelegramError as exc:
@@ -186,7 +190,28 @@ async def _list_page(
     await _edit(
         query,
         format_parcel_list(parcels, deps.settings.tz, page=page),
-        list_keyboard(numbered, page, pages),
+        list_keyboard(numbered, page, pages, recheck=True),
+    )
+
+
+async def _recheck(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    user_id = query.from_user.id
+    wait = claim_recheck(context, user_id)
+    if wait is not None:
+        await query.answer(texts.CHECK_TOO_SOON.format(minutes=wait))
+        return
+    await query.answer(texts.CHECK_STARTED)
+    deps = get_deps(context)
+    summary = await recheck_all(deps, user_id)
+    parcels = await deps.parcels.list_for(user_id)
+    requested = (_page(parts[0]) if parts else None) or 1
+    page, pages, numbered = list_page_items(parcels, requested)
+    await _edit(
+        query,
+        summary + "\n\n" + format_parcel_list(parcels, deps.settings.tz, page=page),
+        list_keyboard(numbered, page, pages, recheck=True),
     )
 
 

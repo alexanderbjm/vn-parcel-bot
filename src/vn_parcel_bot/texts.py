@@ -38,7 +38,7 @@ HELP = (
     "(hoặc trả lời tin nhắn của đơn bằng /label)\n"
     "• /remove &lt;mã hoặc số thứ tự&gt; – ngừng theo dõi\n"
     "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
-    "• /check – kiểm tra ngay\n"
+    "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
     "• /cancel – hủy thao tác đang chờ"
 )
 NOT_ALLOWED = (
@@ -111,9 +111,9 @@ HISTORY_EMPTY = "Chưa có thông tin vận chuyển."
 PARCEL_NOT_FOUND = "Không tìm thấy đơn {ref} trong danh sách của bạn."
 
 REMOVED = "🗑 Đã ngừng theo dõi <b>{title}</b>."
-LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b> · <code>{code}</code>"
-LABEL_CLEARED = "🏷 Đã xóa tên của đơn <code>{code}</code>."
-LABEL_ASK = "🏷 Gửi tên cho đơn <code>{code}</code> (gửi - để xóa tên, /cancel để hủy)."
+LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b> · {code}"
+LABEL_CLEARED = "🏷 Đã xóa tên của đơn {code}."
+LABEL_ASK = "🏷 Gửi tên cho đơn {code} (gửi - để xóa tên, /cancel để hủy)."
 LABEL_AMBIGUOUS = (
     "Tin nhắn này có nhiều đơn. Hãy trả lời tin nhắn của một đơn, "
     "hoặc dùng /label &lt;số thứ tự&gt; &lt;tên&gt;."
@@ -131,7 +131,8 @@ NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."
 CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
-CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn, có {new_events} cập nhật mới."
+CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhật mới"
+CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
 
 UPDATE_HEADER = "📦 <b>{title}</b> · {carrier}"
 UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>"
@@ -147,6 +148,15 @@ EXPIRED = (
 )
 STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày, mình đã ngừng theo dõi."
 
+ADMIN_HELP = (
+    "<b>🛠 Lệnh quản lý</b>\n"
+    "• /users – danh sách người dùng và số đơn\n"
+    "• /allow &lt;id&gt; [tên] – cấp quyền (người đó nhận thông báo)\n"
+    "• /revoke &lt;id&gt; – thu hồi quyền\n"
+    "• /health – tình trạng bot và lần kiểm tra gần nhất\n"
+    "• /sticker &lt;hãng&gt; [off] – trả lời một sticker để gắn cho hãng; /sticker để xem\n"
+    "• /check – kiểm tra ngay và nhận diện lại hãng các đơn của bạn"
+)
 USAGE_ALLOW = "Cách dùng: /allow &lt;telegram_id&gt; [tên]"
 USAGE_REVOKE = "Cách dùng: /revoke &lt;telegram_id&gt;"
 ALLOWED = "✅ Đã cấp quyền cho <code>{user_id}</code>{name_suffix}."
@@ -221,6 +231,7 @@ BTN_TRACK_SHARED = "✅ Theo dõi"
 BTN_SKIP = "↩ Bỏ qua"
 BTN_PREV = "⬅️"
 BTN_NEXT = "➡️"
+BTN_RECHECK = "🔄 Kiểm tra tất cả"
 SHARE_LINK = "📤 Gửi link này để người khác theo dõi <b>{title}</b>:\n{link}"
 SHARE_OPEN = "📦 Bạn được chia sẻ đơn <b>{title}</b> · {carrier}. Theo dõi đơn này?"
 SHARE_NOT_FOUND = "Link chia sẻ này không còn dùng được."

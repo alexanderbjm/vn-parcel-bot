@@ -81,7 +81,9 @@ def bullet_lines(text: str) -> list[str]:
 
 
 def test_title_prefers_escaped_label():
-    assert parcel_title(make_parcel(label="<Áo & quần>")) == "&lt;Áo &amp; quần&gt;"
+    assert parcel_title(make_parcel(label="<Áo & quần>")) == "&lt;Áo &amp; quần&gt; · " + blurred(
+        SPX
+    )
     assert parcel_title(make_parcel()) == blurred(SPX)
 
 
@@ -181,7 +183,7 @@ def test_parcel_list_items():
     ]
     text = format_parcel_list(parcels, TZ)
     assert text.startswith(texts.LIST_HEADER + "\n\n")
-    assert "1. 🚚 <b>Áo</b> · SPX\n    Đang giao · 🕒 01/09 08:30" in text
+    assert f"1. 🚚 <b>Áo · {blurred(SPX)}</b> · SPX\n    Đang giao · 🕒 01/09 08:30" in text
     assert (
         f"2. ⏳ <b>{blurred('GA0000000001')}</b> · Đang xác định hãng\n"
         "    Chưa có thông tin vận chuyển" in text
@@ -417,7 +419,7 @@ def test_help_lists_carriers_from_modules():
 
 def test_spoiler_escapes_and_labels_stay_readable():
     assert spoiler("<a&b>") == '<span class="tg-spoiler">&lt;a&amp;b&gt;</span>'
-    assert parcel_title(make_parcel(label="Áo")) == "Áo"
+    assert parcel_title(make_parcel(label="Áo")) == "Áo · " + blurred(SPX)
 
 
 def test_ref_text_blurs_codes_but_not_list_numbers():
@@ -430,8 +432,8 @@ def test_list_item_shows_progress_and_bar():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=80)
     text = format_parcel_list([parcel], TZ)
     assert (
-        "1. 🚚 <b>Áo</b> · SPX · 80%\n    Đã đến kho · 🕒 01/09 08:30\n    🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥"
-        in text
+        f"1. 🚚 <b>Áo · {blurred(SPX)}</b> · SPX · 80%\n"
+        "    Đã đến kho · 🕒 01/09 08:30\n    🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥" in text
     )
 
 
@@ -443,7 +445,7 @@ def test_list_item_hides_progress_for_returned_and_unknown():
 
 def test_digest_puts_new_mark_after_progress():
     text = format_digest([make_parcel(label="Áo", progress=50)], {1}, T0, TZ)
-    assert "<b>Áo</b> · SPX · 50% 🆕" in text
+    assert f"<b>Áo · {blurred(SPX)}</b> · SPX · 50% 🆕" in text
 
 
 def test_event_update_header_shows_progress_and_bar():
@@ -451,20 +453,21 @@ def test_event_update_header_shows_progress_and_bar():
         make_parcel(label="Áo"), [ev(0)], TZ, delivered=False, returned=False, progress=95
     )
     lines = text.split("\n")
-    assert lines[0] == "📦 <b>Áo</b> · SPX · 95%"
+    assert lines[0] == f"📦 <b>Áo · {blurred(SPX)}</b> · SPX · 95%"
     assert lines[1] == "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥"
 
 
 def test_delivered_parcel_shows_full_bar_without_stored_progress():
     text = format_parcel_list([make_parcel(label="Áo", state="delivered")], TZ)
-    assert "<b>Áo</b> · SPX · 100%" in text
+    assert f"<b>Áo · {blurred(SPX)}</b> · SPX · 100%" in text
     assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩" in text
 
 
 def test_parcel_card_shows_title_progress_bar_and_status():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=50)
     assert format_parcel_card(parcel, TZ) == (
-        "🚚 <b>Áo</b> · SPX · 50%\n🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥\nĐã đến kho · 🕒 01/09 08:30"
+        f"🚚 <b>Áo · {blurred(SPX)}</b> · SPX · 50%\n"
+        "🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥\nĐã đến kho · 🕒 01/09 08:30"
     )
     pending = format_parcel_card(unresolved(), TZ)
     assert pending.startswith(f"⏳ <b>{blurred('GA0000000001')}</b> · GHN / Ninja Van\n")

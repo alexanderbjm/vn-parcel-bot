@@ -60,7 +60,7 @@ def list_back_keyboard(page: int) -> InlineKeyboardMarkup:
 
 
 def list_keyboard(
-    numbered: Sequence[tuple[int, Parcel]], page: int, pages: int
+    numbered: Sequence[tuple[int, Parcel]], page: int, pages: int, *, recheck: bool = False
 ) -> InlineKeyboardMarkup | None:
     if not numbered:
         return None
@@ -76,6 +76,8 @@ def list_keyboard(
                 _button(texts.BTN_NEXT, f"l:{following}"),
             ]
         )
+    if recheck:
+        rows.append([_button(texts.BTN_RECHECK, f"r:{page}")])
     return InlineKeyboardMarkup(rows)
 
 

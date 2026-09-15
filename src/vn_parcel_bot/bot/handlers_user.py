@@ -15,11 +15,12 @@ from telegram.ext import ContextTypes
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import parse_ref_and_text, parse_track_args, route_text
-from vn_parcel_bot.constants import CHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
+from vn_parcel_bot.constants import RECHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.keyboards import card_keyboard, list_keyboard, share_open_keyboard
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
+    format_check_done,
     format_help,
     format_history,
     format_links,
@@ -27,7 +28,6 @@ from vn_parcel_bot.services.formatting import (
     format_parcel_card,
     format_parcel_list,
     list_page_items,
-    masked_title,
     parcel_carrier_label,
     parcel_title,
     ref_text,
@@ -37,13 +37,14 @@ from vn_parcel_bot.services.formatting import (
 from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.services.sharing import shared_parcel
 from vn_parcel_bot.services.vision import VisionResult
-from vn_parcel_bot.tracking_codes import is_valid_last4, mask_code
+from vn_parcel_bot.tracking_codes import is_valid_last4
 
 PENDING_PHONE = "pending_phone"
 PENDING_LABEL = "pending_label"
 PENDING_REMOVE = "pending_remove"
 PENDING_KEYS = (PENDING_PHONE, PENDING_LABEL, PENDING_REMOVE)
 PHOTO_LOCKS = "photo_locks"
+RECHECK_KEY = "check_cooldowns"
 VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 CONFIRM_WORDS = frozenset({"có", "co", "yes", "y", "ok", "xóa", "xoa"})
 CLEAR_LABEL = "-"
@@ -267,7 +268,7 @@ async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(
         update,
         format_parcel_list(parcels, deps.settings.tz, page=page),
-        reply_markup=list_keyboard(numbered, page, pages),
+        reply_markup=list_keyboard(numbered, page, pages, recheck=True),
     )
 
 
@@ -301,7 +302,12 @@ async def _censor(
 ) -> None:
     if chat_id is None or not target or tracking_number not in target["text_html"]:
         return
-    text = target["text_html"].replace(tracking_number, escape(mask_code(tracking_number)))
+    # Blur the code where the replied message still shows it in clear; keep it visible.
+    blurred = spoiler(tracking_number)
+    original = target["text_html"]
+    text = original.replace(blurred, tracking_number).replace(tracking_number, blurred)
+    if text == original:
+        return
     try:
         await context.bot.edit_message_text(
             text,
@@ -346,16 +352,16 @@ async def _apply_label(
     label = None if name.strip() == CLEAR_LABEL else name
     parcel = await deps.parcels.rename(user.telegram_id, code, label)
     if parcel is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(mask_code(code))))
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=spoiler(code)))
         return
     chat_id = _chat_id(update)
     await _censor(context, chat_id, target, parcel.tracking_number)
     await _refresh_card(context, chat_id, card, parcel)
-    masked = escape(mask_code(parcel.tracking_number))
+    code = spoiler(parcel.tracking_number)
     if parcel.label:
-        await reply(update, texts.LABEL_SET.format(label=escape(parcel.label), code=masked))
+        await reply(update, texts.LABEL_SET.format(label=escape(parcel.label), code=code))
     else:
-        await reply(update, texts.LABEL_CLEARED.format(code=masked))
+        await reply(update, texts.LABEL_CLEARED.format(code=code))
     await _delete_messages(context, chat_id, delete_ids)
 
 
@@ -393,9 +399,7 @@ async def label_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         target = None
     if name is None:
         drop_pending(context)
-        prompt = await reply(
-            update, texts.LABEL_ASK.format(code=escape(mask_code(parcel.tracking_number)))
-        )
+        prompt = await reply(update, texts.LABEL_ASK.format(code=spoiler(parcel.tracking_number)))
         user_data(context)[PENDING_LABEL] = {
             "code": parcel.tracking_number,
             "censor": target,
@@ -420,7 +424,7 @@ async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
         return
     drop_pending(context)
-    prompt = await reply(update, texts.REMOVE_CONFIRM.format(title=masked_title(parcel)))
+    prompt = await reply(update, texts.REMOVE_CONFIRM.format(title=parcel_title(parcel)))
     user_data(context)[PENDING_REMOVE] = {
         "code": parcel.tracking_number,
         "command_id": _message_id(update.effective_message),
@@ -438,9 +442,9 @@ async def _confirm_remove(
     user = await current_user(update, deps)
     parcel = await deps.parcels.remove(user.telegram_id, pending["code"])
     if parcel is None:
-        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=escape(mask_code(pending["code"]))))
+        await reply(update, texts.PARCEL_NOT_FOUND.format(ref=spoiler(pending["code"])))
     else:
-        await reply(update, texts.REMOVED.format(title=masked_title(parcel)))
+        await reply(update, texts.REMOVED.format(title=parcel_title(parcel)))
     await _delete_messages(
         context,
         _chat_id(update),
@@ -467,23 +471,33 @@ async def phone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await reply(update, texts.INVALID_PHONE)
 
 
+def claim_recheck(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> int | None:
+    """Start a check-all for this user, or return the minutes left on the cooldown."""
+    cooldowns: dict[int, datetime] = context.bot_data.setdefault(RECHECK_KEY, {})
+    now = datetime.now(UTC)
+    last = cooldowns.get(user_id)
+    if last is not None and now - last < RECHECK_COOLDOWN:
+        return math.ceil((RECHECK_COOLDOWN - (now - last)).total_seconds() / 60)
+    cooldowns[user_id] = now
+    return None
+
+
+async def recheck_all(deps: Deps, user_id: int) -> str:
+    """Match every active parcel's carrier again, check them all now and summarise."""
+    redetected = await deps.parcels.redetect_carriers(user_id)
+    report = await deps.poller.run_cycle(only_user_id=user_id, wait=True)
+    return format_check_done(report.parcels_checked, report.new_events, redetected)
+
+
 async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
-    cooldowns: dict[int, datetime] = context.bot_data.setdefault("check_cooldowns", {})
-    now = datetime.now(UTC)
-    last = cooldowns.get(user.telegram_id)
-    if last is not None and now - last < CHECK_COOLDOWN:
-        remaining = (CHECK_COOLDOWN - (now - last)).total_seconds()
-        await reply(update, texts.CHECK_TOO_SOON.format(minutes=math.ceil(remaining / 60)))
+    wait = claim_recheck(context, user.telegram_id)
+    if wait is not None:
+        await reply(update, texts.CHECK_TOO_SOON.format(minutes=wait))
         return
-    cooldowns[user.telegram_id] = now
     await reply(update, texts.CHECK_STARTED)
-    report = await deps.poller.run_cycle(only_user_id=user.telegram_id, wait=True)
-    await reply(
-        update,
-        texts.CHECK_DONE.format(checked=report.parcels_checked, new_events=report.new_events),
-    )
+    await reply(update, await recheck_all(deps, user.telegram_id))
 
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

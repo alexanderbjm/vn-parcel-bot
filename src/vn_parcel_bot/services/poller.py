@@ -32,6 +32,7 @@ from vn_parcel_bot.services.formatting import (
     format_stale,
     truncate_message,
 )
+from vn_parcel_bot.services.scheduling import check_interval
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
@@ -151,6 +152,11 @@ class Poller:
         else:
             parcels = await self._repo.active_parcels_for_user(only_user_id)
         report.parcels_checked = len(parcels)
+        if not parcels and only_user_id is None and only_parcels is None:
+            # The poll job ticks every minute; an idle tick only purges and records that it ran.
+            await self._repo.delete_terminal_before(now - PURGE_AFTER)
+            await self._repo.set_meta("last_poll_at", now.isoformat())
+            return report
 
         snapshot = self._registry.current
         missing: dict[str, int] = {}
@@ -303,7 +309,6 @@ class Poller:
         *,
         resolved_carrier: CarrierCode | None = None,
     ) -> None:
-        interval = self._settings.poll_interval
         if result.found:
             new = await self._repo.insert_events(parcel.id, result.events, now)
             state = (
@@ -313,6 +318,8 @@ class Poller:
             newly_returned = state == "returned" and parcel.state != "returned"
             latest = result.latest
             progress = self._registry.current.progress(result.carrier, result)
+            shown = _shown_progress(parcel.progress, progress)
+            interval = check_interval(state, shown, self._settings.poll_interval)
             await self._repo.record_check_success(
                 parcel.id,
                 state=state,
@@ -332,7 +339,7 @@ class Poller:
                     delivered=newly_delivered,
                     returned=newly_returned,
                     resolved_carrier=resolved_carrier,
-                    progress=_shown_progress(parcel.progress, progress),
+                    progress=shown,
                 )
                 reached = (
                     progress is not None
@@ -364,7 +371,7 @@ class Poller:
             state="pending",
             last_status_text=None,
             last_event_at=None,
-            next_check_at=now + interval,
+            next_check_at=now + self._settings.poll_interval,
             now=now,
         )
 
@@ -379,9 +386,8 @@ class Poller:
         if parcel.state == "pending" and now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)
             return
-        delay = min(
-            self._settings.poll_interval * 2 ** (parcel.consecutive_failures + 1), MAX_BACKOFF
-        )
+        base = check_interval(parcel.state, parcel.progress, self._settings.poll_interval)
+        delay = min(base * 2 ** (parcel.consecutive_failures + 1), MAX_BACKOFF)
         failures = await self._repo.record_check_failure(
             parcel.id, next_check_at=now + delay, now=now
         )

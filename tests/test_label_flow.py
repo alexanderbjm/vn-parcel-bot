@@ -29,7 +29,7 @@ BOT_ID = 999
 SPX = "SPXVN000000000001"
 SPX2 = "SPXVN000000000002"
 JT = "840000000001"
-MASKED = "SPXVN…001"
+BLURRED = f'<span class="tg-spoiler">{SPX}</span>'
 
 
 class FakeBot:
@@ -118,9 +118,9 @@ async def test_reply_label_uses_parcel_in_bot_message_and_censors_it(env):
     bot_message = Msg(env.chat, 50, text=f"📦 <b>{SPX}</b> · SPX\n• 14/09 16:18", from_bot=True)
     await command(env, label_cmd, 60, "/label bàn chải điện", ["bàn", "chải", "điện"], bot_message)
     assert await label_of(env, SPX) == "bàn chải điện"
-    assert env.context.bot.edited == [(50, f"📦 <b>{MASKED}</b> · SPX\n• 14/09 16:18")]
+    assert env.context.bot.edited == [(50, f"📦 <b>{BLURRED}</b> · SPX\n• 14/09 16:18")]
     assert env.context.bot.deleted == [60]
-    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="bàn chải điện", code=MASKED)
+    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="bàn chải điện", code=BLURRED)
 
 
 async def test_reply_label_matches_existing_name_without_editing(env):
@@ -158,12 +158,12 @@ async def test_reply_to_a_message_without_parcels(env):
     assert env.chat.sent[-1] == texts.LABEL_REPLY_NOT_FOUND
 
 
-async def test_label_with_code_masks_confirmation_and_deletes_command(env):
+async def test_label_with_code_blurs_confirmation_and_deletes_command(env):
     await env.deps.parcels.add(env.user, SPX)
     await command(env, label_cmd, 60, f"/label {SPX} Tai nghe", [SPX, "Tai", "nghe"])
     assert await label_of(env, SPX) == "Tai nghe"
-    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Tai nghe", code=MASKED)
-    assert SPX not in env.chat.sent[-1]
+    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Tai nghe", code=BLURRED)
+    assert BLURRED in env.chat.sent[-1]
     assert env.context.bot.deleted == [60]
 
 
@@ -175,13 +175,13 @@ async def test_label_unknown_ref(env):
 async def test_label_without_name_asks_then_cleans_up(env):
     await env.deps.parcels.add(env.user, SPX)
     await command(env, label_cmd, 60, f"/label {SPX}", [SPX])
-    assert env.chat.sent[-1] == texts.LABEL_ASK.format(code=MASKED)
+    assert env.chat.sent[-1] == texts.LABEL_ASK.format(code=BLURRED)
     prompt_id = env.context.user_data[PENDING_LABEL]["prompt_id"]
     await answer(env, 61, "Bàn chải")
     assert await label_of(env, SPX) == "Bàn chải"
     assert sorted(env.context.bot.deleted) == sorted([60, prompt_id, 61])
     assert PENDING_LABEL not in env.context.user_data
-    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Bàn chải", code=MASKED)
+    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Bàn chải", code=BLURRED)
 
 
 async def test_reply_label_without_name_censors_after_the_answer(env):
@@ -191,7 +191,7 @@ async def test_reply_label_without_name_censors_after_the_answer(env):
     assert env.context.bot.edited == []
     await answer(env, 61, "Tai nghe")
     assert await label_of(env, SPX) == "Tai nghe"
-    assert env.context.bot.edited == [(50, f"📦 {MASKED} · SPX")]
+    assert env.context.bot.edited == [(50, f"📦 {BLURRED} · SPX")]
 
 
 async def test_dash_clears_the_label(env):
@@ -200,18 +200,18 @@ async def test_dash_clears_the_label(env):
     await command(env, label_cmd, 60, f"/label {SPX}", [SPX])
     await answer(env, 61, "-")
     assert await label_of(env, SPX) is None
-    assert env.chat.sent[-1] == texts.LABEL_CLEARED.format(code=MASKED)
+    assert env.chat.sent[-1] == texts.LABEL_CLEARED.format(code=BLURRED)
 
 
 async def test_remove_asks_for_confirmation_then_cleans_up(env):
     await env.deps.parcels.add(env.user, SPX)
     await command(env, remove_cmd, 60, "/remove 1", ["1"])
-    assert env.chat.sent[-1] == texts.REMOVE_CONFIRM.format(title=MASKED)
+    assert env.chat.sent[-1] == texts.REMOVE_CONFIRM.format(title=BLURRED)
     assert await env.repo.find_parcel(USER, SPX) is not None
     prompt_id = env.context.user_data[PENDING_REMOVE]["prompt_id"]
     await answer(env, 61, "Có")
     assert await env.repo.find_parcel(USER, SPX) is None
-    assert env.chat.sent[-1] == texts.REMOVED.format(title=MASKED)
+    assert env.chat.sent[-1] == texts.REMOVED.format(title=BLURRED)
     assert sorted(env.context.bot.deleted) == sorted([60, prompt_id, 61])
 
 
@@ -249,4 +249,13 @@ async def test_delete_failures_do_not_break_labelling(env):
     await env.deps.parcels.add(env.user, SPX)
     await command(env, label_cmd, 60, f"/label {SPX} Tai nghe", [SPX, "Tai", "nghe"])
     assert await label_of(env, SPX) == "Tai nghe"
-    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Tai nghe", code=MASKED)
+    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Tai nghe", code=BLURRED)
+
+
+async def test_reply_label_leaves_an_already_blurred_message_alone(env):
+    await env.deps.parcels.add(env.user, SPX)
+    bot_message = Msg(env.chat, 50, text=f"📦 <b>{BLURRED}</b> · SPX", from_bot=True)
+    await command(env, label_cmd, 60, "/label Tai nghe", ["Tai", "nghe"], bot_message)
+    assert await label_of(env, SPX) == "Tai nghe"
+    assert env.context.bot.edited == []
+    assert env.chat.sent[-1] == texts.LABEL_SET.format(label="Tai nghe", code=BLURRED)

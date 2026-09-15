@@ -70,3 +70,9 @@ def test_list_keyboard_numbers_and_navigation():
     assert labels(markup)[-1] == ["⬅️", "2/3", "➡️"]
     assert list_keyboard([], page=1, pages=1) is None
     assert cells(list_keyboard([(1, make_parcel(id=1))], page=1, pages=1)) == [["p:1:card:1"]]
+
+
+def test_list_keyboard_recheck_row():
+    markup = list_keyboard([(1, make_parcel(id=1))], page=3, pages=4, recheck=True)
+    assert markup.inline_keyboard[-1][0].callback_data == "r:3"
+    assert list_keyboard([], page=1, pages=1, recheck=True) is None

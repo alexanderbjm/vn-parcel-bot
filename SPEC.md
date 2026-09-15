@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.3). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 2.4). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -54,15 +54,16 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/label` | `<ref> [name…]` | Set nickname (trimmed, max `MAX_LABEL_LENGTH` = 40 chars). No name → clear label. |
 | `/remove` | `<ref>` | Delete the parcel and its events. |
 | `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
-| `/check` | – | Immediately poll **this user's** active parcels, ignoring `next_check_at`. At most once per `CHECK_COOLDOWN` (5 min) per user (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE`. |
+| `/check` | – | `ParcelService.redetect_carriers(uid)`, then poll **this user's** active parcels now, ignoring `next_check_at`. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE` (+ `CHECK_REDETECTED` when carriers changed). |
 | `/cancel` | – | Clear a pending phone question → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
 | `/users` *(admin)* | – | All users with role and active parcel count. |
 | `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count. |
+| `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
-Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): start, help, track, list, status, label, remove, phone, check, cancel. Admin commands are not advertised.
+Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): start, help, track, list, status, label, remove, phone, check, cancel. The admin's private chat also gets `ADMIN_COMMANDS` (hozk, users, allow, revoke, health, sticker) through `BotCommandScopeChat`; a Telegram error there is logged and ignored.
 
 ### 4.2 Plain-text routing
 
@@ -86,7 +87,7 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 5. The user already has a parcel with this tracking number (any carrier, any state) → `duplicate`. The user already has `max_parcels_per_user` (30) **active** parcels → `limit`.
 6. `last4 = override or user.default_phone_last4`. `tryable` = tracked candidates that do not need a phone, plus those that do when `last4` is set. `phone_missing` = tracked candidates that need a phone while `last4` is `None`.
 7. Fetch the `tryable` candidates **one by one in order**, stopping at the first result with `found=True`. A `CarrierError` is remembered and the next candidate is tried.
-8. **Found** with carrier `c` → insert the parcel with `carrier=c`, `candidates=(c,)`, `phone_last4 = last4 if c needs a phone else None`, `next_check_at = now + poll_interval`; insert all events silently; set state (`delivered` / `returned` / `in_transit`); outcome `added` with the result. Reply `ADDED_FOUND` or `ADDED_DELIVERED`.
+8. **Found** with carrier `c` → insert the parcel with `carrier=c`, `candidates=(c,)`, `phone_last4 = last4 if c needs a phone else None`, `next_check_at = now + check_interval(state, progress, poll_interval)` (§6.1); insert all events silently; set state (`delivered` / `returned` / `in_transit`); outcome `added` with the result. Reply `ADDED_FOUND` or `ADDED_DELIVERED`.
 9. **Not found and `phone_missing` non-empty** → `needs_phone` with `candidates = phone_missing` (nothing stored). The handler stores `context.user_data["pending_phone"] = {"code": code}` and replies `ASK_PHONE`. The next 4-digit message calls `add` again with those digits (all tryable candidates are fetched again).
 10. **Otherwise** insert a pending parcel: `candidates = tracked`; `carrier = tracked[0]` if there is exactly one tracked candidate, else `None` (unresolved); `phone_last4 = last4` if any tracked candidate needs a phone, else `None`; `next_check_at = now + poll_interval`.
     - Every attempted fetch raised `CarrierError` → record a failure with backoff (§6.4) and return `added` with `error` = the last error → `ADDED_ERROR`.
@@ -295,7 +296,8 @@ Tracking code format: exactly 12 digits (e.g. `841000072647`).
 
 ### 6.1 Schedule
 
-- Job `poll` runs every `POLL_INTERVAL_MINUTES`, first run 30 s after start (this is the catch-up after the PC was off or asleep).
+- Job `poll` ticks every `POLL_TICK_SECONDS` (60 s), first run 30 s after start (the catch-up after the PC was off or asleep), and checks the parcels whose `next_check_at` has passed. An idle tick (nothing due) only purges old terminal parcels and sets meta `last_poll_at`; it logs nothing and keeps the last `PollReport`.
+- `check_interval(state, progress, poll_interval)` (`services/scheduling.py`) sets a parcel's wait after a successful check: `in_transit` with progress ≥ `NEAR_DELIVERY_PROGRESS` (80) → `NEAR_DELIVERY_CHECK_INTERVAL` (3 min); other `in_transit` → `IN_TRANSIT_CHECK_INTERVAL` (10 min); anything else (no data yet) → `POLL_INTERVAL_MINUTES`. Both shorter intervals are capped at `POLL_INTERVAL_MINUTES`; progress is the shown value (stored maximum).
 - `Poller.run_cycle` is guarded by an `asyncio.Lock`. Scheduled job: if locked, return `PollReport(skipped=True)` immediately. `/check`: `wait=True` (queues behind the running cycle).
 
 ### 6.2 Cycle algorithm
@@ -348,7 +350,7 @@ after all parcels: stale check, carrier alerts, purge, save meta "last_poll_repo
 
 ### 6.4 Failures and backoff
 
-- `n = repo.record_check_failure(parcel.id, next_check_at=…, now=now)` where `next_check_at = now + min(interval × 2ⁿ, MAX_BACKOFF)` using the **new** failure count `n` (`MAX_BACKOFF` = 6 h).
+- `n = repo.record_check_failure(parcel.id, next_check_at=…, now=now)` where `next_check_at = now + min(check_interval(state, progress, poll_interval) × 2ⁿ, MAX_BACKOFF)` using the parcel's stored state and progress and the **new** failure count `n` (`MAX_BACKOFF` = 6 h).
 - A `pending` parcel created more than `PENDING_EXPIRY` ago whose check fails is expired (state `expired`, `EXPIRED` sent) instead of being backed off, so a failing carrier cannot keep it alive.
 - `PollReport.failures[carrier]` counts failed **fetches** per carrier (fetch phase).
 - **Carrier alert** to the admin (`ALERT_CARRIER`) when, in one cycle, a parcel reaches exactly `FAILURE_ALERT_THRESHOLD` (5) consecutive failures (alert for the carrier of the error that caused it), **or** every fetch for a carrier failed and there were ≥ `CARRIER_ALL_FAILED_MIN_FETCHES` (3) fetches. At most one alert per carrier per `ALERT_COOLDOWN` (6 h), stored in meta key `alert:<carrier>` (ISO time).
@@ -569,7 +571,12 @@ FAILURE_ALERT_THRESHOLD = 5
 CARRIER_ALL_FAILED_MIN_FETCHES = 3
 ALERT_COOLDOWN = timedelta(hours=6)
 ERROR_ALERT_COOLDOWN = timedelta(minutes=30)
-CHECK_COOLDOWN = timedelta(minutes=5)
+CHECK_COOLDOWN = timedelta(minutes=5)  # one parcel's check button
+RECHECK_COOLDOWN = timedelta(minutes=2)  # /check and the list's check-all button
+POLL_TICK_SECONDS = 60
+NEAR_DELIVERY_PROGRESS = 80
+NEAR_DELIVERY_CHECK_INTERVAL = timedelta(minutes=3)
+IN_TRANSIT_CHECK_INTERVAL = timedelta(minutes=10)
 JITTER_SECONDS = 2.0
 FIRST_POLL_DELAY_SECONDS = 30
 MAX_LABEL_LENGTH = 40
@@ -980,7 +987,8 @@ class Repository:
 ### 9.9 `services/formatting.py` (pure, no I/O)
 
 ```python
-def parcel_title(parcel: Parcel) -> str: ...  # escaped label, else tracking number
+def parcel_title(parcel: Parcel) -> str: ...  # escaped label + " · " + spoiler(code), else spoiler(code)
+def format_check_done(checked: int, new_events: int, redetected: int) -> str: ...  # CHECK_DONE [+ CHECK_REDETECTED]
 def carrier_name(code: CarrierCode) -> str: ...  # CARRIER_NAMES (HTML-safe)
 def carrier_names(codes: Sequence[CarrierCode]) -> str: ...  # joined with CARRIER_SEPARATOR
 def parcel_carrier_label(
@@ -1203,8 +1211,20 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
     ("label", "Đặt tên cho đơn"),
     ("remove", "Ngừng theo dõi"),
     ("phone", "4 số cuối SĐT cho đơn J&T, GHN"),
-    ("check", "Kiểm tra ngay"),
+    ("check", "Kiểm tra ngay và nhận diện lại hãng"),
     ("cancel", "Hủy thao tác"),
+]
+```
+
+`ADMIN_COMMANDS` (the admin's private chat only, after `BOT_COMMANDS`):
+```python
+[
+    ("hozk", "Lệnh quản lý"),
+    ("users", "Người dùng"),
+    ("allow", "Cấp quyền: /allow <id> [tên]"),
+    ("revoke", "Thu hồi quyền: /revoke <id>"),
+    ("health", "Tình trạng bot"),
+    ("sticker", "Sticker cho hãng: /sticker <hãng> [off]"),
 ]
 ```
 
@@ -1216,7 +1236,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | yes | – | matches `^\d+:[A-Za-z0-9_-]{30,}$` |
 | `ADMIN_TELEGRAM_ID` | yes | – | positive int |
-| `POLL_INTERVAL_MINUTES` | no | `20` | int 5..240 |
+| `POLL_INTERVAL_MINUTES` | no | `20` | int 5..240; wait after checking a parcel with no data yet, and the cap for the stage intervals (§6.1) |
 | `REQUEST_DELAY_SECONDS` | no | `3` | float 0..60 |
 | `HTTP_TIMEOUT_SECONDS` | no | `15` | float >0..120 |
 | `DB_PATH` | no | `data/bot.sqlite3` | path |
@@ -1395,7 +1415,7 @@ HELP = (
     "• /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; – đặt tên cho đơn\n"
     "• /remove &lt;mã hoặc số thứ tự&gt; – ngừng theo dõi\n"
     "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
-    "• /check – kiểm tra ngay\n"
+    "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
     "• /cancel – hủy thao tác đang chờ"
 )
 NOT_ALLOWED = (
@@ -1478,8 +1498,8 @@ HISTORY_EMPTY = "Chưa có thông tin vận chuyển."
 PARCEL_NOT_FOUND = "Không tìm thấy đơn <code>{ref}</code> trong danh sách của bạn."
 
 REMOVED = "🗑 Đã ngừng theo dõi <b>{title}</b>."
-LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b>"
-LABEL_CLEARED = "🏷 Đã xóa tên của đơn <code>{code}</code>."
+LABEL_SET = "🏷 Đã đặt tên: <b>{label}</b> · {code}"
+LABEL_CLEARED = "🏷 Đã xóa tên của đơn {code}."
 
 PHONE_SET = "📱 Đã lưu 4 số cuối mặc định: <code>{last4}</code>"
 PHONE_SHOW = "📱 4 số cuối mặc định: <code>{last4}</code>"
@@ -1491,7 +1511,18 @@ NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."
 CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
-CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn, có {new_events} cập nhật mới."
+CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhật mới"
+CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
+BTN_RECHECK = "🔄 Kiểm tra tất cả"
+ADMIN_HELP = (
+    "<b>🛠 Lệnh quản lý</b>\n"
+    "• /users – danh sách người dùng và số đơn\n"
+    "• /allow &lt;id&gt; [tên] – cấp quyền (người đó nhận thông báo)\n"
+    "• /revoke &lt;id&gt; – thu hồi quyền\n"
+    "• /health – tình trạng bot và lần kiểm tra gần nhất\n"
+    "• /sticker &lt;hãng&gt; [off] – trả lời một sticker để gắn cho hãng; /sticker để xem\n"
+    "• /check – kiểm tra ngay và nhận diện lại hãng các đơn của bạn"
+)
 
 UPDATE_HEADER = "📦 <b>{title}</b> · {carrier}"
 UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>"

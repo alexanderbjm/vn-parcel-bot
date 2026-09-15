@@ -312,6 +312,19 @@ class Repository:
             (carrier, carrier, _to_db(now), parcel_id),
         )
 
+    async def set_candidates(
+        self, parcel_id: int, candidates: Sequence[CarrierCode], now: datetime
+    ) -> None:
+        """Replace the carriers to try; a single candidate becomes the resolved carrier."""
+        ordered = tuple(candidates)
+        if not ordered:
+            raise ValueError("a parcel needs at least one candidate carrier")
+        await self._write(
+            "UPDATE parcels SET carrier = ?, candidates = ?, consecutive_failures = 0, "
+            "updated_at = ? WHERE id = ?",
+            (ordered[0] if len(ordered) == 1 else None, ",".join(ordered), _to_db(now), parcel_id),
+        )
+
     async def set_label(self, parcel_id: int, label: str | None, now: datetime) -> None:
         await self._write(
             "UPDATE parcels SET label = ?, updated_at = ? WHERE id = ?",

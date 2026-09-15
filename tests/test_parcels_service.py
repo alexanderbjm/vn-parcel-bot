@@ -82,7 +82,7 @@ async def test_add_spx_found_in_transit(service, user, fakes, repo):
     assert (parcel.carrier, parcel.candidates, parcel.state) == ("spx", ("spx",), "in_transit")
     assert parcel.last_status_text == "B"
     assert parcel.last_event_at == ev(10).time
-    assert parcel.next_check_at == T0 + timedelta(minutes=20)
+    assert parcel.next_check_at == T0 + timedelta(minutes=10)  # in transit
     assert await repo.count_events(parcel.id) == 2
     assert fakes["spx"].calls == [(SPX, None)]
 

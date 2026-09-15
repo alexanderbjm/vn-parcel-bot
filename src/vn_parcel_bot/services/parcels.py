@@ -23,6 +23,7 @@ from vn_parcel_bot.constants import (
     MAX_LABEL_LENGTH,
 )
 from vn_parcel_bot.db.repo import DuplicateParcelError, Parcel, Repository, User
+from vn_parcel_bot.services.scheduling import check_interval
 from vn_parcel_bot.tracking_codes import (
     extract_codes,
     is_code_like,
@@ -205,15 +206,16 @@ class ParcelService:
         await self._repo.insert_events(parcel.id, result.events, now)
         state = "delivered" if result.delivered else "returned" if result.returned else "in_transit"
         latest = result.latest
+        progress = snapshot.progress(carrier, result)
         await self._repo.record_check_success(
             parcel.id,
             state=state,
             last_status_text=latest.description if latest else None,
             last_event_at=latest.time if latest else None,
-            next_check_at=now + interval,
+            next_check_at=now + check_interval(state, progress, interval),
             now=now,
             delivered_at=latest.time if state == "delivered" and latest else None,
-            progress=snapshot.progress(carrier, result),
+            progress=progress,
         )
         log.info(
             "parcel added user=%s carrier=%s code=%s state=%s", uid, carrier, mask_code(code), state
@@ -293,6 +295,32 @@ class ParcelService:
         return await self._repo.list_parcels(
             user_id, terminal_since=self._now() - DELIVERED_VISIBLE_FOR
         )
+
+    async def redetect_carriers(self, user_id: int) -> int:
+        """Match each active parcel's code against the current carrier rules again.
+
+        A parcel whose carriers changed gets the new candidates and a reset failure count.
+        Returns how many parcels changed.
+        """
+        snapshot = self._registry.current
+        now = self._now()
+        changed = 0
+        for parcel in await self._repo.active_parcels_for_user(user_id):
+            detected = snapshot.detect(parcel.tracking_number).candidates
+            tracked = tuple(
+                c for c in detected if snapshot.is_tracked(c) and snapshot.client(c) is not None
+            )
+            if not tracked or parcel.carrier in tracked or tracked == parcel.candidates:
+                continue
+            await self._repo.set_candidates(parcel.id, tracked, now)
+            changed += 1
+            log.info(
+                "carrier redetected user=%s code=%s carriers=%s",
+                user_id,
+                mask_code(parcel.tracking_number),
+                ",".join(tracked),
+            )
+        return changed
 
     async def resolve(self, user_id: int, ref: str) -> Parcel | None:
         ref = ref.strip()

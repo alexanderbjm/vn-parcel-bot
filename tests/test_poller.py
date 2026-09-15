@@ -618,3 +618,30 @@ async def test_check_parcel_only_checks_that_parcel(poller, repo, fakes):
     assert checked.progress == 95
     assert fakes["spx"].calls == [(SPX, None)]
     assert await poller.check_parcel(999, first.id) is None
+
+
+async def test_next_check_follows_the_delivery_stage(poller, repo, fakes):
+    other = "SPXVN000000000002"
+    transit = await add(repo, SPX, "spx")
+    near = await add(repo, other, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"))
+    fakes["spx"].results[(other, None)] = found("spx", other, ev(0, "Đang giao hàng"))
+    await poller.run_cycle()
+    assert (await repo.get_parcel(transit.id)).next_check_at == T0 + timedelta(minutes=10)
+    assert (await repo.get_parcel(near.id)).next_check_at == T0 + timedelta(minutes=3)
+
+
+async def test_in_transit_failures_back_off_from_the_stage_interval(poller, repo, fakes):
+    parcel = await add(repo, SPX, "spx")
+    await repo.set_state(parcel.id, "in_transit", T0)
+    fakes["spx"].results[(SPX, None)] = CarrierError("spx", "network", "timeout")
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).next_check_at == T0 + timedelta(minutes=20)
+
+
+async def test_idle_tick_records_the_poll_without_logging(poller, repo, caplog):
+    caplog.set_level("INFO")
+    report = await poller.run_cycle()
+    assert report.parcels_checked == 0
+    assert await repo.get_meta("last_poll_at") == T0.isoformat()
+    assert "poll cycle" not in caplog.text

@@ -25,6 +25,7 @@ def test_schedule_jobs_registers_poll_and_four_digests(settings):
         (poll_job, "poll"),
         (carrier_modules_job, "carrier modules"),
     ]
+    assert queue.repeating[0][1]["interval"] == 60
     assert queue.repeating[1][1]["interval"] == 30
     tz = ZoneInfo("Asia/Ho_Chi_Minh")
     assert [kwargs["time"] for _, kwargs in queue.daily] == [

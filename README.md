@@ -34,7 +34,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    |---|---|---|---|
    | `TELEGRAM_BOT_TOKEN` | yes | – | Token from @BotFather |
    | `ADMIN_TELEGRAM_ID` | yes | – | Your numeric Telegram ID |
-   | `POLL_INTERVAL_MINUTES` | no | `20` | Minutes between checks (5–240) |
+   | `POLL_INTERVAL_MINUTES` | no | `20` | Minutes between checks for parcels with no tracking data yet (5–240). Parcels in transit are checked every 10 minutes, and at the delivery hub or out for delivery every 3 minutes (never less often than this value) |
    | `REQUEST_DELAY_SECONDS` | no | `3` | Pause between requests to the same carrier |
    | `HTTP_TIMEOUT_SECONDS` | no | `15` | Carrier request timeout |
    | `DB_PATH` | no | `data/bot.sqlite3` | Database file |
@@ -90,10 +90,10 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 | `/track <mã> [4 số] [hãng]` | Track with phone digits and/or a forced carrier (`spx`, `jt`, `cainiao`, `4px`, `ninjavan`, `ghn`) |
 | `/list` | Your parcels |
 | `/status <mã hoặc số>` | Full history, newest first |
-| `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one (send `-` to clear). The code is shown masked and your `/label` message is deleted |
+| `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one (send `-` to clear). The label is shown with the tracking code blurred next to it, and your `/label` message is deleted |
 | `/remove <mã hoặc số>` | Stop tracking after you confirm with `có` |
 | `/phone <4 số>` · `/phone clear` | Save or clear your default last 4 phone digits |
-| `/check` | Check your parcels now (once every 5 minutes) |
+| `/check` | Check all your parcels now and match their carriers again (once every 2 minutes). The 🔄 Kiểm tra tất cả button under `/list` does the same |
 | `/cancel` | Cancel a pending question (phone digits, name, remove) |
 
 - **Phone digits:** J&T and GHN only show tracking with the last 4 digits of the recipient's phone. Save them once with `/phone 1234`, or give them per parcel with `/track <mã> 1234`.
@@ -132,7 +132,7 @@ Each carrier is one file in `src/vn_parcel_bot/carriers/modules/` (its code rule
 2. They forward that ID to you.
 3. You send `/allow <id> <tên>`. They get a welcome message.
 
-Admin commands: `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sticker <hãng> [off]`.
+Admin commands (`/hozk` lists them; only the admin sees them in the command menu): `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sticker <hãng> [off]`.
 
 ## Operations
 

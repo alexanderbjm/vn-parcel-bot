@@ -9,9 +9,15 @@ from tests.fakes import FakeCarrier, FakeNotifier, ev, fake_registry, found
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.deps import Deps
 from vn_parcel_bot.bot.handlers_callback import callback_query
-from vn_parcel_bot.bot.handlers_user import PENDING_LABEL, list_cmd, start, text_message
+from vn_parcel_bot.bot.handlers_user import (
+    PENDING_LABEL,
+    check_cmd,
+    list_cmd,
+    start,
+    text_message,
+)
 from vn_parcel_bot.db.repo import Repository
-from vn_parcel_bot.services.formatting import format_parcel_card
+from vn_parcel_bot.services.formatting import format_check_done, format_parcel_card
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
 from vn_parcel_bot.services.sharing import share_token
@@ -21,7 +27,7 @@ USER = 111
 OTHER = 222
 CHAT = 111
 SPX = "SPXVN000000000001"
-MASKED = "SPXVN…001"
+BLURRED = f'<span class="tg-spoiler">{SPX}</span>'
 
 
 class FakeBot:
@@ -178,12 +184,12 @@ async def test_check_refreshes_card_and_has_cooldown(env):
 async def test_remove_confirm_cancel_and_remove(env):
     parcel = await add_spx(env)
     ask = await tap(env, f"p:{parcel.id}:del")
-    assert ask.edits[0][0] == texts.REMOVE_CONFIRM.format(title=MASKED)
+    assert ask.edits[0][0] == texts.REMOVE_CONFIRM.format(title=BLURRED)
     assert first_data(ask.edits[0][1]) == f"p:{parcel.id}:dok"
     cancel = await tap(env, f"p:{parcel.id}:dno")
     assert first_data(cancel.edits[0][1]) == f"p:{parcel.id}:ren"
     confirm = await tap(env, f"p:{parcel.id}:dok:2")
-    assert confirm.edits[0][0] == texts.REMOVED.format(title=MASKED)
+    assert confirm.edits[0][0] == texts.REMOVED.format(title=BLURRED)
     assert last_row_data(confirm.edits[0][1]) == ["l:2"]
     assert await env.repo.get_parcel(parcel.id) is None
 
@@ -197,13 +203,13 @@ async def test_removed_without_page_has_no_buttons(env):
 async def test_rename_from_card_updates_card_and_cleans_up(env):
     parcel = await add_spx(env)
     await tap(env, f"p:{parcel.id}:ren", message_id=70)
-    assert env.bot.sent[0][1] == texts.LABEL_ASK.format(code=MASKED)
+    assert env.bot.sent[0][1] == texts.LABEL_ASK.format(code=BLURRED)
     prompt_id = env.context.user_data[PENDING_LABEL]["prompt_id"]
     await text_message(user_update(Msg(71, "Bàn chải", [])), env.context)
     assert (await env.repo.get_parcel(parcel.id)).label == "Bàn chải"
     edited_id, edited_text, markup = env.bot.edited[-1]
     assert edited_id == 70
-    assert "<b>Bàn chải</b>" in edited_text
+    assert f"<b>Bàn chải · {BLURRED}</b>" in edited_text
     assert first_data(markup) == f"p:{parcel.id}:ren"
     assert sorted(env.bot.deleted) == sorted([prompt_id, 71])
 
@@ -216,7 +222,8 @@ async def test_list_page_navigation(env):
     assert "6. " in text
     assert "Trang 2/2" in text
     assert markup.inline_keyboard[0][0].text == "6"
-    assert last_row_data(markup) == ["l:1", "l:2", "l:1"]
+    assert [b.callback_data for b in markup.inline_keyboard[-2]] == ["l:1", "l:2", "l:1"]
+    assert last_row_data(markup) == ["r:2"]
 
 
 async def test_not_modified_edit_is_ignored(env):
@@ -234,6 +241,7 @@ async def test_list_command_and_add_reply_carry_buttons(env):
     listed = []
     await list_cmd(user_update(Msg(61, "/list", listed)), env.context)
     assert first_data(listed[-1][1]) == f"p:{parcel.id}:card:1"
+    assert last_row_data(listed[-1][1]) == ["r:1"]
 
 
 def other_update(message):
@@ -260,7 +268,7 @@ async def test_shared_link_lets_another_user_track(env):
     opened = []
     await start(other_update(Msg(80, "/start", opened)), env.context)
     text, markup = opened[-1]
-    assert text == texts.SHARE_OPEN.format(title="Áo", carrier="SPX")
+    assert text == texts.SHARE_OPEN.format(title=f"Áo · {BLURRED}", carrier="SPX")
     assert [b.callback_data for b in markup.inline_keyboard[0]] == [
         f"s:{token}:ok",
         f"s:{token}:no",
@@ -293,3 +301,57 @@ async def test_owner_opening_own_link_gets_card(env):
     replies = []
     await start(user_update(Msg(82, "/start", replies)), env.context)
     assert first_data(replies[-1][1]) == f"p:{parcel.id}:ren"
+
+
+async def test_recheck_button_checks_all_and_redraws_the_list(env):
+    parcel = await add_spx(env)
+    env.fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    query = await tap(env, "r:1")
+    assert query.answers == [texts.CHECK_STARTED]
+    text, markup = query.edits[0]
+    assert text.startswith(format_check_done(1, 1, 0) + "\n\n")
+    assert "📋" in text
+    assert first_data(markup) == f"p:{parcel.id}:card:1"
+    assert last_row_data(markup) == ["r:1"]
+    again = await tap(env, "r:1")
+    assert again.answers == [texts.CHECK_TOO_SOON.format(minutes=2)]
+    assert again.edits == []
+
+
+async def test_recheck_matches_carriers_again(env):
+    parcel = await env.repo.add_parcel(
+        user_id=USER,
+        carrier=None,
+        candidates=("ninjavan",),
+        tracking_number=SPX,
+        phone_last4=None,
+        now=T0,
+        next_check_at=T0,
+    )
+    await env.repo.record_check_failure(parcel.id, next_check_at=T0, now=T0)
+    assert await env.deps.parcels.redetect_carriers(USER) == 1
+    changed = await env.repo.get_parcel(parcel.id)
+    assert (changed.carrier, changed.candidates, changed.consecutive_failures) == (
+        "spx",
+        ("spx",),
+        0,
+    )
+    assert await env.deps.parcels.redetect_carriers(USER) == 0
+
+
+async def test_check_command_reports_redetected_parcels(env):
+    await env.repo.add_parcel(
+        user_id=USER,
+        carrier=None,
+        candidates=("ninjavan",),
+        tracking_number=SPX,
+        phone_last4=None,
+        now=T0,
+        next_check_at=T0,
+    )
+    replies = []
+    await check_cmd(user_update(Msg(90, "/check", replies)), env.context)
+    assert [text for text, _ in replies] == [texts.CHECK_STARTED, format_check_done(1, 0, 1)]
+    assert texts.CHECK_REDETECTED.format(count=1) in replies[-1][0]
+    await check_cmd(user_update(Msg(91, "/check", replies)), env.context)
+    assert replies[-1][0] == texts.CHECK_TOO_SOON.format(minutes=2)

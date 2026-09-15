@@ -3,7 +3,7 @@ from dataclasses import replace
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, TypeHandler
 
 from vn_parcel_bot.bot.app import build_application
-from vn_parcel_bot.bot.commands import BOT_COMMANDS
+from vn_parcel_bot.bot.commands import ADMIN_COMMANDS, BOT_COMMANDS
 
 ALL_COMMANDS = {
     "start",
@@ -21,6 +21,7 @@ ALL_COMMANDS = {
     "revoke",
     "users",
     "health",
+    "hozk",
 }
 
 
@@ -56,4 +57,14 @@ def test_bot_commands_match_spec():
         "check",
         "cancel",
     ]
-    assert all(0 < len(description) <= 256 for _, description in BOT_COMMANDS)
+    assert [name for name, _ in ADMIN_COMMANDS] == [
+        "hozk",
+        "users",
+        "allow",
+        "revoke",
+        "health",
+        "sticker",
+    ]
+    every = BOT_COMMANDS + ADMIN_COMMANDS
+    assert all(0 < len(description) <= 256 for _, description in every)
+    assert {name for name, _ in every} == ALL_COMMANDS
