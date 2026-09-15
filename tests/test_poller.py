@@ -645,3 +645,86 @@ async def test_idle_tick_records_the_poll_without_logging(poller, repo, caplog):
     assert report.parcels_checked == 0
     assert await repo.get_meta("last_poll_at") == T0.isoformat()
     assert "poll cycle" not in caplog.text
+
+
+async def descriptions(repo, parcel_id):
+    return [event.description for event in await repo.list_events(parcel_id, 10)]
+
+
+async def test_rebuild_replaces_history_and_progress_without_repeating_updates(
+    poller, repo, fakes, notifier
+):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"), ev(5, "Đang giao hàng"))
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).progress == 95
+    sent = len(notifier.sent)
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"), ev(5, "Beta"))
+    report = await poller.run_cycle(only_user_id=USER, wait=True, rebuild=True)
+    assert report.rebuilt == 1
+    assert report.new_events == 0
+    assert await descriptions(repo, parcel.id) == ["Alpha", "Beta"]
+    fresh = await repo.get_parcel(parcel.id)
+    assert fresh.progress != 95
+    assert fresh.last_status_text == "Beta"
+    assert len(notifier.sent) == sent
+
+
+async def test_rebuild_still_reports_events_newer_than_the_stored_history(
+    poller, repo, fakes, notifier
+):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"))
+    await poller.run_cycle()
+    sent = len(notifier.sent)
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha fixed"), ev(30, "Beta"))
+    report = await poller.run_cycle(only_user_id=USER, wait=True, rebuild=True)
+    assert report.new_events == 1
+    assert len(notifier.sent) == sent + 1
+    assert "Beta" in notifier.sent[-1][1]
+    assert "Alpha fixed" not in notifier.sent[-1][1]
+    assert await descriptions(repo, parcel.id) == ["Alpha fixed", "Beta"]
+
+
+async def test_rebuild_failure_keeps_the_stored_history(poller, repo, fakes):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"))
+    await poller.run_cycle()
+    fakes["spx"].results[(SPX, None)] = CarrierError("spx", "network", "timeout")
+    report = await poller.run_cycle(only_user_id=USER, wait=True, rebuild=True)
+    assert report.rebuilt == 0
+    assert await descriptions(repo, parcel.id) == ["Alpha"]
+
+
+async def test_rebuild_includes_recently_finished_parcels(poller, repo, fakes):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"), delivered=True)
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).state == "delivered"
+    fakes["spx"].results[(SPX, None)] = CarrierError("spx", "network", "timeout")
+    await poller.run_cycle(only_user_id=USER, wait=True, rebuild=True)
+    finished = await repo.get_parcel(parcel.id)
+    assert (finished.state, finished.consecutive_failures) == ("delivered", 0)
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"), ev(10, "Beta"))
+    report = await poller.run_cycle(only_user_id=USER, wait=True, rebuild=True)
+    assert report.rebuilt == 1
+    assert await descriptions(repo, parcel.id) == ["Alpha", "Beta"]
+
+
+async def test_rebuild_resets_failure_counts(poller, repo, fakes):
+    parcel = await add(repo, SPX, "spx")
+    for _ in range(3):
+        await repo.record_check_failure(parcel.id, next_check_at=T0, now=T0)
+    fakes["spx"].results[(SPX, None)] = CarrierError("spx", "network", "timeout")
+    await poller.run_cycle(only_user_id=USER, wait=True, rebuild=True)
+    assert (await repo.get_parcel(parcel.id)).consecutive_failures == 1
+
+
+async def test_check_parcel_rebuild_replaces_that_parcel(poller, repo, fakes):
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    await poller.run_cycle()
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Alpha"))
+    checked = await poller.check_parcel(USER, parcel.id, rebuild=True)
+    assert checked.progress != 95
+    assert await descriptions(repo, parcel.id) == ["Alpha"]

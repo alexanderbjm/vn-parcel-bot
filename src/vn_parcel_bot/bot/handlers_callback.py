@@ -9,6 +9,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 from vn_parcel_bot import texts
+from vn_parcel_bot.bot.carrier_scripts import reload_carrier_scripts
 from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
@@ -208,7 +209,8 @@ async def _check(
     checks[parcel.id] = now
     await query.answer(texts.CHECK_STARTED)
     deps = get_deps(context)
-    fresh = await deps.poller.check_parcel(parcel.user_id, parcel.id) or parcel
+    await reload_carrier_scripts(deps)
+    fresh = await deps.poller.check_parcel(parcel.user_id, parcel.id, rebuild=True) or parcel
     text, markup = await card_view(deps, fresh, parcel.user_id, page)
     await _edit(query, text, markup)
 

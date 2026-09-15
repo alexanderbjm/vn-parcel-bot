@@ -161,3 +161,17 @@ async def test_poller_without_maps_sends_plain_updates(env, settings):
     assert "📍" not in notifier.sent[-1][1]
     assert (await repo.get_parcel(parcel.id)).place is None
     assert notifier.photos == []
+
+
+async def test_rebuild_moves_or_clears_the_hub(env):
+    poller, repo, carrier, _, _, _, _, parcel = env
+    carrier.results[(SPX, None)] = found("spx", SPX, hub(0))
+    await poller.run_cycle()
+    carrier.results[(SPX, None)] = found("spx", SPX, hub(0, "24-HPG Hai An Hub"))
+    await poller.run_cycle(only_user_id=1, wait=True, rebuild=True)
+    assert (await repo.get_parcel(parcel.id)).place == "24-HPG Hai An Hub"
+    carrier.results[(SPX, None)] = found(
+        "spx", SPX, TrackingEvent(time=T0, description="Đang vận chuyển")
+    )
+    await poller.run_cycle(only_user_id=1, wait=True, rebuild=True)
+    assert (await repo.get_parcel(parcel.id)).place is None

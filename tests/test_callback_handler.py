@@ -309,7 +309,7 @@ async def test_recheck_button_checks_all_and_redraws_the_list(env):
     query = await tap(env, "r:1")
     assert query.answers == [texts.CHECK_STARTED]
     text, markup = query.edits[0]
-    assert text.startswith(format_check_done(1, 1, 0) + "\n\n")
+    assert text.startswith(format_check_done(1, 1, 0, rebuilt=1) + "\n\n")
     assert "📋" in text
     assert first_data(markup) == f"p:{parcel.id}:card:1"
     assert last_row_data(markup) == ["r:1", "m:on:1"]

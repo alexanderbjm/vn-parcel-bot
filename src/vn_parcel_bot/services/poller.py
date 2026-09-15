@@ -9,12 +9,18 @@ from typing import Protocol
 
 import httpx
 
-from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingResult
+from vn_parcel_bot.carriers.models import (
+    CarrierCode,
+    CarrierError,
+    TrackingEvent,
+    TrackingResult,
+)
 from vn_parcel_bot.carriers.registry import CarrierRegistry, CarrierSnapshot
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import (
     ALERT_COOLDOWN,
     CARRIER_ALL_FAILED_MIN_FETCHES,
+    DELIVERED_VISIBLE_FOR,
     FAILURE_ALERT_THRESHOLD,
     JITTER_SECONDS,
     MAX_BACKOFF,
@@ -89,6 +95,7 @@ class PollReport:
     fetches: int = 0
     new_events: int = 0
     messages_sent: int = 0
+    rebuilt: int = 0
     failures: dict[str, int] = field(default_factory=dict)
 
     def to_json(self) -> str:
@@ -123,20 +130,30 @@ class Poller:
         self._lock = asyncio.Lock()
         self._broken_stickers: set[str] = set()
 
-    async def run_cycle(self, *, only_user_id: int | None = None, wait: bool = False) -> PollReport:
+    async def run_cycle(
+        self, *, only_user_id: int | None = None, wait: bool = False, rebuild: bool = False
+    ) -> PollReport:
+        """Check due parcels, or one user's parcels now.
+
+        `rebuild` (a user's Kiểm tra) also takes the user's recently finished parcels, resets
+        failure counts and replaces each parcel's stored history, progress and hub with a fresh
+        read; only events newer than the stored history are sent as updates.
+        """
         if self._lock.locked() and not wait:
             now = self._now()
             return PollReport(started_at=now, finished_at=now, skipped=True)
         async with self._lock:
-            return await self._cycle(only_user_id)
+            return await self._cycle(only_user_id, rebuild=rebuild)
 
-    async def check_parcel(self, user_id: int, parcel_id: int) -> Parcel | None:
+    async def check_parcel(
+        self, user_id: int, parcel_id: int, *, rebuild: bool = False
+    ) -> Parcel | None:
         async with self._lock:
             parcel = await self._repo.get_parcel(parcel_id)
             if parcel is None or parcel.user_id != user_id:
                 return None
-            if parcel.is_active:
-                await self._cycle(None, only_parcels=[parcel])
+            if parcel.is_active or rebuild:
+                await self._cycle(None, only_parcels=[parcel], rebuild=rebuild)
             return await self._repo.get_parcel(parcel_id)
 
     def is_quiet(self, at: datetime) -> bool:
@@ -149,7 +166,11 @@ class Poller:
         return hour >= start or hour < end
 
     async def _cycle(
-        self, only_user_id: int | None, only_parcels: list[Parcel] | None = None
+        self,
+        only_user_id: int | None,
+        only_parcels: list[Parcel] | None = None,
+        *,
+        rebuild: bool = False,
     ) -> PollReport:
         now = self._now()
         report = PollReport(started_at=now, finished_at=now)
@@ -157,8 +178,14 @@ class Poller:
             parcels = only_parcels
         elif only_user_id is None:
             parcels = await self._repo.due_parcels(now)
+        elif rebuild:
+            parcels = await self._repo.list_parcels(
+                only_user_id, terminal_since=now - DELIVERED_VISIBLE_FOR
+            )
         else:
             parcels = await self._repo.active_parcels_for_user(only_user_id)
+        if rebuild:
+            await self._repo.reset_failures([parcel.id for parcel in parcels])
         report.parcels_checked = len(parcels)
         if not parcels and only_user_id is None and only_parcels is None:
             # The poll job ticks every minute; an idle tick only purges and records that it ran.
@@ -199,7 +226,7 @@ class Poller:
                 continue
             processed.append(parcel.id)
             try:
-                await self._process(parcel, keys, outcomes, now, report, alerts)
+                await self._process(parcel, keys, outcomes, now, report, alerts, rebuild=rebuild)
             except Exception:
                 log.exception("processing failed code=%s", mask_code(parcel.tracking_number))
 
@@ -269,18 +296,24 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        *,
+        rebuild: bool = False,
     ) -> None:
         current = await self._repo.get_parcel(parcel.id)
-        if current is None or not current.is_active:
+        if current is None or not (current.is_active or rebuild):
             return
         parcel = current
+        # A finished parcel is only rebuilt from fresh data; errors and empty answers leave it.
+        finished = not parcel.is_active
 
         if parcel.is_resolved:
             outcome = outcomes[keys[0]]
+            if finished and (isinstance(outcome, CarrierError) or not outcome.found):
+                return
             if isinstance(outcome, CarrierError):
                 await self._handle_failure(parcel, outcome, now, report, alerts)
             else:
-                await self._handle_result(parcel, outcome, now, report, alerts)
+                await self._handle_result(parcel, outcome, now, report, alerts, rebuild=rebuild)
             return
 
         results = [(key, outcomes[key]) for key in keys]
@@ -296,9 +329,17 @@ class Poller:
                     mask_code(parcel.tracking_number),
                 )
                 await self._handle_result(
-                    resolved, outcome, now, report, alerts, resolved_carrier=key.carrier
+                    resolved,
+                    outcome,
+                    now,
+                    report,
+                    alerts,
+                    resolved_carrier=key.carrier,
+                    rebuild=rebuild,
                 )
                 return
+        if finished:
+            return
         errors = [outcome for _, outcome in results if isinstance(outcome, CarrierError)]
         if errors:
             await self._handle_failure(parcel, errors[0], now, report, alerts)
@@ -316,9 +357,14 @@ class Poller:
         alerts: dict[CarrierCode, tuple[int, str]],
         *,
         resolved_carrier: CarrierCode | None = None,
+        rebuild: bool = False,
     ) -> None:
         if result.found:
-            new = await self._repo.insert_events(parcel.id, result.events, now)
+            if rebuild:
+                new = await self._replace_history(parcel, result, now)
+                report.rebuilt += 1
+            else:
+                new = await self._repo.insert_events(parcel.id, result.events, now)
             state = (
                 "delivered" if result.delivered else "returned" if result.returned else "in_transit"
             )
@@ -326,7 +372,7 @@ class Poller:
             newly_returned = state == "returned" and parcel.state != "returned"
             latest = result.latest
             progress = self._registry.current.progress(result.carrier, result)
-            shown = _shown_progress(parcel.progress, progress)
+            shown = progress if rebuild else _shown_progress(parcel.progress, progress)
             interval = check_interval(state, shown, self._settings.poll_interval)
             await self._repo.record_check_success(
                 parcel.id,
@@ -337,8 +383,9 @@ class Poller:
                 now=now,
                 delivered_at=latest.time if newly_delivered and latest else None,
                 progress=progress,
+                reset_progress=rebuild,
             )
-            moved = await self._track_place(parcel, result)
+            moved = await self._track_place(parcel, result, rebuild=rebuild)
             report.new_events += len(new)
             if new or newly_delivered or newly_returned:
                 current = await self._repo.get_parcel(parcel.id)
@@ -399,11 +446,33 @@ class Poller:
     def _maps_on(self) -> bool:
         return self._maps is not None and self._settings.maps_enabled
 
-    async def _track_place(self, parcel: Parcel, result: TrackingResult) -> bool:
-        """Store the newest hub; True when it changed. Lookup failures never stop the update."""
+    async def _replace_history(
+        self, parcel: Parcel, result: TrackingResult, now: datetime
+    ) -> list[TrackingEvent]:
+        """Store the fresh history; return only events newer than anything stored before."""
+        known = await self._repo.event_keys(parcel.id)
+        await self._repo.replace_events(parcel.id, result.events, now)
+        since = parcel.last_event_at
+        fresh = {event.key: event for event in sorted(result.events, key=lambda e: e.time)}
+        return [
+            event
+            for key, event in fresh.items()
+            if key not in known and (since is None or event.time > since)
+        ]
+
+    async def _track_place(
+        self, parcel: Parcel, result: TrackingResult, *, rebuild: bool = False
+    ) -> bool:
+        """Store the newest hub; True when it changed. Lookup failures never stop the update.
+
+        A rebuild also clears a stored hub that the fresh read no longer shows.
+        """
         if self._maps is None:
             return False
         place = self._registry.current.latest_place(result.carrier, result.events)
+        if rebuild and place is None and parcel.place is not None:
+            await self._repo.set_place(parcel.id, None)
+            return False
         if place is None or place == parcel.place:
             return False
         await self._repo.set_place(parcel.id, place)

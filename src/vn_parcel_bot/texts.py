@@ -168,14 +168,16 @@ MAP_FAILED = "Không vẽ được bản đồ lúc này, bạn thử lại sau 
 NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."
-CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
+CHECK_STARTED = "🔄 Đang làm mới các đơn của bạn bằng script mới nhất…"
 CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhật mới"
 CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
+CHECK_REBUILT = " · làm mới dữ liệu {count} đơn"
+CHECK_RELOADED = " · nạp {count} script hãng mới"
 
 DISTANCE_UNDER_1KM = "dưới 1 km"
-PLACE_LINE = "📍 {place} · cách bạn {distance} (đường chim bay)"
+PLACE_LINE = "📍 {place} · cách bạn {distance}"
 PLACE_ONLY_LINE = "📍 {place}"
-MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance} (đường chim bay)"
+MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance}"
 
 UPDATE_HEADER = "📦 <b>{title}</b> · {carrier}"
 UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>"

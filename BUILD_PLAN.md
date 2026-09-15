@@ -27,9 +27,10 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 
 ## Changes in 2.8 (2026-09-15)
 
-- **Parcel maps** ([design](docs/superpowers/specs/2026-09-15-parcel-maps-design.md)): `/location` saves the user's area once through Telegram's location button, rounded to 2 decimals (~1 km); Telegram Desktop cannot share a location, so coordinates or a Google Maps link with coordinates can be pasted instead; `/location off` deletes it (§4). Carrier modules gain a `place` hook (default: the event's location; SPX reads the hub after `đến/rời/tại kho`), and the poller stores the newest hub in `parcels.place`. Hubs are looked up on Photon (OpenStreetMap data, Vietnam bounding box, 1.1 s between requests, misses retried after 30 days) with the province table in `services/geo_provinces.py` as fallback, and cached in `places`. Cards and update messages end with `PLACE_LINE` (`📍 Kho … · cách bạn ~N km (đường chim bay)`, straight line) or `PLACE_ONLY_LINE` without a saved area; cards and updates get `[🗺 Bản đồ]` (`p:<id>:map`, once a minute per parcel), which asks for the location first when none is saved. After an update that moves a parcel to a new hub, a 600×400 map picture follows silently (CARTO Voyager tiles cached 7 days in `data/tiles`, credit `© OpenStreetMap contributors © CARTO`). openstreetmap.org is blocked from the bot's PC, hence Photon and CARTO. The home area is never logged or sent to a lookup service. `MAPS_ENABLED=false` turns all of it off (§10.1). New dependency: Pillow.
+- **Parcel maps** ([design](docs/superpowers/specs/2026-09-15-parcel-maps-design.md)): `/location` saves the user's area once through Telegram's location button, rounded to 2 decimals (~1 km); Telegram Desktop cannot share a location, so coordinates or a Google Maps link with coordinates can be pasted instead; `/location off` deletes it (§4). Carrier modules gain a `place` hook (default: the event's location; SPX reads the hub after `đến/rời/tại kho`), and the poller stores the newest hub in `parcels.place`. Hubs are looked up on Photon (OpenStreetMap data, Vietnam bounding box, 1.1 s between requests, misses retried after 30 days) with the province table in `services/geo_provinces.py` as fallback, and cached in `places`. Cards and update messages end with `PLACE_LINE` (`📍 Kho … · cách bạn ~N km`, straight line) or `PLACE_ONLY_LINE` without a saved area; cards and updates get `[🗺 Bản đồ]` (`p:<id>:map`, once a minute per parcel), which asks for the location first when none is saved. After an update that moves a parcel to a new hub, a 600×400 map picture follows silently (CARTO Voyager tiles cached 7 days in `data/tiles`, credit `© OpenStreetMap contributors © CARTO`). openstreetmap.org is blocked from the bot's PC, hence Photon and CARTO. The home area is never logged or sent to a lookup service. `MAPS_ENABLED=false` turns all of it off (§10.1). New dependency: Pillow.
 - **Schema v4** (§7): `users.home_lat`, `users.home_lon`, `parcels.place` and the `places` table; migration 3 writes `<db_path>.bak-v3` first.
 - **Delivered parcels** keep ` · 100%` but no longer show the progress bar in `/list`, cards and the delivered update.
+- **Kiểm tra rebuilds** (§4): `/check`, 🔄 Kiểm tra tất cả and a card's 🔄 Kiểm tra load changed carrier scripts at once, match carriers again, reset failure counts and replace each listed parcel's stored history, progress and hub with a fresh read, without repeating old updates. The place line and map caption no longer end with "(đường chim bay)".
 - **J&T page layout** (§5.4): the tracking page now lists each bill in `.result-tracking .result_vandon` with newest-first `.result-vandon-item` rows. The parser reads that layout first and keeps the older one as a fallback; courier and recipient names and phone numbers are dropped before events are stored.
 
 ## Changes in 2.7 (2026-09-15)
@@ -261,7 +262,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/remove` | `<ref> …` | One or more `/list` numbers or codes (spaces or commas). Confirmation with `[✅ Xóa]`/`[✅ Xóa N đơn]` and `[↩ Hủy]`, then the parcels and their events are deleted; unknown refs are listed (2.7). |
 | `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
 | `/location` | `[off]` | No arg → `LOCATION_ASK` (or `LOCATION_STATUS` when an area is saved) with a one-time reply keyboard `[📍 Gửi vị trí]` (`request_location`) and `[↩ Hủy]`, and sets `PENDING_LOCATION`. While `PENDING_LOCATION` is set, pasted coordinates (`21.03, 105.85`) or a Google Maps link with coordinates (`@lat,lon`, `q=lat,lon`, `!3d…!4d…`; `parsing.parse_coordinates`, read locally) count as a shared location and the pasted message is deleted; the button's own text or a link without coordinates (e.g. `maps.app.goo.gl`) gets `LOCATION_TYPE_HINT`, because Telegram Desktop cannot share a location. A shared location (any time) is saved with `repo.set_home`, rounded to 2 decimals, and answered `LOCATION_SAVED` with the keyboard removed; if the prompt came from a card's 🗺 button, that map is sent next. Coordinates are never logged. `off` → `clear_home` → `LOCATION_CLEARED` (`LOCATION_NONE` when nothing is saved). `↩ Hủy` or `/cancel` → `CANCELLED` with the keyboard removed. |
-| `/check` | – | `ParcelService.redetect_carriers(uid)`, then poll **this user's** active parcels now, ignoring `next_check_at`. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE` (+ `CHECK_REDETECTED` when carriers changed). |
+| `/check` | – | Kiểm tra: `reload_carrier_scripts` loads changed carrier module files at once (`CarrierRegistry.refresh(force=True)`; rejected files are alerted as usual), then `ParcelService.redetect_carriers(uid)`, then `Poller.run_cycle(only_user_id=uid, wait=True, rebuild=True)`: every parcel `/list` shows (active, plus finished within `DELIVERED_VISIBLE_FOR`) is checked now with its failure count reset. A found answer replaces the stored events (`Repository.replace_events`), stores progress as read (not the stored maximum) and recomputes the hub (cleared when the fresh read has none); only events that are newer than the previous latest event and were not stored before are sent as updates. An error or an empty answer keeps the stored data, and a finished parcel is then left alone. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, then `CHECK_DONE` (+ `CHECK_REDETECTED`, `CHECK_REBUILT`, `CHECK_RELOADED`). A card's 🔄 Kiểm tra does the same for one parcel (`check_parcel(uid, id, rebuild=True)`, 5-minute cooldown). |
 | `/cancel` | – | Clear any pending prompt (phone digits, name, name picker, remove confirmation, list selection) → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. Every prompt also has a `[↩ Hủy]` button (2.7). |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
@@ -1746,19 +1747,21 @@ BTN_SEND_LOCATION = "📍 Gửi vị trí"
 BTN_CANCEL_TEXT = "↩ Hủy"
 BTN_MAP = "🗺 Bản đồ"
 
-PLACE_LINE = "📍 {place} · cách bạn {distance} (đường chim bay)"
+PLACE_LINE = "📍 {place} · cách bạn {distance}"
 PLACE_ONLY_LINE = "📍 {place}"
 DISTANCE_UNDER_1KM = "dưới 1 km"
-MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance} (đường chim bay)"
+MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance}"
 
 MAP_NO_PLACE = "Đơn này chưa có vị trí kho để vẽ bản đồ."
 MAP_TOO_SOON = "Bạn vừa xem bản đồ đơn này, thử lại sau ít phút nhé."
 MAP_FAILED = "Không vẽ được bản đồ lúc này, bạn thử lại sau nhé."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."
-CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
+CHECK_STARTED = "🔄 Đang làm mới các đơn của bạn bằng script mới nhất…"
 CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhật mới"
 CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
+CHECK_REBUILT = " · làm mới dữ liệu {count} đơn"
+CHECK_RELOADED = " · nạp {count} script hãng mới"
 BTN_RECHECK = "🔄 Kiểm tra tất cả"
 ADMIN_HELP = (
     "<b>🛠 Lệnh quản lý</b>\n"

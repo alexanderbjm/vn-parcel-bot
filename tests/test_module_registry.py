@@ -1,6 +1,8 @@
 import textwrap
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
+from vn_parcel_bot.bot.carrier_scripts import reload_carrier_scripts
 from vn_parcel_bot.carriers.models import TrackingEvent
 from vn_parcel_bot.carriers.registry import CarrierRegistry, Detection
 
@@ -244,3 +246,21 @@ def test_a_failing_place_hook_gives_no_place(tmp_path, caplog):
     event = TrackingEvent(time=datetime(2026, 9, 15, tzinfo=UTC), description="x", location="y")
     assert snapshot.latest_place("alpha", [event]) is None
     assert "carrier place failed carrier=alpha type=ZeroDivisionError" in caplog.text
+
+
+def test_forced_refresh_loads_a_changed_module_at_once(tmp_path):
+    registry = load(tmp_path, alpha=ALPHA)
+    write(tmp_path, "alpha", ALPHA.replace("Alpha & Co", "Alpha New"))
+    assert registry.refresh().reloaded == []
+    assert registry.current.display_name("alpha") == "Alpha & Co"
+    write(tmp_path, "alpha", ALPHA.replace("Alpha & Co", "Alpha Newer"))
+    assert registry.refresh(force=True).reloaded == ["alpha"]
+    assert registry.current.display_name("alpha") == "Alpha Newer"
+
+
+async def test_reload_carrier_scripts_loads_changes_now(tmp_path):
+    registry = load(tmp_path, alpha=ALPHA)
+    write(tmp_path, "alpha", ALPHA.replace("Alpha & Co", "Alpha New"))
+    assert await reload_carrier_scripts(SimpleNamespace(registry=registry)) == 1
+    assert registry.current.display_name("alpha") == "Alpha New"
+    assert await reload_carrier_scripts(SimpleNamespace(registry=None)) == 0

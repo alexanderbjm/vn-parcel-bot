@@ -20,6 +20,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from vn_parcel_bot import texts
+from vn_parcel_bot.bot.carrier_scripts import reload_carrier_scripts
 from vn_parcel_bot.bot.deps import Deps, get_deps
 from vn_parcel_bot.bot.parsing import (
     parse_coordinates,
@@ -567,10 +568,17 @@ def claim_recheck(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> int | Non
 
 
 async def recheck_all(deps: Deps, user_id: int) -> str:
-    """Match every active parcel's carrier again, check them all now and summarise."""
+    """Load new carrier scripts, match carriers again and rebuild every listed parcel."""
+    reloaded = await reload_carrier_scripts(deps)
     redetected = await deps.parcels.redetect_carriers(user_id)
-    report = await deps.poller.run_cycle(only_user_id=user_id, wait=True)
-    return format_check_done(report.parcels_checked, report.new_events, redetected)
+    report = await deps.poller.run_cycle(only_user_id=user_id, wait=True, rebuild=True)
+    return format_check_done(
+        report.parcels_checked,
+        report.new_events,
+        redetected,
+        rebuilt=report.rebuilt,
+        reloaded=reloaded,
+    )
 
 
 async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

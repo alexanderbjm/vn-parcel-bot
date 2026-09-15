@@ -231,7 +231,8 @@ class CarrierRegistry:
     def current(self) -> CarrierSnapshot:
         return self._current
 
-    def refresh(self) -> RefreshReport:
+    def refresh(self, force: bool = False) -> RefreshReport:
+        """Load changed module files. A change is loaded once two reads agree, unless `force`."""
         report = RefreshReport()
         if self._directory is None:
             return report
@@ -249,10 +250,10 @@ class CarrierRegistry:
             ) == digest:
                 self._seen.pop(code, None)
                 continue
-            if self._seen.get(code) != digest:
+            if not force and self._seen.get(code) != digest:
                 self._seen[code] = digest
                 continue
-            del self._seen[code]
+            self._seen.pop(code, None)
             self._swap(code, path, data, report)
         return report
 

@@ -10,6 +10,7 @@ from vn_parcel_bot.services.formatting import (
     carrier_names,
     format_add_outcome,
     format_carrier_alert,
+    format_check_done,
     format_digest,
     format_event_update,
     format_expired,
@@ -515,3 +516,18 @@ def test_parcel_card_appends_the_place_line():
     card = format_parcel_card(parcel, TZ, "📍 Kho Thanh Tri")
     assert card.endswith("Đã đến kho · 🕒 01/09 08:30\n📍 Kho Thanh Tri")
     assert format_parcel_card(parcel, TZ, None) == format_parcel_card(parcel, TZ)
+
+
+def test_check_done_mentions_rebuilt_parcels_and_new_scripts():
+    assert format_check_done(3, 1, 0) == texts.CHECK_DONE.format(checked=3, new_events=1)
+    assert format_check_done(3, 1, 2, rebuilt=2, reloaded=1) == (
+        texts.CHECK_DONE.format(checked=3, new_events=1)
+        + texts.CHECK_REDETECTED.format(count=2)
+        + texts.CHECK_REBUILT.format(count=2)
+        + texts.CHECK_RELOADED.format(count=1)
+    )
+
+
+def test_place_texts_do_not_say_straight_line():
+    assert "chim bay" not in texts.PLACE_LINE
+    assert "chim bay" not in texts.MAP_CAPTION

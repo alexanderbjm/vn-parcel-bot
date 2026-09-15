@@ -360,7 +360,7 @@ class Repository:
             (label, _to_db(now), parcel_id),
         )
 
-    async def set_place(self, parcel_id: int, place: str) -> None:
+    async def set_place(self, parcel_id: int, place: str | None) -> None:
         await self._write("UPDATE parcels SET place = ? WHERE id = ?", (place, parcel_id))
 
     async def delete_parcel(self, parcel_id: int) -> None:
@@ -377,19 +377,24 @@ class Repository:
         now: datetime,
         delivered_at: datetime | None = None,
         progress: int | None = None,
+        reset_progress: bool = False,
     ) -> None:
+        """`reset_progress` stores the given progress as is instead of keeping the maximum."""
         await self._write(
             "UPDATE parcels SET state = ?, "
             "last_status_text = COALESCE(?, last_status_text), "
             "last_event_at = COALESCE(?, last_event_at), "
             "delivered_at = COALESCE(?, delivered_at), "
-            "progress = CASE WHEN ? IS NULL THEN progress ELSE MAX(COALESCE(progress, 0), ?) END, "
+            "progress = CASE WHEN ? THEN ? WHEN ? IS NULL THEN progress "
+            "ELSE MAX(COALESCE(progress, 0), ?) END, "
             "consecutive_failures = 0, next_check_at = ?, updated_at = ? WHERE id = ?",
             (
                 state,
                 last_status_text,
                 _to_db(last_event_at) if last_event_at else None,
                 _to_db(delivered_at) if delivered_at else None,
+                int(reset_progress),
+                progress,
                 progress,
                 progress,
                 _to_db(next_check_at),
@@ -455,6 +460,45 @@ class Repository:
                     inserted.append(event)
         await self._conn.commit()
         return inserted
+
+    async def replace_events(
+        self, parcel_id: int, events: Sequence[TrackingEvent], now: datetime
+    ) -> None:
+        """Swap a parcel's stored history for a fresh read in one transaction."""
+        created = _to_db(now)
+        try:
+            await self._conn.execute("DELETE FROM events WHERE parcel_id = ?", (parcel_id,))
+            for event in sorted(events, key=lambda e: e.time):
+                await self._conn.execute(
+                    "INSERT OR IGNORE INTO events "
+                    "(parcel_id, event_key, event_time, description, location, raw_status, "
+                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        parcel_id,
+                        event.key,
+                        _to_db(event.time),
+                        event.description,
+                        event.location,
+                        event.raw_status,
+                        created,
+                    ),
+                )
+        except BaseException:
+            await self._conn.rollback()
+            raise
+        await self._conn.commit()
+
+    async def event_keys(self, parcel_id: int) -> set[str]:
+        rows = await self._fetchall(
+            "SELECT event_key FROM events WHERE parcel_id = ?", (parcel_id,)
+        )
+        return {row["event_key"] for row in rows}
+
+    async def reset_failures(self, parcel_ids: Sequence[int]) -> None:
+        for parcel_id in parcel_ids:
+            await self._write(
+                "UPDATE parcels SET consecutive_failures = 0 WHERE id = ?", (parcel_id,)
+            )
 
     async def list_events(self, parcel_id: int, limit: int) -> list[TrackingEvent]:
         rows = await self._fetchall(

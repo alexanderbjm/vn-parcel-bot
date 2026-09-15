@@ -240,9 +240,17 @@ def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo, *, page: int = 1
     return truncate_message(text)
 
 
-def format_check_done(checked: int, new_events: int, redetected: int) -> str:
+def format_check_done(
+    checked: int, new_events: int, redetected: int, *, rebuilt: int = 0, reloaded: int = 0
+) -> str:
     text = texts.CHECK_DONE.format(checked=checked, new_events=new_events)
-    return text + (texts.CHECK_REDETECTED.format(count=redetected) if redetected else "")
+    if redetected:
+        text += texts.CHECK_REDETECTED.format(count=redetected)
+    if rebuilt:
+        text += texts.CHECK_REBUILT.format(count=rebuilt)
+    if reloaded:
+        text += texts.CHECK_RELOADED.format(count=reloaded)
+    return text
 
 
 def _remove_items(parcels: Sequence[Parcel]) -> str:

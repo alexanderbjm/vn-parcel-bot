@@ -55,7 +55,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/remove` | `<ref> …` | One or more `/list` numbers or codes (spaces or commas). Confirmation with `[✅ Xóa]`/`[✅ Xóa N đơn]` and `[↩ Hủy]`, then the parcels and their events are deleted; unknown refs are listed (2.7). |
 | `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
 | `/location` | `[off]` | No arg → `LOCATION_ASK` (or `LOCATION_STATUS` when an area is saved) with a one-time reply keyboard `[📍 Gửi vị trí]` (`request_location`) and `[↩ Hủy]`, and sets `PENDING_LOCATION`. While `PENDING_LOCATION` is set, pasted coordinates (`21.03, 105.85`) or a Google Maps link with coordinates (`@lat,lon`, `q=lat,lon`, `!3d…!4d…`; `parsing.parse_coordinates`, read locally) count as a shared location and the pasted message is deleted; the button's own text or a link without coordinates (e.g. `maps.app.goo.gl`) gets `LOCATION_TYPE_HINT`, because Telegram Desktop cannot share a location. A shared location (any time) is saved with `repo.set_home`, rounded to 2 decimals, and answered `LOCATION_SAVED` with the keyboard removed; if the prompt came from a card's 🗺 button, that map is sent next. Coordinates are never logged. `off` → `clear_home` → `LOCATION_CLEARED` (`LOCATION_NONE` when nothing is saved). `↩ Hủy` or `/cancel` → `CANCELLED` with the keyboard removed. |
-| `/check` | – | `ParcelService.redetect_carriers(uid)`, then poll **this user's** active parcels now, ignoring `next_check_at`. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE` (+ `CHECK_REDETECTED` when carriers changed). |
+| `/check` | – | Kiểm tra: `reload_carrier_scripts` loads changed carrier module files at once (`CarrierRegistry.refresh(force=True)`; rejected files are alerted as usual), then `ParcelService.redetect_carriers(uid)`, then `Poller.run_cycle(only_user_id=uid, wait=True, rebuild=True)`: every parcel `/list` shows (active, plus finished within `DELIVERED_VISIBLE_FOR`) is checked now with its failure count reset. A found answer replaces the stored events (`Repository.replace_events`), stores progress as read (not the stored maximum) and recomputes the hub (cleared when the fresh read has none); only events that are newer than the previous latest event and were not stored before are sent as updates. An error or an empty answer keeps the stored data, and a finished parcel is then left alone. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, then `CHECK_DONE` (+ `CHECK_REDETECTED`, `CHECK_REBUILT`, `CHECK_RELOADED`). A card's 🔄 Kiểm tra does the same for one parcel (`check_parcel(uid, id, rebuild=True)`, 5-minute cooldown). |
 | `/cancel` | – | Clear any pending prompt (phone digits, name, name picker, remove confirmation, list selection) → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. Every prompt also has a `[↩ Hủy]` button (2.7). |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
@@ -1540,19 +1540,21 @@ BTN_SEND_LOCATION = "📍 Gửi vị trí"
 BTN_CANCEL_TEXT = "↩ Hủy"
 BTN_MAP = "🗺 Bản đồ"
 
-PLACE_LINE = "📍 {place} · cách bạn {distance} (đường chim bay)"
+PLACE_LINE = "📍 {place} · cách bạn {distance}"
 PLACE_ONLY_LINE = "📍 {place}"
 DISTANCE_UNDER_1KM = "dưới 1 km"
-MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance} (đường chim bay)"
+MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance}"
 
 MAP_NO_PLACE = "Đơn này chưa có vị trí kho để vẽ bản đồ."
 MAP_TOO_SOON = "Bạn vừa xem bản đồ đơn này, thử lại sau ít phút nhé."
 MAP_FAILED = "Không vẽ được bản đồ lúc này, bạn thử lại sau nhé."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."
-CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
+CHECK_STARTED = "🔄 Đang làm mới các đơn của bạn bằng script mới nhất…"
 CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhật mới"
 CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
+CHECK_REBUILT = " · làm mới dữ liệu {count} đơn"
+CHECK_RELOADED = " · nạp {count} script hãng mới"
 BTN_RECHECK = "🔄 Kiểm tra tất cả"
 ADMIN_HELP = (
     "<b>🛠 Lệnh quản lý</b>\n"
