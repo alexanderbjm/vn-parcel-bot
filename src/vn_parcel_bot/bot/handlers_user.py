@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import math
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from html import escape
@@ -50,6 +51,7 @@ from vn_parcel_bot.services.formatting import (
     spoiler,
     truncate_message,
 )
+from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.services.sharing import shared_parcel
 from vn_parcel_bot.services.vision import VisionResult
@@ -72,6 +74,9 @@ PENDING_KEYS = (
 PHOTO_LOCKS = "photo_locks"
 RECHECK_KEY = "check_cooldowns"
 VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+
+MAP_COOLDOWN_SECONDS = 60
+MAP_SENDS = "map_sends"
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +150,47 @@ async def delete_messages(
             log.info("message delete failed type=%s", type(exc).__name__)
 
 
+async def card_view(
+    deps: Deps, parcel: Parcel, user_id: int, page: int | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
+    """The card text and buttons; with maps on, the 📍 line and the 🗺 button are added."""
+    maps = deps.maps if deps.maps is not None and deps.settings.maps_enabled else None
+    line = None
+    if maps is not None:
+        user = await deps.repo.get_user(user_id)
+        line = await maps.place_line(parcel, user) if user is not None else None
+    text = format_parcel_card(parcel, deps.settings.tz, line)
+    return text, card_keyboard(parcel, page=page, maps=maps is not None)
+
+
+async def send_parcel_map(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, parcel_id: int
+) -> str | None:
+    """Send the parcel's map picture; returns the toast text when no picture went out."""
+    deps = get_deps(context)
+    parcel = await deps.repo.get_parcel(parcel_id)
+    user = await deps.repo.get_user(user_id)
+    if deps.maps is None or parcel is None or user is None or parcel.user_id != user_id:
+        return texts.CARD_NOT_FOUND
+    if not parcel.place:
+        return texts.MAP_NO_PLACE
+    sends: dict[int, float] = context.bot_data.setdefault(MAP_SENDS, {})
+    now = time.monotonic()
+    last = sends.get(parcel_id)
+    if last is not None and now - last < MAP_COOLDOWN_SECONDS:
+        return texts.MAP_TOO_SOON
+    try:
+        made = await deps.maps.photo(parcel, user)
+    except MapError as exc:
+        log.warning("map failed type=%s", type(exc).__name__)
+        return texts.MAP_FAILED
+    if made is None:
+        return texts.MAP_NO_PLACE
+    sends[parcel_id] = now
+    await deps.notifier.send_photo(chat_id, made[0], made[1])
+    return None
+
+
 async def _open_share(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str) -> None:
     deps = get_deps(context)
     parcel = await shared_parcel(deps.repo, token)
@@ -153,11 +199,8 @@ async def _open_share(update: Update, context: ContextTypes.DEFAULT_TYPE, token:
         return
     user = await current_user(update, deps)
     if parcel.user_id == user.telegram_id:
-        await reply(
-            update,
-            format_parcel_card(parcel, deps.settings.tz),
-            reply_markup=card_keyboard(parcel),
-        )
+        text, markup = await card_view(deps, parcel, user.telegram_id)
+        await reply(update, text, reply_markup=markup)
         return
     await reply(
         update,
@@ -344,13 +387,14 @@ async def _refresh_card(
 ) -> None:
     if chat_id is None or not card:
         return
+    text, markup = await card_view(get_deps(context), parcel, parcel.user_id, card.get("page"))
     try:
         await context.bot.edit_message_text(
-            format_parcel_card(parcel, get_deps(context).settings.tz),
+            text,
             chat_id=chat_id,
             message_id=card["message_id"],
             parse_mode=ParseMode.HTML,
-            reply_markup=card_keyboard(parcel, page=card.get("page")),
+            reply_markup=markup,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     except TelegramError as exc:
@@ -543,8 +587,14 @@ async def location_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user = await current_user(update, deps)
     await deps.repo.set_home(user.telegram_id, shared.latitude, shared.longitude)
     log.info("home location saved user=%s", user.telegram_id)
-    user_data(context).pop(PENDING_LOCATION, None)
+    pending = user_data(context).pop(PENDING_LOCATION, None) or {}
     await reply(update, texts.LOCATION_SAVED, reply_markup=ReplyKeyboardRemove())
+    parcel_id = pending.get("map_parcel")
+    if parcel_id is not None:
+        chat_id = _chat_id(update) or user.telegram_id
+        failure = await send_parcel_map(context, chat_id, user.telegram_id, parcel_id)
+        if failure is not None:
+            await reply(update, failure)
 
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

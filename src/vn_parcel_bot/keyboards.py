@@ -37,9 +37,13 @@ def _nav_row(data: Callable[[int], str], page: int, pages: int) -> list[InlineKe
     ]
 
 
-def card_keyboard(parcel: Parcel, *, page: int | None = None) -> InlineKeyboardMarkup:
+def card_keyboard(
+    parcel: Parcel, *, page: int | None = None, maps: bool = False
+) -> InlineKeyboardMarkup:
     prefix, suffix = f"p:{parcel.id}", _page(page)
     name, url = parcel_link(parcel)
+    share = _button(texts.BTN_SHARE, f"{prefix}:shr{suffix}")
+    link = InlineKeyboardButton(texts.BTN_LINK.format(name=name), url=url)
     rows = [
         [
             _button(texts.BTN_RENAME, f"{prefix}:ren{suffix}"),
@@ -49,11 +53,11 @@ def card_keyboard(parcel: Parcel, *, page: int | None = None) -> InlineKeyboardM
             _button(texts.BTN_CHECK, f"{prefix}:chk{suffix}"),
             _button(texts.BTN_REMOVE, f"{prefix}:del{suffix}"),
         ],
-        [
-            _button(texts.BTN_SHARE, f"{prefix}:shr{suffix}"),
-            InlineKeyboardButton(texts.BTN_LINK.format(name=name), url=url),
-        ],
     ]
+    if maps:
+        rows += [[share, _button(texts.BTN_MAP, f"{prefix}:map{suffix}")], [link]]
+    else:
+        rows.append([share, link])
     if page is not None:
         rows.append([_button(texts.BTN_BACK_LIST, f"l:{page}")])
     return InlineKeyboardMarkup(rows)

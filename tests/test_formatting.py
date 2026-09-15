@@ -508,3 +508,10 @@ def test_parcel_list_pages():
     assert "6. " in second
     assert "7. " in second
     assert "1. " not in second
+
+
+def test_parcel_card_appends_the_place_line():
+    parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=50)
+    card = format_parcel_card(parcel, TZ, "📍 Kho Thanh Tri")
+    assert card.endswith("Đã đến kho · 🕒 01/09 08:30\n📍 Kho Thanh Tri")
+    assert format_parcel_card(parcel, TZ, None) == format_parcel_card(parcel, TZ)

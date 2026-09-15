@@ -76,3 +76,15 @@ def test_list_keyboard_recheck_row():
     markup = list_keyboard([(1, make_parcel(id=1))], page=3, pages=4, recheck=True)
     assert [b.callback_data for b in markup.inline_keyboard[-1]] == ["r:3", "m:on:3"]
     assert list_keyboard([], page=1, pages=1, recheck=True) is None
+
+
+def test_card_keyboard_with_maps_moves_the_link_to_its_own_row():
+    rows = card_keyboard(make_parcel(id=4), maps=True).inline_keyboard
+    assert [button.callback_data for button in rows[2]] == ["p:4:shr", "p:4:map"]
+    assert rows[2][1].text == "🗺 Bản đồ"
+    assert rows[3][0].url is not None
+    assert len(rows) == 4
+    assert len(card_keyboard(make_parcel(id=4)).inline_keyboard) == 3
+    with_page = card_keyboard(make_parcel(id=4), page=1, maps=True).inline_keyboard
+    assert with_page[2][1].callback_data == "p:4:map:1"
+    assert with_page[-1][0].callback_data == "l:1"

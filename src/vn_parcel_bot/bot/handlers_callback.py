@@ -13,34 +13,36 @@ from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
     PENDING_LABEL_PICK,
+    PENDING_LOCATION,
     PENDING_PHONE,
     PENDING_REMOVE,
     SELECTION,
     apply_label,
     card_markup,
+    card_view,
     claim_recheck,
     current_user,
     delete_messages,
     drop_pending,
     recheck_all,
+    send_parcel_map,
     user_data,
 )
 from vn_parcel_bot.constants import CHECK_COOLDOWN, MAX_EVENTS_IN_HISTORY
 from vn_parcel_bot.db.repo import Parcel
 from vn_parcel_bot.keyboards import (
     back_keyboard,
-    card_keyboard,
     confirm_remove_keyboard,
     label_prompt_keyboard,
     list_back_keyboard,
     list_keyboard,
+    location_request_keyboard,
     remove_confirm_keyboard,
     select_keyboard,
 )
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
     format_history,
-    format_parcel_card,
     format_parcel_list,
     format_remove_confirm,
     format_removed,
@@ -125,7 +127,8 @@ async def _parcel_action(
     tz = deps.settings.tz
     if action in ("card", "dno"):
         await query.answer()
-        await _edit(query, format_parcel_card(parcel, tz), card_keyboard(parcel, page=page))
+        text, markup = await card_view(deps, parcel, user_id, page)
+        await _edit(query, text, markup)
     elif action == "his":
         await query.answer()
         events = await deps.repo.list_events(parcel.id, MAX_EVENTS_IN_HISTORY)
@@ -159,8 +162,36 @@ async def _parcel_action(
             texts.REMOVED.format(title=parcel_title(parcel)),
             list_back_keyboard(page) if page is not None else None,
         )
+    elif action == "map":
+        await _map(context, query, parcel)
     else:
         await query.answer()
+
+
+async def _map(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parcel: Parcel) -> None:
+    deps = get_deps(context)
+    user = await deps.repo.get_user(query.from_user.id)
+    chat_id = _chat_id(query)
+    if deps.maps is None or user is None or chat_id is None:
+        await query.answer()
+        return
+    if user.home_lat is None:
+        await query.answer()
+        drop_pending(context)
+        try:
+            await context.bot.send_message(
+                chat_id,
+                texts.LOCATION_ASK,
+                parse_mode=ParseMode.HTML,
+                reply_markup=location_request_keyboard(),
+            )
+        except TelegramError as exc:
+            log.info("location prompt failed type=%s", type(exc).__name__)
+            return
+        user_data(context)[PENDING_LOCATION] = {"map_parcel": parcel.id}
+        return
+    failure = await send_parcel_map(context, chat_id, user.telegram_id, parcel.id)
+    await query.answer(failure)
 
 
 async def _check(
@@ -177,7 +208,8 @@ async def _check(
     await query.answer(texts.CHECK_STARTED)
     deps = get_deps(context)
     fresh = await deps.poller.check_parcel(parcel.user_id, parcel.id) or parcel
-    await _edit(query, format_parcel_card(fresh, deps.settings.tz), card_keyboard(fresh, page=page))
+    text, markup = await card_view(deps, fresh, parcel.user_id, page)
+    await _edit(query, text, markup)
 
 
 async def _ask_rename(

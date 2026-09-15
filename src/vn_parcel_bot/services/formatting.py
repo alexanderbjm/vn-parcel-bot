@@ -176,7 +176,7 @@ def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "") -> str:
     )
 
 
-def format_parcel_card(parcel: Parcel, tz: ZoneInfo) -> str:
+def format_parcel_card(parcel: Parcel, tz: ZoneInfo, place_line: str | None = None) -> str:
     progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
     status = (
         _escape(parcel.last_status_text)
@@ -198,6 +198,8 @@ def format_parcel_card(parcel: Parcel, tz: ZoneInfo) -> str:
     if bar:
         lines.append(bar)
     lines.append(status + time_suffix)
+    if place_line:
+        lines.append(place_line)
     return "\n".join(lines)
 
 
