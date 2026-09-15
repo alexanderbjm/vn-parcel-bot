@@ -1,11 +1,18 @@
 from tests.test_formatting import make_parcel
+from vn_parcel_bot import texts
 from vn_parcel_bot.keyboards import (
+    admin_keyboard,
+    admin_sub_keyboard,
     back_keyboard,
     card_keyboard,
+    check_done_keyboard,
     confirm_remove_keyboard,
+    help_keyboard,
+    history_keyboard,
     list_back_keyboard,
     list_keyboard,
     share_open_keyboard,
+    start_keyboard,
 )
 
 
@@ -88,3 +95,74 @@ def test_card_keyboard_with_maps_moves_the_link_to_its_own_row():
     with_page = card_keyboard(make_parcel(id=4), page=1, maps=True).inline_keyboard
     assert with_page[2][1].callback_data == "p:4:map:1"
     assert with_page[-1][0].callback_data == "l:1"
+
+
+def test_start_and_help_keyboards():
+    start_kb = start_keyboard()
+    assert cells(start_kb) == [
+        ["l:1", "r:1"],
+        ["cmd:loc", "cmd:help"],
+    ]
+    assert labels(start_kb) == [
+        ["📋 Danh sách đơn", "🔄 Kiểm tra tất cả"],
+        ["📍 Vị trí nhận hàng", "📖 Hướng dẫn"],
+    ]
+
+    help_kb = help_keyboard()
+    assert cells(help_kb) == [
+        ["l:1", "r:1"],
+        ["cmd:loc"],
+    ]
+    assert labels(help_kb) == [
+        ["📋 Danh sách đơn", "🔄 Kiểm tra tất cả"],
+        ["📍 Vị trí nhận hàng"],
+    ]
+
+
+def test_check_done_and_history_keyboards():
+    done_kb = check_done_keyboard()
+    assert cells(done_kb) == [["l:1", "r:1"]]
+    assert labels(done_kb) == [["📋 Xem danh sách đơn", "🔄 Kiểm tra lại"]]
+
+    his_kb = history_keyboard(42, page=2, maps=True)
+    assert cells(his_kb) == [["p:42:card:2", "p:42:map:2", "l:2"]]
+    assert labels(his_kb) == [[texts.BTN_BACK, texts.BTN_MAP, texts.BTN_BACK_LIST]]
+
+    his_no_map = history_keyboard(42)
+    assert cells(his_no_map) == [["p:42:card", "l:1"]]
+
+
+def test_admin_keyboards():
+    adm_kb = admin_keyboard()
+    assert cells(adm_kb) == [
+        ["adm:health", "adm:users"],
+        ["r:1", "adm:sticker"],
+    ]
+    assert labels(adm_kb) == [
+        ["🩺 Tình trạng bot", "👥 Người dùng"],
+        ["🔄 Kiểm tra tất cả", "🏷 Quản lý sticker"],
+    ]
+
+    sub_kb = admin_sub_keyboard()
+    assert cells(sub_kb) == [
+        ["adm:health", "adm:users"],
+        ["adm:hozk"],
+    ]
+
+
+def test_button_styles():
+    markup = card_keyboard(make_parcel(id=42))
+    # Check button has SUCCESS style (green)
+    check_btn = markup.inline_keyboard[1][0]
+    assert check_btn.text == "🔄 Kiểm tra"
+    assert check_btn.style == "success"
+
+    # Delete button has DANGER style (red)
+    del_btn = markup.inline_keyboard[1][1]
+    assert del_btn.text == "🗑 Xóa"
+    assert del_btn.style == "danger"
+
+    # Confirm remove button has DANGER style
+    confirm_kb = confirm_remove_keyboard(42)
+    assert confirm_kb.inline_keyboard[0][0].style == "danger"
+    assert confirm_kb.inline_keyboard[0][1].style == "primary"

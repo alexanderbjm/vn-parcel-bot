@@ -1,3 +1,4 @@
+import json
 import logging
 import math
 from datetime import UTC, datetime
@@ -30,11 +31,15 @@ from vn_parcel_bot.bot.handlers_user import (
     send_parcel_map,
     user_data,
 )
+from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.constants import CHECK_COOLDOWN, MAX_EVENTS_IN_HISTORY
 from vn_parcel_bot.db.repo import Parcel
 from vn_parcel_bot.keyboards import (
+    admin_keyboard,
+    admin_sub_keyboard,
     back_keyboard,
     confirm_remove_keyboard,
+    help_keyboard,
     label_prompt_keyboard,
     list_back_keyboard,
     list_keyboard,
@@ -44,10 +49,13 @@ from vn_parcel_bot.keyboards import (
 )
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
+    format_health,
+    format_help,
     format_history,
     format_parcel_list,
     format_remove_confirm,
     format_removed,
+    format_users,
     list_page_items,
     parcel_title,
     spoiler,
@@ -68,10 +76,9 @@ async def _edit(query: CallbackQuery, text: str, markup: InlineKeyboardMarkup | 
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     except BadRequest as exc:
-        if "not modified" not in str(exc).lower():
-            log.info("callback edit failed type=%s", type(exc).__name__)
-    except TelegramError as exc:
-        log.info("callback edit failed type=%s", type(exc).__name__)
+        if "Message is not modified" in str(exc):
+            return
+        raise
 
 
 def _page(value: str | None) -> int | None:
@@ -108,6 +115,10 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _phone_answer(context, query)
     elif kind == "m":
         await _select_action(context, query, parts)
+    elif kind == "cmd":
+        await _cmd_action(update, context, query, parts)
+    elif kind == "adm":
+        await _adm_action(context, query, parts)
     else:
         await query.answer()
 
@@ -488,3 +499,80 @@ async def _share_answer(
             "label": parcel.label,
             "prompt_id": _message_id(query),
         }
+
+
+async def _cmd_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    query: CallbackQuery,
+    parts: list[str],
+) -> None:
+    if not parts:
+        await query.answer()
+        return
+    action = parts[0]
+    if action == "loc":
+        await query.answer()
+        chat_id = _chat_id(query)
+        if chat_id is not None:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=texts.LOCATION_ASK,
+                reply_markup=location_request_keyboard(),
+            )
+    elif action == "help":
+        await query.answer()
+        await _edit(query, format_help(), help_keyboard())
+    else:
+        await query.answer()
+
+
+async def _adm_action(
+    context: ContextTypes.DEFAULT_TYPE,
+    query: CallbackQuery,
+    parts: list[str],
+) -> None:
+    if not parts:
+        await query.answer()
+        return
+    deps = get_deps(context)
+    if query.from_user.id != deps.settings.admin_telegram_id:
+        await query.answer(texts.ADMIN_ONLY, show_alert=True)
+        return
+    action = parts[0]
+    if action == "health":
+        await query.answer()
+        last_poll = await deps.repo.get_meta("last_poll_at")
+        report = await deps.repo.get_meta("last_poll_report")
+        text = format_health(
+            datetime.fromisoformat(last_poll) if last_poll else None,
+            json.loads(report) if report else None,
+            await deps.repo.count_all_active(),
+            len(await deps.repo.list_users()),
+            deps.settings.tz,
+        )
+        await _edit(query, text, admin_sub_keyboard())
+    elif action == "users":
+        await query.answer()
+        users = await deps.repo.list_users()
+        counts = {
+            user.telegram_id: await deps.repo.count_active_parcels(user.telegram_id)
+            for user in users
+        }
+        text = format_users(users, counts, deps.settings.admin_telegram_id)
+        await _edit(query, text, admin_sub_keyboard())
+    elif action == "hozk":
+        await query.answer()
+        await _edit(query, texts.ADMIN_HELP, admin_keyboard())
+    elif action == "sticker":
+        await query.answer()
+        snapshot = deps.registry.current if deps.registry is not None else current_snapshot()
+        mapped = [
+            escape(module.display_name)
+            for module in snapshot.ordered()
+            if await deps.repo.get_meta(f"sticker:{module.code}")
+        ]
+        text = texts.STICKER_LIST.format(carriers=", ".join(mapped) or "—")
+        await _edit(query, text, admin_sub_keyboard())
+    else:
+        await query.answer()

@@ -32,6 +32,9 @@ from vn_parcel_bot.constants import RECHECK_COOLDOWN, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.keyboards import (
     card_keyboard,
+    check_done_keyboard,
+    help_keyboard,
+    history_keyboard,
     label_pick_keyboard,
     label_prompt_keyboard,
     list_keyboard,
@@ -39,6 +42,7 @@ from vn_parcel_bot.keyboards import (
     phone_prompt_keyboard,
     remove_confirm_keyboard,
     share_open_keyboard,
+    start_keyboard,
 )
 from vn_parcel_bot.services.formatting import (
     format_add_outcome,
@@ -233,12 +237,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     first_name = update.effective_user.first_name if update.effective_user else ""
     await reply(
-        update, texts.WELCOME.format(name=escape(first_name or "")) + "\n\n" + format_help()
+        update,
+        texts.WELCOME.format(name=escape(first_name or "")) + "\n\n" + format_help(),
+        reply_markup=start_keyboard(),
     )
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply(update, format_help())
+    await reply(update, format_help(), reply_markup=help_keyboard())
 
 
 async def _add_and_reply(
@@ -377,7 +383,11 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await reply(update, texts.PARCEL_NOT_FOUND.format(ref=ref_text(ref)))
         return
     parcel, events = found
-    await reply(update, format_history(parcel, events, deps.settings.tz))
+    await reply(
+        update,
+        format_history(parcel, events, deps.settings.tz),
+        reply_markup=history_keyboard(parcel.id, maps=maps_on(deps)),
+    )
 
 
 def _censor_target(context: ContextTypes.DEFAULT_TYPE, replied: Message) -> dict | None:
@@ -595,7 +605,9 @@ async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await reply(update, texts.CHECK_TOO_SOON.format(minutes=wait))
         return
     await reply(update, texts.CHECK_STARTED)
-    await reply(update, await recheck_all(deps, user.telegram_id))
+    await reply(
+        update, await recheck_all(deps, user.telegram_id), reply_markup=check_done_keyboard()
+    )
 
 
 async def location_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -707,7 +719,7 @@ async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply(update, texts.UNKNOWN_COMMAND)
+    await reply(update, texts.UNKNOWN_COMMAND, reply_markup=start_keyboard())
 
 
 def _photo_lock(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> asyncio.Lock:

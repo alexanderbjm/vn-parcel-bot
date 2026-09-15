@@ -14,6 +14,7 @@ from vn_parcel_bot.bot.auth import admin_only
 from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import reply
 from vn_parcel_bot.carriers.registry import current_snapshot
+from vn_parcel_bot.keyboards import admin_keyboard, admin_sub_keyboard
 from vn_parcel_bot.services.formatting import format_health, format_users
 
 log = logging.getLogger(__name__)
@@ -67,7 +68,11 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     counts = {
         user.telegram_id: await deps.repo.count_active_parcels(user.telegram_id) for user in users
     }
-    await reply(update, format_users(users, counts, deps.settings.admin_telegram_id))
+    await reply(
+        update,
+        format_users(users, counts, deps.settings.admin_telegram_id),
+        reply_markup=admin_sub_keyboard(),
+    )
 
 
 @admin_only
@@ -84,6 +89,7 @@ async def health_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             len(await deps.repo.list_users()),
             deps.settings.tz,
         ),
+        reply_markup=admin_sub_keyboard(),
     )
 
 
@@ -98,7 +104,11 @@ async def sticker_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             for module in snapshot.ordered()
             if await deps.repo.get_meta(f"{STICKER_KEY}{module.code}")
         ]
-        await reply(update, texts.STICKER_LIST.format(carriers=", ".join(mapped) or "—"))
+        await reply(
+            update,
+            texts.STICKER_LIST.format(carriers=", ".join(mapped) or "—"),
+            reply_markup=admin_sub_keyboard(),
+        )
         return
     module = snapshot.get(args[0])
     if module is None:
@@ -121,4 +131,4 @@ async def sticker_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 @admin_only
 async def hozk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await reply(update, texts.ADMIN_HELP)
+    await reply(update, texts.ADMIN_HELP, reply_markup=admin_keyboard())

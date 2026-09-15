@@ -24,6 +24,7 @@ from vn_parcel_bot.services.sharing import share_token
 
 T0 = datetime(2026, 9, 1, 5, 0, tzinfo=UTC)
 USER = 111
+ADMIN = 111
 OTHER = 222
 CHAT = 111
 SPX = "SPXVN000000000001"
@@ -355,3 +356,36 @@ async def test_check_command_reports_redetected_parcels(env):
     assert texts.CHECK_REDETECTED.format(count=1) in replies[-1][0]
     await check_cmd(user_update(Msg(91, "/check", replies)), env.context)
     assert replies[-1][0] == texts.CHECK_TOO_SOON.format(minutes=2)
+
+
+async def test_cmd_action_location_and_help(env):
+    # Test cmd:loc triggers location prompt
+    query_loc = await tap(env, "cmd:loc")
+    assert query_loc.answers == [None]
+    assert any(texts.LOCATION_ASK in item[1] for item in env.bot.sent)
+
+    # Test cmd:help displays help with keyboard
+    query_help = await tap(env, "cmd:help")
+    assert query_help.answers == [None]
+    assert query_help.edits[0][0].startswith("<b>📦 Hướng dẫn</b>")
+
+
+async def test_adm_action_health_users_and_non_admin(env):
+    # Non-admin gets rejected with alert
+    non_admin_query = await tap(env, "adm:health", user_id=222)
+    assert non_admin_query.answers == [texts.ADMIN_ONLY]
+
+    # Admin gets health view
+    admin_health = await tap(env, "adm:health", user_id=ADMIN)
+    assert admin_health.answers == [None]
+    assert "Tình trạng" in admin_health.edits[0][0]
+
+    # Admin gets users view
+    admin_users = await tap(env, "adm:users", user_id=ADMIN)
+    assert admin_users.answers == [None]
+    assert "Người dùng" in admin_users.edits[0][0]
+
+    # Admin gets hozk menu
+    admin_hozk = await tap(env, "adm:hozk", user_id=ADMIN)
+    assert admin_hozk.answers == [None]
+    assert texts.ADMIN_HELP in admin_hozk.edits[0][0]

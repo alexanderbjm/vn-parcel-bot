@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "composio": {
+      "type": "http",
+      "url": "https://connect.composio.dev/mcp"
+    },
+    "vn-parcel-bridge": {
+      "command": ".venv/Scripts/python.exe",
+      "args": [
+        "scripts/mcp_server.py"
+      ]
+    }
+  }
+}
