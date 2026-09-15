@@ -64,18 +64,16 @@ def format_time(dt: datetime, tz: ZoneInfo) -> str:
     return dt.astimezone(tz).strftime(texts.TIME_FORMAT)
 
 
-_PROGRESS_STATES = ("in_transit", "delivered")
-
-
 def progress_bar(percent: int, width: int = 10) -> str:
     filled = max(0, min(width, percent * width // 100))
     return "🟩" * filled + "🟥" * (width - filled)
 
 
 def _progress_parts(progress: int | None, state: str) -> tuple[str, str]:
+    # A delivered parcel keeps "100%" but loses the bar: a full green row is just noise.
     if state == "delivered":
-        progress = 100
-    if progress is None or state not in _PROGRESS_STATES:
+        return texts.PROGRESS_SUFFIX.format(percent=100), ""
+    if progress is None or state != "in_transit":
         return "", ""
     return texts.PROGRESS_SUFFIX.format(percent=progress), progress_bar(progress)
 
@@ -131,7 +129,8 @@ def format_event_update(
     progress: int | None = None,
 ) -> str:
     carrier = carrier_name(resolved_carrier) if resolved_carrier else parcel_carrier_label(parcel)
-    progress_suffix, bar = _progress_parts(None if returned else progress, "in_transit")
+    state = "delivered" if delivered else "in_transit"
+    progress_suffix, bar = _progress_parts(None if returned else progress, state)
     header = texts.UPDATE_HEADER.format(
         title=parcel_title(parcel), carrier=carrier + progress_suffix
     )

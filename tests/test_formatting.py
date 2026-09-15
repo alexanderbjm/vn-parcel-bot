@@ -457,10 +457,22 @@ def test_event_update_header_shows_progress_and_bar():
     assert lines[1] == "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥"
 
 
-def test_delivered_parcel_shows_full_bar_without_stored_progress():
-    text = format_parcel_list([make_parcel(label="Áo", state="delivered")], TZ)
+def test_delivered_parcel_shows_100_percent_without_a_bar():
+    parcel = make_parcel(label="Áo", state="delivered", progress=95)
+    text = format_parcel_list([parcel], TZ)
     assert f"<b>Áo · {blurred(SPX)}</b> · SPX · 100%" in text
-    assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩" in text
+    assert "🟩" not in text and "🟥" not in text
+    card = format_parcel_card(parcel, TZ)
+    assert card.startswith(f"✅ <b>Áo · {blurred(SPX)}</b> · SPX · 100%\n")
+    assert "🟩" not in card and "🟥" not in card
+
+
+def test_delivered_update_shows_100_percent_without_a_bar():
+    text = format_event_update(
+        make_parcel(label="Áo"), [ev(0)], TZ, delivered=True, returned=False, progress=100
+    )
+    assert text.split("\n")[0] == f"📦 <b>Áo · {blurred(SPX)}</b> · SPX · 100%"
+    assert "🟩" not in text
 
 
 def test_parcel_card_shows_title_progress_bar_and_status():
