@@ -1,5 +1,7 @@
 import textwrap
+from datetime import UTC, datetime
 
+from vn_parcel_bot.carriers.models import TrackingEvent
 from vn_parcel_bot.carriers.registry import CarrierRegistry, Detection
 
 ALPHA = r"""
@@ -230,3 +232,15 @@ def test_progress_errors_are_contained_and_values_clamped(tmp_path):
     high.mkdir()
     clamped = load(high, alpha=ALPHA.replace(anchor, anchor + "    progress=lambda r: 150,\n"))
     assert clamped.current.progress("alpha", result) == 100
+
+
+def test_a_failing_place_hook_gives_no_place(tmp_path, caplog):
+    source = ALPHA.replace(
+        'examples=(("AL00000001", True),),\n',
+        'examples=(("AL00000001", True),),\n    place=lambda event: 1 / 0,\n',
+    )
+    assert source != ALPHA
+    snapshot = load(tmp_path, alpha=source).current
+    event = TrackingEvent(time=datetime(2026, 9, 15, tzinfo=UTC), description="x", location="y")
+    assert snapshot.latest_place("alpha", [event]) is None
+    assert "carrier place failed carrier=alpha type=ZeroDivisionError" in caplog.text

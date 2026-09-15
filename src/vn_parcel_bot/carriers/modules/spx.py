@@ -16,6 +16,8 @@ DELIVERED_MILESTONE = 8
 DELIVERED_TRACKING_CODES = ("F980",)
 RETURNED_MARKERS = ("return", "hoàn hàng", "trả hàng")
 SPX_TRACKING_CODE = re.compile(r"F(\d{3})", re.ASCII)
+# "Đơn hàng đã đến kho 21-HNI Thanh Tri 2 Hub": the hub named in the status text.
+SPX_HUB = re.compile(r"(?:đến|rời|tại)\s+kho\s+(\S.*)$", re.IGNORECASE)
 
 
 def _parse_error(detail: str) -> CarrierError:
@@ -136,6 +138,13 @@ class SpxCarrier:
         return parse_spx_response(json_body("spx", response), tracking_number)
 
 
+def spx_place(event: TrackingEvent) -> str | None:
+    if event.location:
+        return event.location
+    match = SPX_HUB.search(event.description)
+    return match.group(1).strip() if match else None
+
+
 MODULE = CarrierModule(
     code="spx",
     display_name="SPX",
@@ -146,4 +155,5 @@ MODULE = CarrierModule(
     code_lengths=(17,),
     build_client=SpxCarrier,
     progress=spx_progress,
+    place=spx_place,
 )

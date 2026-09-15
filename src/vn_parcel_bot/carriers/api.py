@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from vn_parcel_bot.carriers.models import Carrier, TrackingResult
+from vn_parcel_bot.carriers.models import Carrier, TrackingEvent, TrackingResult
 from vn_parcel_bot.carriers.progress import stage_progress
 
 PRIORITY_PREFIXED = 100
@@ -23,6 +23,10 @@ def no_client() -> Carrier | None:
 
 def no_hint(tracking_number: str) -> str | None:
     return None
+
+
+def event_location(event: TrackingEvent) -> str | None:
+    return event.location
 
 
 @dataclass(frozen=True)
@@ -55,3 +59,5 @@ class CarrierModule:
     # Lengths of well-formed codes; empty accepts any length the rules allow. Screenshot reading
     # re-reads a code whose length is not listed.
     code_lengths: tuple[int, ...] = ()
+    # The hub or place name shown on maps; default: the event's location.
+    place: Callable[[TrackingEvent], str | None] = event_location

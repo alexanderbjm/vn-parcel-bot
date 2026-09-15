@@ -1,5 +1,9 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
+from vn_parcel_bot.carriers.models import TrackingEvent
+from vn_parcel_bot.carriers.modules.spx import spx_place
 from vn_parcel_bot.carriers.registry import CarrierRegistry
 
 ORDER = [
@@ -151,3 +155,33 @@ def test_best_and_sf_clients_with_and_without_key(monkeypatch):
     assert isinstance(sf_client, SeventeenTrackCarrier)
     assert sf_client.code == "sf"
     assert sf_client.seventeen_carrier_id == 100012
+
+
+AT = datetime(2026, 9, 15, 1, 0, tzinfo=UTC)
+
+
+def event(minutes, description, location=None):
+    return TrackingEvent(
+        time=AT + timedelta(minutes=minutes), description=description, location=location
+    )
+
+
+def test_spx_place_reads_the_hub_from_the_status_text():
+    arrived = event(0, "Đơn hàng đã đến kho 21-HNI Thanh Tri 2 Hub")
+    assert spx_place(arrived) == "21-HNI Thanh Tri 2 Hub"
+    assert spx_place(event(0, "Đơn hàng đã rời kho BN B Mega SOC")) == "BN B Mega SOC"
+    assert spx_place(event(0, "Đang giao hàng")) is None
+    assert spx_place(event(0, "Đơn hàng đã đến kho", location="Kho HCM")) == "Kho HCM"
+
+
+def test_latest_place_takes_the_newest_event_with_a_place(snapshot):
+    events = [
+        event(0, "Đơn hàng đã đến kho 11-TQG Son Duong Hub"),
+        event(30, "Đơn hàng đã đến kho 21-HNI Thanh Tri 2 Hub"),
+        event(60, "Đang giao hàng"),
+    ]
+    assert snapshot.latest_place("spx", events) == "21-HNI Thanh Tri 2 Hub"
+    post_office = event(0, "Đã đến", location=" Bưu cục  Quận 7 ")
+    assert snapshot.latest_place("jt", [post_office]) == "Bưu cục Quận 7"
+    assert snapshot.latest_place(None, [post_office]) is None
+    assert snapshot.latest_place("gone", [post_office]) is None

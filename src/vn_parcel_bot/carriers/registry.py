@@ -10,7 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 from vn_parcel_bot.carriers.api import CarrierModule
-from vn_parcel_bot.carriers.models import Carrier, TrackingResult
+from vn_parcel_bot.carriers.models import Carrier, TrackingEvent, TrackingResult
 
 log = logging.getLogger(__name__)
 
@@ -125,6 +125,20 @@ class CarrierSnapshot:
             log.warning("carrier progress failed carrier=%s type=%s", carrier, type(exc).__name__)
             return None
         return None if value is None else max(0, min(100, int(value)))
+
+    def latest_place(self, carrier: str | None, events: Iterable[TrackingEvent]) -> str | None:
+        module = self.get(carrier) if carrier is not None else None
+        if module is None:
+            return None
+        for event in sorted(events, key=lambda item: item.time, reverse=True):
+            try:
+                value = module.place(event)
+            except Exception as exc:
+                log.warning("carrier place failed carrier=%s type=%s", carrier, type(exc).__name__)
+                return None
+            if isinstance(value, str) and value.strip():
+                return " ".join(value.split())
+        return None
 
     def pending_hint(self, carriers: Iterable[str], tracking_number: str) -> str | None:
         for code in carriers:
