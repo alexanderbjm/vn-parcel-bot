@@ -1,6 +1,6 @@
 # Parcel maps: hub location, distance and map picture — design
 
-Date: 2026-09-15 · Branch: `main` · Status: approved in chat, not built
+Date: 2026-09-15 · Branch: `main` · Status: built 2026-09-15 (plan `docs/superpowers/plans/2026-09-15-parcel-maps.md`)
 
 ## Amendment (2026-09-15): map data providers
 

@@ -57,6 +57,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
    | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
    | `SEVENTEEN_TRACK_KEY` | no | – | 17TRACK API key: tracks BEST, SF and cross-border J&T (`JNTX…`, after the phone digits). Each newly registered parcel uses one 17TRACK quota |
+   | `MAPS_ENABLED` | no | `true` | Hub lines, distances and map pictures (see *Maps and distance*); `false` turns them off |
 
 5. **Check Telegram and carriers** (optional but recommended before the first run):
    ```powershell
@@ -93,6 +94,7 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 | `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one, with buttons to clear the name or cancel. If the replied message holds several parcels, buttons let you pick one. The label is shown with the tracking code blurred next to it, and your `/label` message is deleted |
 | `/remove <số> [số…]` | Stop tracking one or more parcels (e.g. `/remove 1 2 3`, numbers from `/list`, or codes). The bot lists them and asks with ✅ Xóa / ↩ Hủy buttons. On `/list`, **🗑 Xóa nhiều** lets you tick parcels and remove them together |
 | `/phone <4 số>` · `/phone clear` | Save or clear your default last 4 phone digits |
+| `/location` · `/location off` | Save your area (rounded to about 1 km) for distances and maps, or delete it |
 | `/check` | Check all your parcels now and match their carriers again (once every 2 minutes). The 🔄 Kiểm tra tất cả button under `/list` does the same |
 | `/cancel` | Cancel a pending question (phone digits, name, remove, list selection); every question also has a ↩ Hủy button |
 
@@ -101,8 +103,8 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 - **Link-only carriers:** codes from YunExpress, GHTK, Viettel Post, VNPost and LEX VN get an official tracking link plus a 17TRACK link; they are not tracked. BEST Express and SF Express are the same unless `SEVENTEEN_TRACK_KEY` is set, in which case they are tracked through the 17TRACK API.
 - **15-digit numbers** are tracked as Cainiao. A number that turns out to be an order number never gets data and stops after 7 days.
 - **Hidden codes:** tracking codes and order numbers in bot messages are blurred (Telegram spoiler); tap to reveal.
-- **Progress:** `/list`, digests and updates show how far a parcel has come (` · 80%` and a bar) from its latest status: 10% order created, 30% picked up, 50% at a hub, 60% cleared customs, 80% at the delivery post office, 95% out for delivery, 100% delivered. SPX uses its status codes, other carriers use status keywords; a carrier module can override this with `progress=`.
-- **Buttons:** update messages and add replies carry ✏️ Đổi tên (rename), 📜 Hành trình (history), 🔄 Kiểm tra (check now, once every 5 minutes per parcel), 🗑 Xóa (remove after confirming), 📤 Chia sẻ (share link) and 🔗 Tra cứu ↗ (tracking page). Taps edit the same message. `/list` and digests show numbered buttons that open a parcel card; `/list` shows 5 parcels per page with ⬅️/➡️.
+- **Progress:** `/list`, digests and updates show how far a parcel has come (` · 80%` and a bar) from its latest status: 10% order created, 30% picked up, 50% at a hub, 60% cleared customs, 80% at the delivery post office, 95% out for delivery, 100% delivered. SPX uses its status codes, other carriers use status keywords; a carrier module can override this with `progress=`. Delivered parcels show `100%` without the bar.
+- **Buttons:** update messages and add replies carry ✏️ Đổi tên (rename), 📜 Hành trình (history), 🔄 Kiểm tra (check now, once every 5 minutes per parcel), 🗑 Xóa (remove after confirming), 📤 Chia sẻ (share link), 🗺 Bản đồ (map picture, see *Maps and distance*) and 🔗 Tra cứu ↗ (tracking page). Taps edit the same message. `/list` and digests show numbered buttons that open a parcel card; `/list` shows 5 parcels per page with ⬅️/➡️.
 - **Sound:** update messages arrive silently unless a parcel is out for delivery, delivered or returned; quiet hours keep everything silent.
 - **Share links:** 📤 Chia sẻ creates a `t.me/<bot>?start=s_…` link. Another allowed user who opens it can add the same parcel (code and name, not your phone digits) to their own list.
 - **Tidy chat:** questions that need a second message (phone digits, a parcel name, `/remove` confirmation) are deleted together with your answer once handled. Telegram only lets bots delete messages younger than 48 hours.
@@ -117,6 +119,12 @@ Send a screenshot of an order (the shop app's shipping details screen works best
 ### Daily digests
 
 At 07:00, 12:00, 19:00 and 22:00 every allowed user who has parcels gets one summary message with sound. It lists active parcels with 🆕 on the ones that changed since the previous digest, and parcels that were delivered, returned or stopped since then are shown once. Instant updates still arrive as before. To change the times, set `DIGEST_TIMES` in `.env` (for example `DIGEST_TIMES=08:00,20:00`, or leave it empty to turn digests off) and restart the bot. A digest time missed while the PC was off is skipped; the next digest covers everything since the last one.
+
+### Maps and distance
+
+Send `/location` once and tap **📍 Gửi vị trí**. The bot keeps only your area, rounded to about 1 km; `/location off` deletes it. Cards and update messages then end with the parcel's current hub and the straight-line distance to your area, for example `📍 Kho Thanh Tri · cách bạn ~10 km (đường chim bay)`. Tap **🗺 Bản đồ** for a map picture with the hub and your area (once a minute per parcel; without a saved area the bot asks for it first). When a parcel reaches a new hub, its map follows the update message silently.
+
+SPX hubs are read from the status text; other carriers show the location they report, and parcels without one get no map. Hubs are looked up on Photon and drawn on CARTO map tiles, both built on OpenStreetMap data (© OpenStreetMap contributors © CARTO); your location is never sent to them. Set `MAPS_ENABLED=false` in `.env` and restart the bot to turn maps off.
 
 ## Carrier stickers
 
@@ -173,4 +181,4 @@ Admin commands (`/hozk` lists them; only the admin sees them in the command menu
 
 ## Privacy
 
-The bot stores Telegram IDs and display names of allowed users, tracking codes, tracking events, optional parcel labels, and only the **last 4 digits** of phone numbers, all in `data\bot.sqlite3` on this PC. Delivered, returned, expired and stale parcels are deleted 30 days after their last update. Logs contain counts and masked codes only, never the bot token or message contents.
+The bot stores Telegram IDs and display names of allowed users, tracking codes, tracking events, optional parcel labels, and only the **last 4 digits** of phone numbers, all in `data\bot.sqlite3` on this PC. Delivered, returned, expired and stale parcels are deleted 30 days after their last update. Logs contain counts and masked codes only, never the bot token or message contents. With maps, your area is stored rounded to about 1 km and never logged; only hub names go to Photon, and map squares from CARTO are kept in `data\tiles` for a week.

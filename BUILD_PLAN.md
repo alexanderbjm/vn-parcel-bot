@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 2.7 · 2026-09-15 · Status: v1 built on branch main; live verification in progress
+Version 2.8 · 2026-09-15 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,13 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 2.8 (2026-09-15)
+
+- **Parcel maps** ([design](docs/superpowers/specs/2026-09-15-parcel-maps-design.md)): `/location` saves the user's area once through Telegram's location button, rounded to 2 decimals (~1 km); `/location off` deletes it (§4). Carrier modules gain a `place` hook (default: the event's location; SPX reads the hub after `đến/rời/tại kho`), and the poller stores the newest hub in `parcels.place`. Hubs are looked up on Photon (OpenStreetMap data, Vietnam bounding box, 1.1 s between requests, misses retried after 30 days) with the province table in `services/geo_provinces.py` as fallback, and cached in `places`. Cards and update messages end with `PLACE_LINE` (`📍 Kho … · cách bạn ~N km (đường chim bay)`, straight line) or `PLACE_ONLY_LINE` without a saved area; cards and updates get `[🗺 Bản đồ]` (`p:<id>:map`, once a minute per parcel), which asks for the location first when none is saved. After an update that moves a parcel to a new hub, a 600×400 map picture follows silently (CARTO Voyager tiles cached 7 days in `data/tiles`, credit `© OpenStreetMap contributors © CARTO`). openstreetmap.org is blocked from the bot's PC, hence Photon and CARTO. The home area is never logged or sent to a lookup service. `MAPS_ENABLED=false` turns all of it off (§10.1). New dependency: Pillow.
+- **Schema v4** (§7): `users.home_lat`, `users.home_lon`, `parcels.place` and the `places` table; migration 3 writes `<db_path>.bak-v3` first.
+- **Delivered parcels** keep ` · 100%` but no longer show the progress bar in `/list`, cards and the delivered update.
+- **J&T page layout** (§5.4): the tracking page now lists each bill in `.result-tracking .result_vandon` with newest-first `.result-vandon-item` rows. The parser reads that layout first and keeps the older one as a fallback; courier and recipient names and phone numbers are dropped before events are stored.
 
 ## Changes in 2.7 (2026-09-15)
 
@@ -253,6 +260,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/label` | `<ref> [name…]` | Set nickname (trimmed, max `MAX_LABEL_LENGTH` = 40 chars). No name → `LABEL_ASK` with `[🗑 Xóa tên]` (labelled parcels) and `[↩ Hủy]`; the next text message is the name. As a reply to a bot message: that message's parcel; several parcels → `LABEL_PICK` buttons (2.7). |
 | `/remove` | `<ref> …` | One or more `/list` numbers or codes (spaces or commas). Confirmation with `[✅ Xóa]`/`[✅ Xóa N đơn]` and `[↩ Hủy]`, then the parcels and their events are deleted; unknown refs are listed (2.7). |
 | `/phone` | `[last4 \| clear]` | Default digits for carriers that need them (J&T, GHN). No arg → show saved default (or `PHONE_NONE`). 4 digits → save default. `clear` → remove default. Anything else → `INVALID_PHONE`. |
+| `/location` | `[off]` | No arg → `LOCATION_ASK` (or `LOCATION_STATUS` when an area is saved) with a one-time reply keyboard `[📍 Gửi vị trí]` (`request_location`) and `[↩ Hủy]`, and sets `PENDING_LOCATION`. A shared location (any time) is saved with `repo.set_home`, rounded to 2 decimals, and answered `LOCATION_SAVED` with the keyboard removed; if the prompt came from a card's 🗺 button, that map is sent next. Coordinates are never logged. `off` → `clear_home` → `LOCATION_CLEARED` (`LOCATION_NONE` when nothing is saved). `↩ Hủy` or `/cancel` → `CANCELLED` with the keyboard removed. |
 | `/check` | – | `ParcelService.redetect_carriers(uid)`, then poll **this user's** active parcels now, ignoring `next_check_at`. At most once per `RECHECK_COOLDOWN` (2 min) per user, shared with the list's `r:<page>` button (in-memory). Replies `CHECK_STARTED`, runs the cycle (updates arrive as normal notifications), then `CHECK_DONE` (+ `CHECK_REDETECTED` when carriers changed). |
 | `/cancel` | – | Clear any pending prompt (phone digits, name, name picker, remove confirmation, list selection) → `CANCELLED`; nothing pending → `NOTHING_TO_CANCEL`. Every prompt also has a `[↩ Hủy]` button (2.7). |
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
@@ -405,7 +413,7 @@ Tracking code format: `SPXVN` + 8–16 uppercase alphanumerics (observed example
 | Tracking page | `https://jtexpress.vn/vi/tracking` | Verified |
 | Lookup | Server-rendered HTML. The page's form is `GET https://jtexpress.vn/tracking` with `type=track` and `billcode=<CODE>`; phone digits parameter believed to be `cellphone=<LAST4>` | Form verified; **how the phone digits are actually submitted is unverified** (the hidden `cellphone` input is commented out in the HTML and a separate `tracking_cellphone.js` + verify modal exist) |
 | Not-found marker | Text `Không tìm thấy dữ liệu về vận đơn` and/or an `.empty-vandon` block | Verified for a fake code |
-| Result markup | Believed to be inside `.result-tracking` | Unverified for real data — confirmed by Prompt 10A |
+| Result markup | `.result-tracking .result_vandon` per bill (`header span` holds the code) with `.result-vandon-item` rows, newest first; each row has `HH:MM:SS` and `YYYY-MM-DD` in `div.flex-col span` and text with `【<font>】` highlights for names, hubs and phones. Highlights after person labels or shaped like phone numbers are dropped; the last kept one is the location. The older synthetic layout is still parsed as a fallback | Verified with a real cross-border parcel on 2026-09-15 (fixture `live_layout.html` is synthetic) |
 | Captcha / CSRF / signature on GET | None observed | Verified for fake code |
 | Requires last 4 digits of recipient phone | Yes (page asks for it) | Verified via public sources |
 
@@ -636,6 +644,7 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 - `carrier IS NULL` means **unresolved**: the parcel has several candidates and none has returned data yet. Unresolved parcels can only be `pending` or `expired`.
 - `candidates` stores tracked carrier codes in try order, comma-separated (`ghn,ninjavan`). A resolved parcel stores exactly its carrier.
 - Schema v2 (2.0) has no `carrier` CHECK: carrier codes come from the loaded modules, so a new module can store parcels without a migration. Migration 2 rebuilds `parcels` with foreign keys off and writes `<db_path>.bak-v1` first. Schema v3 (2.1) adds `progress INTEGER` (0–100, only increases; `<db_path>.bak-v2` is written first).
+- Schema v4 (2.8) adds `users.home_lat REAL` and `users.home_lon REAL` (both set or both NULL, rounded to 2 decimals), `parcels.place TEXT` (the newest hub as the carrier wrote it) and `places(name TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT NOT NULL CHECK (source IN ('osm', 'province', 'none')), looked_up_at TEXT NOT NULL)`, keyed by the cleaned `CODE|district`. `none` rows have NULL coordinates. Migration 3 writes `<db_path>.bak-v3` first.
 - `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
 **Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
@@ -784,6 +793,8 @@ MAX_EVENTS_IN_UPDATE = 10
 MAX_EVENTS_IN_HISTORY = 30
 TELEGRAM_TEXT_LIMIT = 4000
 ```
+
+Map limits live next to their code: `MAP_COOLDOWN_SECONDS = 60` (one parcel's 🗺 Bản đồ button, in memory) in `bot/handlers_user.py`; `MIN_REQUEST_GAP_SECONDS = 1.1` and `MISS_RETRY_AFTER = timedelta(days=30)` in `services/geo.py`; `TILE_MAX_AGE_SECONDS` (7 days) in `services/maps.py`.
 
 ### 9.3 `logging_setup.py`
 
@@ -1458,6 +1469,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
 | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
 | `DIGEST_TIMES` | no | `07:00,12:00,19:00,22:00` | comma-separated local HH:MM; empty disables |
+| `MAPS_ENABLED` | no | `true` | `true`/`1`/`on`/`yes` or `false`/`0`/`off`/`no` (case-insensitive); `false` turns off place lines, map buttons, automatic maps and lookups |
 
 Note: `QUIET_HOURS` unset → default `(22, 7)`; set to empty → `None`. Relative paths are relative to the working directory (the repo root when run via the scripts).
 
@@ -1710,6 +1722,31 @@ PHONE_CLEARED = "📱 Đã xóa 4 số cuối mặc định."
 
 CANCELLED = "Đã hủy."
 NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
+
+LOCATION_ASK = (
+    "📍 Bấm nút <b>Gửi vị trí</b> bên dưới. Mình chỉ lưu khu vực làm tròn ~1 km "
+    "để tính khoảng cách tới đơn hàng."
+)
+LOCATION_STATUS = (
+    "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
+    "hoặc /location off để xóa."
+)
+LOCATION_SAVED = "📍 Đã lưu khu vực của bạn (làm tròn ~1 km)."
+LOCATION_CLEARED = "📍 Đã xóa khu vực của bạn."
+LOCATION_NONE = "Bạn chưa lưu khu vực nào. Gửi /location để lưu."
+
+BTN_SEND_LOCATION = "📍 Gửi vị trí"
+BTN_CANCEL_TEXT = "↩ Hủy"
+BTN_MAP = "🗺 Bản đồ"
+
+PLACE_LINE = "📍 {place} · cách bạn {distance} (đường chim bay)"
+PLACE_ONLY_LINE = "📍 {place}"
+DISTANCE_UNDER_1KM = "dưới 1 km"
+MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance} (đường chim bay)"
+
+MAP_NO_PLACE = "Đơn này chưa có vị trí kho để vẽ bản đồ."
+MAP_TOO_SOON = "Bạn vừa xem bản đồ đơn này, thử lại sau ít phút nhé."
+MAP_FAILED = "Không vẽ được bản đồ lúc này, bạn thử lại sau nhé."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."
 CHECK_STARTED = "🔄 Đang kiểm tra các đơn của bạn…"
