@@ -1,6 +1,11 @@
 from collections.abc import Callable, Sequence
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.db.repo import Parcel
@@ -155,4 +160,16 @@ def share_open_keyboard(token: str) -> InlineKeyboardMarkup:
                 _button(texts.BTN_SKIP, f"s:{token}:no"),
             ]
         ]
+    )
+
+
+def location_request_keyboard() -> ReplyKeyboardMarkup:
+    """A one-time reply keyboard: share the location, or cancel."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(texts.BTN_SEND_LOCATION, request_location=True)],
+            [KeyboardButton(texts.BTN_CANCEL_TEXT)],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
     )

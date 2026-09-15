@@ -6,7 +6,14 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from html import escape
 
-from telegram import InlineKeyboardMarkup, LinkPreviewOptions, Message, Update
+from telegram import (
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
@@ -21,6 +28,7 @@ from vn_parcel_bot.keyboards import (
     label_pick_keyboard,
     label_prompt_keyboard,
     list_keyboard,
+    location_request_keyboard,
     phone_prompt_keyboard,
     remove_confirm_keyboard,
     share_open_keyboard,
@@ -52,7 +60,15 @@ PENDING_LABEL = "pending_label"
 PENDING_REMOVE = "pending_remove"
 PENDING_LABEL_PICK = "pending_label_pick"
 SELECTION = "remove_selection"
-PENDING_KEYS = (PENDING_PHONE, PENDING_LABEL, PENDING_REMOVE, PENDING_LABEL_PICK, SELECTION)
+PENDING_LOCATION = "pending_location"
+PENDING_KEYS = (
+    PENDING_PHONE,
+    PENDING_LABEL,
+    PENDING_REMOVE,
+    PENDING_LABEL_PICK,
+    SELECTION,
+    PENDING_LOCATION,
+)
 PHOTO_LOCKS = "photo_locks"
 RECHECK_KEY = "check_cooldowns"
 VISION_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
@@ -61,7 +77,9 @@ log = logging.getLogger(__name__)
 
 
 async def reply(
-    update: Update, text: str, reply_markup: InlineKeyboardMarkup | None = None
+    update: Update,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | ReplyKeyboardMarkup | ReplyKeyboardRemove | None = None,
 ) -> Message | None:
     message = update.effective_message
     if message is None:
@@ -226,6 +244,10 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     data = user_data(context)
     chat_id = _chat_id(update)
+    if PENDING_LOCATION in data and message.text.strip() == texts.BTN_CANCEL_TEXT:
+        data.pop(PENDING_LOCATION)
+        await reply(update, texts.CANCELLED, reply_markup=ReplyKeyboardRemove())
+        return
     if PENDING_LABEL in data:
         pending = data.pop(PENDING_LABEL)
         user = await current_user(update, get_deps(context))
@@ -494,13 +516,47 @@ async def check_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update, await recheck_all(deps, user.telegram_id))
 
 
+async def location_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    deps = get_deps(context)
+    user = await current_user(update, deps)
+    if [arg.casefold() for arg in (context.args or [])][:1] == ["off"]:
+        if user.home_lat is None:
+            await reply(update, texts.LOCATION_NONE)
+            return
+        await deps.repo.clear_home(user.telegram_id)
+        log.info("home location cleared user=%s", user.telegram_id)
+        await reply(update, texts.LOCATION_CLEARED)
+        return
+    drop_pending(context)
+    user_data(context)[PENDING_LOCATION] = {"map_parcel": None}
+    text = texts.LOCATION_STATUS if user.home_lat is not None else texts.LOCATION_ASK
+    await reply(update, text, reply_markup=location_request_keyboard())
+
+
+async def location_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A shared location: stored rounded to ~1 km; the coordinates are never logged."""
+    message = update.effective_message
+    shared = getattr(message, "location", None)
+    if message is None or shared is None:
+        return
+    deps = get_deps(context)
+    user = await current_user(update, deps)
+    await deps.repo.set_home(user.telegram_id, shared.latitude, shared.longitude)
+    log.info("home location saved user=%s", user.telegram_id)
+    user_data(context).pop(PENDING_LOCATION, None)
+    await reply(update, texts.LOCATION_SAVED, reply_markup=ReplyKeyboardRemove())
+
+
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = user_data(context)
+    had_location = PENDING_LOCATION in data
     pending = [data.pop(key) for key in PENDING_KEYS if key in data]
     if not pending:
         await reply(update, texts.NOTHING_TO_CANCEL)
         return
-    await reply(update, texts.CANCELLED)
+    await reply(
+        update, texts.CANCELLED, reply_markup=ReplyKeyboardRemove() if had_location else None
+    )
     await delete_messages(
         context,
         _chat_id(update),

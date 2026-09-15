@@ -15,6 +15,7 @@ ALL_COMMANDS = {
     "label",
     "remove",
     "phone",
+    "location",
     "check",
     "cancel",
     "allow",
@@ -54,6 +55,7 @@ def test_bot_commands_match_spec():
         "label",
         "remove",
         "phone",
+        "location",
         "check",
         "cancel",
     ]
@@ -68,3 +70,12 @@ def test_bot_commands_match_spec():
     every = BOT_COMMANDS + ADMIN_COMMANDS
     assert all(0 < len(description) <= 256 for _, description in every)
     assert {name for name, _ in every} == ALL_COMMANDS
+
+
+def test_location_messages_have_a_handler(settings):
+    app = build_application(settings)
+    handlers = [handler for group in app.handlers.values() for handler in group]
+    assert any(
+        isinstance(handler, MessageHandler) and "LOCATION" in str(handler.filters).upper()
+        for handler in handlers
+    )

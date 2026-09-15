@@ -38,6 +38,7 @@ HELP = (
     "(hoặc trả lời tin nhắn của đơn bằng /label)\n"
     "• /remove &lt;số thứ tự hoặc mã&gt; … – ngừng theo dõi (nhiều đơn: /remove 1 2 3)\n"
     "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
+    "• /location – lưu khu vực của bạn (làm tròn ~1 km) để xem khoảng cách; /location off để xóa\n"
     "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
     "• /cancel – hủy thao tác đang chờ"
 )
@@ -129,6 +130,19 @@ PHONE_NONE = "Bạn chưa lưu 4 số cuối nào. Dùng /phone &lt;4 số&gt; �
 PHONE_CLEARED = "📱 Đã xóa 4 số cuối mặc định."
 
 CANCELLED = "Đã hủy."
+LOCATION_ASK = (
+    "📍 Bấm nút <b>Gửi vị trí</b> bên dưới. Mình chỉ lưu khu vực làm tròn ~1 km "
+    "để tính khoảng cách tới đơn hàng."
+)
+LOCATION_STATUS = (
+    "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
+    "hoặc /location off để xóa."
+)
+LOCATION_SAVED = "📍 Đã lưu khu vực của bạn (làm tròn ~1 km)."
+LOCATION_CLEARED = "📍 Đã xóa khu vực của bạn."
+LOCATION_NONE = "Bạn chưa lưu khu vực nào. Gửi /location để lưu."
+BTN_SEND_LOCATION = "📍 Gửi vị trí"
+BTN_CANCEL_TEXT = "↩ Hủy"
 NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 CHECK_TOO_SOON = "⏱ Bạn vừa kiểm tra xong. Thử lại sau {minutes} phút nhé."

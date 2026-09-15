@@ -37,6 +37,8 @@ from vn_parcel_bot.bot.handlers_user import (
     help_cmd,
     label_cmd,
     list_cmd,
+    location_cmd,
+    location_message,
     phone_cmd,
     photo_message,
     remove_cmd,
@@ -96,6 +98,7 @@ def build_application(settings: Settings) -> Application:
         ("label", label_cmd),
         ("remove", remove_cmd),
         ("phone", phone_cmd),
+        ("location", location_cmd),
         ("check", check_cmd),
         ("cancel", cancel_cmd),
         ("allow", allow_cmd),
@@ -108,6 +111,7 @@ def build_application(settings: Settings) -> Application:
         app.add_handler(CommandHandler(name, callback, filters=private))
     app.add_handler(MessageHandler(filters.PHOTO & private, photo_message))
     app.add_handler(MessageHandler(filters.Document.IMAGE & private, photo_message))
+    app.add_handler(MessageHandler(filters.LOCATION & private, location_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & private, text_message))
     app.add_handler(MessageHandler(filters.COMMAND & private, unknown_command))
     app.add_handler(CallbackQueryHandler(callback_query))

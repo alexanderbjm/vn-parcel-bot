@@ -7,6 +7,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("label", "Đặt tên cho đơn"),
     ("remove", "Ngừng theo dõi"),
     ("phone", "4 số cuối SĐT cho đơn J&T, GHN"),
+    ("location", "Vị trí của bạn cho bản đồ"),
     ("check", "Kiểm tra ngay và nhận diện lại hãng"),
     ("cancel", "Hủy thao tác"),
 ]
