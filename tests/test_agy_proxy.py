@@ -15,6 +15,7 @@ from vn_parcel_bot.agy_proxy import (
     PROCESS_GRACE_SECONDS,
     PROXY_HEADER,
     READ_PATH,
+    REREAD_HEADER,
     AgyReader,
     ReadResult,
     build_agy_args,
@@ -327,16 +328,26 @@ def test_run_agy_returns_output_and_times_out(tmp_path):
         )
 
 
+def test_reread_asks_agy_to_count_again(config):
+    runner = FakeRunner()
+    AgyReader(config, runner).read(b"img", "image/png", reread=True)
+    call = runner.calls[0]
+    image = str(Path(call.cwd) / "screenshot.png")
+    assert call.args[-1] == "-p=" + file_prompt(image, reread=True)
+    assert "count the characters of every code again" in call.args[-1]
+    assert "count the characters" not in file_prompt(image)
+
+
 class FakeReader:
     is_configured = True
     model = "gemini-test"
 
     def __init__(self, result: ReadResult | None = None) -> None:
         self.result = result or ReadResult(text=REPLY)
-        self.calls: list[tuple[bytes, str]] = []
+        self.calls: list[tuple[bytes, str, bool]] = []
 
-    def read(self, image_bytes: bytes, media_type: str) -> ReadResult:
-        self.calls.append((image_bytes, media_type))
+    def read(self, image_bytes: bytes, media_type: str, *, reread: bool = False) -> ReadResult:
+        self.calls.append((image_bytes, media_type, reread))
         return self.result
 
 
@@ -368,7 +379,13 @@ def test_http_read_round_trip(serve):
     response = post(base)
     assert response.status_code == 200
     assert response.json() == {"text": REPLY}
-    assert reader.calls == [(b"png-bytes", "image/png")]
+    assert reader.calls == [(b"png-bytes", "image/png", False)]
+
+
+def test_http_reread_header_reaches_the_reader(serve):
+    reader = FakeReader()
+    post(serve(reader), **{REREAD_HEADER: "1"})
+    assert reader.calls == [(b"png-bytes", "image/png", True)]
 
 
 def test_http_passes_reader_errors_through(serve):

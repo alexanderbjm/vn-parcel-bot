@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 READ_PATH = "/read"
 HEALTH_PATH = "/health"
 PROXY_HEADER = "X-VN-Parcel-Proxy"
+REREAD_HEADER = "X-VN-Parcel-Reread"
 IMAGE_SUFFIXES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -90,7 +91,13 @@ def agy_environment() -> dict[str, str]:
 
 
 def build_agy_args(
-    executable: str, model: str, workdir: str, image_path: str, timeout_seconds: int
+    executable: str,
+    model: str,
+    workdir: str,
+    image_path: str,
+    timeout_seconds: int,
+    *,
+    reread: bool = False,
 ) -> list[str]:
     return [
         executable,
@@ -105,7 +112,7 @@ def build_agy_args(
         "stream-json",
         "--print-timeout",
         f"{timeout_seconds}s",
-        f"-p={file_prompt(image_path)}",
+        f"-p={file_prompt(image_path, reread=reread)}",
     ]
 
 
@@ -154,7 +161,7 @@ class AgyReader:
     def model(self) -> str:
         return self._config.model
 
-    def read(self, image_bytes: bytes, media_type: str) -> ReadResult:
+    def read(self, image_bytes: bytes, media_type: str, *, reread: bool = False) -> ReadResult:
         if not self.is_configured:
             log.warning("agy error=not_configured")
             return ReadResult(error="not_configured")
@@ -163,19 +170,21 @@ class AgyReader:
             try:
                 image = Path(workdir) / f"screenshot{IMAGE_SUFFIXES.get(media_type, '.jpg')}"
                 image.write_bytes(image_bytes)
-                result = self._attempt(self._config.model, workdir, str(image))
+                result = self._attempt(self._config.model, workdir, str(image), reread)
                 fallback = self._config.fallback_model
                 retry = result.error in ("cli_error", "timeout")
                 if retry and fallback and fallback != self._config.model:
                     log.warning("agy retry model=%s", fallback)
-                    result = self._attempt(fallback, workdir, str(image))
+                    result = self._attempt(fallback, workdir, str(image), reread)
                 return result
             finally:
                 shutil.rmtree(workdir, ignore_errors=True)
 
-    def _attempt(self, model: str, workdir: str, image_path: str) -> ReadResult:
+    def _attempt(self, model: str, workdir: str, image_path: str, reread: bool) -> ReadResult:
         timeout = self._config.timeout_seconds
-        args = build_agy_args(self._config.agy_path or "", model, workdir, image_path, timeout)
+        args = build_agy_args(
+            self._config.agy_path or "", model, workdir, image_path, timeout, reread=reread
+        )
         started = time.monotonic()
         try:
             output = self._runner(args, workdir, timeout + PROCESS_GRACE_SECONDS, agy_environment())
@@ -213,7 +222,7 @@ class AgyReader:
         if not run.response.strip():
             log.warning("agy error=invalid_response model=%s duration=%.1fs", model, elapsed)
             return ReadResult(error="invalid_response")
-        log.info("agy ok model=%s duration=%.1fs", model, elapsed)
+        log.info("agy ok model=%s reread=%s duration=%.1fs", model, reread, elapsed)
         return ReadResult(text=run.response)
 
 
@@ -224,7 +233,7 @@ class Reader(Protocol):
     @property
     def model(self) -> str: ...
 
-    def read(self, image_bytes: bytes, media_type: str) -> ReadResult: ...
+    def read(self, image_bytes: bytes, media_type: str, *, reread: bool = False) -> ReadResult: ...
 
 
 def make_handler(reader: Reader) -> type[BaseHTTPRequestHandler]:
@@ -259,7 +268,7 @@ def make_handler(reader: Reader) -> type[BaseHTTPRequestHandler]:
             if len(body) != length:
                 self._send(400, {"error": "incomplete"})
                 return
-            result = reader.read(body, media_type)
+            result = reader.read(body, media_type, reread=self.headers.get(REREAD_HEADER) == "1")
             payload = {"text": result.text} if result.error is None else {"error": result.error}
             self._send(200, payload)
 

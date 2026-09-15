@@ -197,6 +197,11 @@ def validate_snapshot(snapshot: CarrierSnapshot) -> None:
             detected = module.code in snapshot.detect(example).candidates
             if detected != expected:
                 raise ModuleLoadError(f"{module.code}: example {example} detected={detected}")
+            if expected and module.code_lengths and len(example) not in module.code_lengths:
+                raise ModuleLoadError(
+                    f"{module.code}: example {example} has length {len(example)}, "
+                    "not one of code_lengths"
+                )
 
 
 class CarrierRegistry:

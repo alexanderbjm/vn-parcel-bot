@@ -28,6 +28,7 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 ## Changes in 2.3 (2026-09-15)
 
 - **Screenshots through agy** (§4.5, §4.6, §10): `VISION_ENGINE=agy` sends screenshots to a local OCR proxy (`python -m vn_parcel_bot.agy_proxy`, its own scheduled task) that runs the agy CLI with Gemini (`AGY_MODEL`, default `gemini-3.8-flash-low`; `AGY_FALLBACK_MODEL`, default `gemini-3.7-flash-low`) on a private temporary copy in sandboxed plan mode. A reply is discarded when agy reached for any tool other than `view_file`. Probed on 2026-09-15 with a synthetic screenshot: 3.8-flash-low took 41–43 s and dropped one zero from a long run of zeros in one of two runs; 3.7-flash-low took 5–6 s and also dropped a zero in one of two runs.
+- **Length check and re-read** (§4.6, §5.3, `CarrierModule.code_lengths`): a screenshot read whose tracking code no carrier recognises, or whose length its carrier never uses (SPX: 17), is read once more with a note to count the characters again, and the better read is kept. Reason: on 2026-09-15 a live gemini-3.8-flash-low read returned an SPX code one zero short. Examples marked `True` must have a listed length.
 - `file_prompt(path)` shares the reply format with `VISION_PROMPT`; both now ask to copy codes character by character.
 
 ## Changes in 2.2 (2026-09-14)
@@ -288,10 +289,10 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 ### 4.6 OCR proxy (`agy_proxy.py`)
 
 - Separate process `python -m vn_parcel_bot.agy_proxy` (scheduled task "VN Parcel OCR Proxy", `scripts\install-proxy-task.ps1`). `AgyProxyConfig.from_env` reads `.env` values without copying them into the process environment and needs no bot token. The proxy listens only on the loopback host and port of `AGY_PROXY_URL`; a busy port logs a warning and exits 0.
-- `POST /read` needs header `X-VN-Parcel-Proxy: 1` and no `Origin` header (else 403), `Content-Type` JPEG/PNG/WebP/GIF (else 415) and `Content-Length` 1..`VISION_MAX_IMAGE_BYTES` (else 411, 400 or 413). It answers 200 with `{"text": ...}` or `{"error": <code>}`. `GET /health` answers `{"ok": true, "agy": <executable found>, "model": ...}`.
+- `POST /read` needs header `X-VN-Parcel-Proxy: 1` and no `Origin` header (else 403), `Content-Type` JPEG/PNG/WebP/GIF (else 415) and `Content-Length` 1..`VISION_MAX_IMAGE_BYTES` (else 411, 400 or 413). It answers 200 with `{"text": ...}` or `{"error": <code>}`. With header `X-VN-Parcel-Reread: 1` the prompt is `file_prompt(path, reread=True)`, which adds `REREAD_NOTE` (count the characters of every code again). `GET /health` answers `{"ok": true, "agy": <executable found>, "model": ...}`.
 - One image at a time: the image is written as `screenshot.<ext>` into a new `vn-parcel-agy-*` temporary folder, then `agy --mode plan --sandbox --model <model> --add-dir <folder> --output-format stream-json --print-timeout <VISION_TIMEOUT_SECONDS>s -p=<file_prompt(path)>` runs in that folder without a console window and with the environment minus `ANTHROPIC_*`, `TELEGRAM_*` and `SEVENTEEN_TRACK_*`. It is killed after the timeout plus 15 s and the folder is removed afterwards. Never pass `--dangerously-skip-permissions`, and never `--disable-slash-commands` (it turns plan mode off).
 - The stream's `result` event gives `status`, `response` and `denied_actions`. Any tool other than `view_file`, or any denied action → `blocked` (the reply is discarded; logs name the tools only). Non-zero exit or a status other than `SUCCESS` → `cli_error`; empty response → `invalid_response`; start failure → `not_configured`. After `cli_error` or `timeout` the run is repeated once with `AGY_FALLBACK_MODEL` when it is set and differs from `AGY_MODEL`.
-- Bot side, `AgyProxyVisionEngine` (`services/vision_agy.py`): `httpx` with `trust_env=False`, waiting `2 × VISION_TIMEOUT_SECONDS + 60` s. Connection failures → `network`, timeouts → `timeout`, non-200 → `http_status`; proxy error codes pass through (unknown ones → `cli_error`); text goes to `parse_vision_text`. Logs hold error codes and durations only.
+- Bot side, `AgyProxyVisionEngine` (`services/vision_agy.py`): `httpx` with `trust_env=False`, waiting `2 × VISION_TIMEOUT_SECONDS + 60` s. Connection failures → `network`, timeouts → `timeout`, non-200 → `http_status`; proxy error codes pass through (unknown ones → `cli_error`); text goes to `parse_vision_text`. When a tracking code `looks_misread` (no carrier detects it and it is not a seller-fleet code, or every detected carrier lists `code_lengths` without its length), the image is sent once more with the re-read header; the second read is used when it has no error, at least as many tracking codes and no more doubtful codes, otherwise the first read is kept. Logs hold error codes, doubtful-code counts and durations only.
 - Why a file: agy's print mode accepts text only (image content blocks are refused), so agy opens the saved copy itself. Headless agy auto-denies commands and URL reads unless its `settings.json` allows them; keep that allow list free of commands a screenshot could trick agy into running.
 
 ## 5. Carriers
@@ -370,7 +371,7 @@ Rules live in the carrier module files; fix a rule there and the running bot rel
 - Event: `time = datetime.fromtimestamp(actual_time, UTC)`; `description` whitespace-collapsed; `location` = whitespace-collapsed `current_location.location_name` only when non-empty and not already contained in the description (case-insensitive), else `None`; `raw_status = tracking_code`.
 - `delivered` = the latest kept record has `milestone_code == 8` or `tracking_code == "F980"`. `returned` = not delivered and any of `return`, `hoàn hàng`, `trả hàng` (casefold substring) in that record's `description`, `tracking_name` or `milestone_name`.
 
-Tracking code format: `SPXVN` + 8–16 uppercase alphanumerics (observed examples have 11–14, e.g. `SPXVN05338454932C`).
+Tracking code format: `SPXVN` + 8–16 uppercase alphanumerics (observed examples have 11–14, e.g. `SPXVN05338454932C`). Every real code stored by 2026-09-15 has 17 characters, so the module sets `code_lengths=(17,)`; screenshot reads with other lengths are re-read (§4.6).
 
 ### 5.4 J&T Express Vietnam
 
@@ -819,6 +820,7 @@ class CarrierModule:
     build_client: Callable[[], Carrier | None] = no_client  # a client makes the carrier tracked
     pending_hint: Callable[[str], str | None] = no_hint
     progress: Callable[[TrackingResult], int | None] = stage_progress  # 0-100 or None
+    code_lengths: tuple[int, ...] = ()  # lengths of well-formed codes; empty = any; True examples must fit
 
 
 # carriers/registry.py

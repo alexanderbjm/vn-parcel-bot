@@ -142,6 +142,8 @@ MODULE = CarrierModule(
     order=10,
     rules=(Rule(r"SPXVN[0-9A-Z]{8,16}", PRIORITY_PREFIXED),),
     examples=(("SPXVN05338454932C", True), ("SPEVN000000000001", False)),
+    # Every real SPX code stored so far (2026-09-15) has 17 characters.
+    code_lengths=(17,),
     build_client=SpxCarrier,
     progress=spx_progress,
 )

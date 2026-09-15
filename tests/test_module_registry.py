@@ -138,6 +138,16 @@ def test_rule_taking_another_carriers_codes_is_rejected(tmp_path):
     assert "alpha: example AL00000001" in rejection.error
 
 
+def test_examples_must_have_a_listed_code_length(tmp_path):
+    anchor = '    examples=(("AL00000001", True),),\n'
+    wrong = ALPHA.replace(anchor, anchor + "    code_lengths=(12,),\n")
+    registry = load(tmp_path, alpha=wrong)
+    assert dict(registry.current.modules) == {}
+    assert "alpha: example AL00000001 has length 10" in registry.startup_rejections[0].error
+    right = ALPHA.replace(anchor, anchor + "    code_lengths=(10, 12),\n")
+    assert load(tmp_path, alpha=right).current.get("alpha").code_lengths == (10, 12)
+
+
 def test_missing_directory_loads_nothing(tmp_path):
     registry = CarrierRegistry.load(tmp_path / "nope")
     assert dict(registry.current.modules) == {}

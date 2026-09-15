@@ -3,9 +3,10 @@ import time
 
 import httpx
 
-from vn_parcel_bot.agy_proxy import PROXY_HEADER, READ_PATH
+from vn_parcel_bot.agy_proxy import PROXY_HEADER, READ_PATH, REREAD_HEADER
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.services.vision import SUPPORTED_MEDIA_TYPES, VisionResult, parse_vision_text
+from vn_parcel_bot.tracking_codes import looks_misread
 
 log = logging.getLogger(__name__)
 
@@ -17,8 +18,16 @@ def proxy_wait_seconds(settings: Settings) -> float:
     return settings.vision_timeout_seconds * 2 + 60
 
 
+def doubtful_codes(result: VisionResult) -> int:
+    return sum(looks_misread(code) for code in result.tracking_codes)
+
+
 class AgyProxyVisionEngine:
-    """Sends screenshots to the local agy proxy (``python -m vn_parcel_bot.agy_proxy``)."""
+    """Sends screenshots to the local agy proxy (``python -m vn_parcel_bot.agy_proxy``).
+
+    When a code is unknown to every carrier or has a length its carrier never uses, the image is
+    read once more with a note asking agy to count the characters again.
+    """
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -32,7 +41,27 @@ class AgyProxyVisionEngine:
     ) -> VisionResult:
         if media_type not in SUPPORTED_MEDIA_TYPES:
             media_type = "image/jpeg"
+        first = await self._read(image_bytes, media_type, reread=False)
+        doubtful = doubtful_codes(first)
+        if first.error is not None or doubtful == 0:
+            return first
+        log.info("vision agy reread doubtful_codes=%d", doubtful)
+        second = await self._read(image_bytes, media_type, reread=True)
+        if (
+            second.error is None
+            and len(second.tracking_codes) >= len(first.tracking_codes)
+            and doubtful_codes(second) <= doubtful
+        ):
+            log.info("vision agy reread used doubtful_codes=%d", doubtful_codes(second))
+            return second
+        log.info("vision agy reread kept the first read")
+        return first
+
+    async def _read(self, image_bytes: bytes, media_type: str, *, reread: bool) -> VisionResult:
         url = self._settings.agy_proxy_url.rstrip("/") + READ_PATH
+        headers = {"Content-Type": media_type, PROXY_HEADER: "1"}
+        if reread:
+            headers[REREAD_HEADER] = "1"
         started = time.monotonic()
         try:
             # trust_env=False: never route this PC-local call through HTTP(S)_PROXY.
@@ -40,7 +69,7 @@ class AgyProxyVisionEngine:
                 response = await client.post(
                     url,
                     content=image_bytes,
-                    headers={"Content-Type": media_type, PROXY_HEADER: "1"},
+                    headers=headers,
                     timeout=proxy_wait_seconds(self._settings),
                 )
         except httpx.TimeoutException:

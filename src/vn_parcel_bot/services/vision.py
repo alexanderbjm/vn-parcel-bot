@@ -32,11 +32,20 @@ _PROMPT_BODY = (
 VISION_PROMPT = "The attached image" + _PROMPT_BODY
 
 
-def file_prompt(image_path: str) -> str:
+REREAD_NOTE = (
+    " A previous read of this image returned a code whose length does not fit its carrier:"
+    " count the characters of every code again, one by one, before you answer."
+)
+
+
+def file_prompt(image_path: str, *, reread: bool = False) -> str:
     """Prompt for agents that open the screenshot from disk themselves (agy)."""
+    note = REREAD_NOTE if reread else ""
     return (
-        f"Use the view_file tool to open the image file {image_path} and use no other tool. "
-        "That image" + _PROMPT_BODY
+        f"Use the view_file tool to open the image file {image_path} and use no other tool."
+        + note
+        + " That image"
+        + _PROMPT_BODY
     )
 
 

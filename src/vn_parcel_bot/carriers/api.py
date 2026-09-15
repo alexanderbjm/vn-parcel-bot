@@ -52,3 +52,6 @@ class CarrierModule:
     build_client: Callable[[], Carrier | None] = no_client
     pending_hint: Callable[[str], str | None] = no_hint
     progress: Callable[[TrackingResult], int | None] = stage_progress
+    # Lengths of well-formed codes; empty accepts any length the rules allow. Screenshot reading
+    # re-reads a code whose length is not listed.
+    code_lengths: tuple[int, ...] = ()

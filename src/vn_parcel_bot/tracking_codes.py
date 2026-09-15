@@ -36,6 +36,19 @@ def is_code_like(code: str) -> bool:
     return sum(char.isdigit() for char in code) >= _CODE_LIKE_MIN_DIGITS
 
 
+def looks_misread(code: str) -> bool:
+    """True when no carrier recognises the code, or every matching carrier uses other lengths."""
+    snapshot = current_snapshot()
+    candidates = snapshot.detect(code).candidates
+    if not candidates:
+        return not is_seller_fleet(code)
+    for carrier in candidates:
+        module = snapshot.get(carrier)
+        if module is None or not module.code_lengths or len(code) in module.code_lengths:
+            return False
+    return True
+
+
 def extract_codes(text: str) -> list[str]:
     snapshot = current_snapshot()
     whole = normalize_code(text)
