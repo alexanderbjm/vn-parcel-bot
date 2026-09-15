@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.5). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 2.6). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -129,12 +129,12 @@ Facts probed from this PC on 2026-09-13 with fake codes unless marked otherwise.
 | Code | Name | Tier | Needs phone | Evidence | Official link template |
 |---|---|---|---|---|---|
 | `spx` | SPX | tracked | no | JSON endpoint used by spx.vn's tracking page; verified with a real code 2026-09-14 (§5.3) | – |
-| `jt` | J&amp;T | tracked | yes | Server-rendered HTML (§5.4) | – |
+| `jt` | J&amp;T | tracked | yes | Server-rendered HTML (§5.4); cross-border `JNTX…` codes also through 17TRACK (carrier 100295) with `SEVENTEEN_TRACK_KEY`, whose errors are logged even when J&amp;T VN fails too | – |
 | `cainiao` | Cainiao | tracked | no | JSON API, HTTP 200, no captcha (§5.5) | – |
 | `fourpx` | 4PX | tracked | no | JSON API, HTTP 200, no captcha (§5.6) | – |
 | `ninjavan` | Ninja Van | tracked | no | JSON API, 404 JSON for unknown codes (§5.7) | – |
 | `ghn` | GHN | tracked | yes | JSON API with `phone_verify` hash (§5.8) | – |
-| `best` | BEST Express | link-only | – | Old API path now serves the new site's HTML; site ships a rotate-captcha service. Promote after Prompt 10A only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
+| `best` | BEST Express | link-only; tracked through 17TRACK (carrier 101194) with `SEVENTEEN_TRACK_KEY` | – | Old API path now serves the new site's HTML; the tracking page shows a rotate-puzzle captcha (`captcha-sg.800best.com`, error `risk_001`, reported 2026-09-15), which the bot does not work around. Promote only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
 | `yunexpress` | YunExpress | link-only | – | `services.yuntrack.com` returns an Alibaba Cloud firewall page (HTTP 405) | `https://www.yuntrack.com/parcelTracking?id={code}` |
 | `ghtk` | GHTK | link-only | – | Tracking page requires Google reCAPTCHA (`invalid_captcha` error code in its script) | `https://i.ghtk.vn/{code}` |
 | `viettelpost` | Viettel Post | link-only | – | JavaScript cookie challenge (`document.cookie=…; location.reload`) | `https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/` |

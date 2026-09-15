@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from dataclasses import replace
@@ -15,7 +16,9 @@ from vn_parcel_bot.carriers.api import (
 from vn_parcel_bot.carriers.common import VN_TZ, clean_text, request
 from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
 from vn_parcel_bot.carriers.seventeen_track import SeventeenTrackCarrier
+from vn_parcel_bot.tracking_codes import mask_code
 
+log = logging.getLogger("vn_parcel_bot.carriers.modules.jt")
 JT_TRACKING_URL = "https://jtexpress.vn/tracking"
 NOT_FOUND_MARKER = "Không tìm thấy dữ liệu"
 DELIVERED_MARKERS = ("giao hàng thành công", "đã ký nhận")
@@ -179,8 +182,8 @@ class JtCarrier:
                     )
                     if overseas_result.found and overseas_result.events:
                         return _merge_results(domestic_result, overseas_result)
-                except CarrierError:
-                    pass
+                except CarrierError as err:
+                    _log_seventeen_error(err, tracking_number, logging.INFO)
             return domestic_result
 
         # Phase 2: If cross-border and 17TRACK is available, query/register on 17TRACK
@@ -189,9 +192,12 @@ class JtCarrier:
                 overseas_result = await seventeen.fetch(http, tracking_number, auto_register=True)
                 if overseas_result.found:
                     return overseas_result
+                log.info("17track no data carrier=jt code=%s", mask_code(tracking_number))
             except CarrierError as err:
                 if domestic_error is None:
                     raise err
+                # The J&T VN error is raised below; keep 17TRACK's reason visible too.
+                _log_seventeen_error(err, tracking_number, logging.WARNING)
 
         # If domestic tracking had an error (e.g. network/blocked), propagate it
         if domestic_error is not None:
@@ -202,6 +208,17 @@ class JtCarrier:
             raise ValueError("J&T requires phone_last4")
 
         return TrackingResult(carrier="jt", tracking_number=tracking_number, found=False)
+
+
+def _log_seventeen_error(err: CarrierError, tracking_number: str, level: int) -> None:
+    masked = mask_code(tracking_number)
+    log.log(
+        level,
+        "17track error carrier=jt reason=%s code=%s detail=%s",
+        err.reason,
+        masked,
+        err.detail.replace(tracking_number, masked),
+    )
 
 
 def cross_border_hint(tracking_number: str) -> str | None:

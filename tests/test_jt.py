@@ -304,3 +304,61 @@ async def test_fetch_cross_border_merges_domestic_and_overseas():
     assert len(result.events) == 5
     assert result.events[0].description == "Xuất hàng từ Thâm Quyến"
     assert result.latest.description == "Đơn hàng đang được giao đến bạn"
+
+
+BROKEN_JT_PAGE = "<html><body>maintenance</body></html>"
+
+
+def jt_log(caplog) -> str:
+    return " | ".join(
+        r.getMessage() for r in caplog.records if r.name == "vn_parcel_bot.carriers.modules.jt"
+    )
+
+
+@respx.mock
+async def test_17track_error_is_logged_when_jt_vn_also_fails(caplog):
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL
+
+    caplog.set_level("INFO")
+    respx.get(url__startswith=JT_TRACKING_URL).mock(
+        return_value=httpx.Response(200, text=BROKEN_JT_PAGE)
+    )
+    rejected = {"code": -18010012, "message": f"The tracking number {JNTX_CODE} is invalid."}
+    respx.post(GET_TRACK_INFO_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {"accepted": [], "rejected": [{"number": JNTX_CODE, "error": rejected}]},
+            },
+        )
+    )
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(CarrierError) as raised:
+            await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, "1234")
+    assert raised.value.carrier == "jt"
+    assert "17track" not in str(raised.value.detail)
+    line = next(r for r in caplog.records if r.getMessage().startswith("17track error"))
+    assert line.levelname == "WARNING"
+    assert "reason=parse" in line.getMessage()
+    assert JNTX_CODE not in jt_log(caplog)
+    assert f"{JNTX_CODE[:5]}…{JNTX_CODE[-3:]}" in line.getMessage()
+
+
+@respx.mock
+async def test_empty_17track_answer_is_logged(caplog):
+    from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, REGISTER_URL
+
+    caplog.set_level("INFO")
+    respx.get(url__startswith=JT_TRACKING_URL).mock(
+        return_value=httpx.Response(200, text=BROKEN_JT_PAGE)
+    )
+    empty = {"code": 0, "data": {"accepted": [], "rejected": []}}
+    respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=empty))
+    register = respx.post(REGISTER_URL).mock(return_value=httpx.Response(200, json=empty))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(CarrierError):
+            await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, "1234")
+    assert register.called
+    assert "17track no data carrier=jt" in jt_log(caplog)
+    assert JNTX_CODE not in jt_log(caplog)

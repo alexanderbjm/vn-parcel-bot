@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 2.5 · 2026-09-15 · Status: v1 built on branch main; live verification in progress
+Version 2.6 · 2026-09-15 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,11 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 2.6 (2026-09-15)
+
+- **BEST Express captcha recorded** (§5.1): BEST's tracking page shows a rotate-puzzle captcha (`captcha-sg.800best.com`, error `risk_001`, reported 2026-09-15). The bot does not work around it: BEST stays link-only, or is tracked through 17TRACK when `SEVENTEEN_TRACK_KEY` is set.
+- **17TRACK errors logged for J&T** (§5.1): for a cross-border `JNTX…` code, a 17TRACK error was dropped whenever J&T VN also failed, so only the J&T VN error reached the log. It is now logged at WARNING `"17track error carrier=jt reason=%s code=%s detail=%s"` (masked code, also masked inside the detail) before the J&T VN error is raised; a failed overseas check next to J&T VN data logs the same line at INFO, and an empty 17TRACK answer logs INFO `"17track no data carrier=jt code=%s"`. BEST (17TRACK only) already logged its errors through the poller (§6.4).
 
 ## Changes in 2.5 (2026-09-15)
 
@@ -316,12 +321,12 @@ Facts probed from this PC on 2026-09-13 with fake codes unless marked otherwise.
 | Code | Name | Tier | Needs phone | Evidence | Official link template |
 |---|---|---|---|---|---|
 | `spx` | SPX | tracked | no | JSON endpoint used by spx.vn's tracking page; verified with a real code 2026-09-14 (§5.3) | – |
-| `jt` | J&amp;T | tracked | yes | Server-rendered HTML (§5.4) | – |
+| `jt` | J&amp;T | tracked | yes | Server-rendered HTML (§5.4); cross-border `JNTX…` codes also through 17TRACK (carrier 100295) with `SEVENTEEN_TRACK_KEY`, whose errors are logged even when J&amp;T VN fails too | – |
 | `cainiao` | Cainiao | tracked | no | JSON API, HTTP 200, no captcha (§5.5) | – |
 | `fourpx` | 4PX | tracked | no | JSON API, HTTP 200, no captcha (§5.6) | – |
 | `ninjavan` | Ninja Van | tracked | no | JSON API, 404 JSON for unknown codes (§5.7) | – |
 | `ghn` | GHN | tracked | yes | JSON API with `phone_verify` hash (§5.8) | – |
-| `best` | BEST Express | link-only | – | Old API path now serves the new site's HTML; site ships a rotate-captcha service. Promote after Prompt 10A only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
+| `best` | BEST Express | link-only; tracked through 17TRACK (carrier 101194) with `SEVENTEEN_TRACK_KEY` | – | Old API path now serves the new site's HTML; the tracking page shows a rotate-puzzle captcha (`captcha-sg.800best.com`, error `risk_001`, reported 2026-09-15), which the bot does not work around. Promote only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
 | `yunexpress` | YunExpress | link-only | – | `services.yuntrack.com` returns an Alibaba Cloud firewall page (HTTP 405) | `https://www.yuntrack.com/parcelTracking?id={code}` |
 | `ghtk` | GHTK | link-only | – | Tracking page requires Google reCAPTCHA (`invalid_captcha` error code in its script) | `https://i.ghtk.vn/{code}` |
 | `viettelpost` | Viettel Post | link-only | – | JavaScript cookie challenge (`document.cookie=…; location.reload`) | `https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/` |
