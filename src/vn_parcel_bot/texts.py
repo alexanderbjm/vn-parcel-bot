@@ -137,6 +137,9 @@ CHECK_DONE = "✔️ Đã kiểm tra {checked} đơn · {new_events} cập nhậ
 CHECK_REDETECTED = " · {count} đơn nhận diện lại hãng"
 
 DISTANCE_UNDER_1KM = "dưới 1 km"
+PLACE_LINE = "📍 {place} · cách bạn {distance} (đường chim bay)"
+PLACE_ONLY_LINE = "📍 {place}"
+MAP_CAPTION = "🗺 <b>{title}</b>\n📍 {place} → khu vực của bạn · {distance} (đường chim bay)"
 
 UPDATE_HEADER = "📦 <b>{title}</b> · {carrier}"
 UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>"

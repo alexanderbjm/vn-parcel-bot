@@ -27,6 +27,10 @@ class ConfigError(Exception):
     pass
 
 
+_SWITCH_ON = ("true", "1", "on", "yes")
+_SWITCH_OFF = ("false", "0", "off", "no")
+
+
 def _get(env: Mapping[str, str], key: str) -> str | None:
     value = env.get(key)
     if value is None or not value.strip():
@@ -165,6 +169,7 @@ class Settings:
     anthropic_workspace_id: str | None = None
     agy_proxy_url: str = DEFAULT_AGY_PROXY_URL
     seventeen_track_key: str | None = None
+    maps_enabled: bool = True
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Self:
@@ -231,6 +236,9 @@ class Settings:
         if loopback_address(agy_proxy_url) is None:
             errors.append(_AGY_PROXY_URL_ERROR)
         digest_times = _digest_times(env, errors)
+        maps_raw = (_get(env, "MAPS_ENABLED") or "true").lower()
+        if maps_raw not in _SWITCH_ON + _SWITCH_OFF:
+            errors.append("MAPS_ENABLED must be true or false")
 
         if errors:
             raise ConfigError("Invalid configuration:\n- " + "\n- ".join(errors))
@@ -258,6 +266,7 @@ class Settings:
             anthropic_workspace_id=_get(env, "ANTHROPIC_WORKSPACE_ID"),
             agy_proxy_url=agy_proxy_url,
             seventeen_track_key=_get(env, "SEVENTEEN_TRACK_KEY"),
+            maps_enabled=maps_raw in _SWITCH_ON,
         )
 
     @property

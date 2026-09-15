@@ -51,6 +51,22 @@ class TelegramNotifier:
         except Forbidden:
             log.info("user %s blocked the bot", chat_id)
 
+    async def send_photo(
+        self, chat_id: int, photo: bytes, caption: str, *, silent: bool = False
+    ) -> None:
+        try:
+            await self._with_retry(
+                lambda: self._bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    disable_notification=silent,
+                )
+            )
+        except Forbidden:
+            log.info("user %s blocked the bot", chat_id)
+
     async def send_sticker(self, chat_id: int, file_id: str) -> bool:
         try:
             await self._with_retry(

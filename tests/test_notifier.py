@@ -22,6 +22,11 @@ class FakeBot:
         if self.sticker_error is not None:
             raise self.sticker_error
 
+    async def send_photo(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+
 
 async def test_send_uses_html_silent_and_no_preview():
     bot = FakeBot()
@@ -77,3 +82,38 @@ async def test_send_sticker_reports_bad_request():
     assert bot.stickers[0]["disable_notification"] is True
     bot.sticker_error = BadRequest("Wrong file identifier")
     assert await TelegramNotifier(bot).send_sticker(5, "file-1") is False
+
+
+async def test_send_photo_uses_an_html_caption_and_silent():
+    bot = FakeBot()
+    await TelegramNotifier(bot).send_photo(5, b"png", "🗺 <b>x</b>", silent=True)
+    kwargs = bot.calls[0]
+    assert (kwargs["chat_id"], kwargs["photo"], kwargs["caption"]) == (5, b"png", "🗺 <b>x</b>")
+    assert kwargs["parse_mode"] == ParseMode.HTML
+    assert kwargs["disable_notification"] is True
+
+
+async def test_send_photo_swallows_forbidden():
+    await TelegramNotifier(FakeBot(Forbidden("blocked"))).send_photo(5, b"png", "x")
+
+
+@pytest.mark.filterwarnings("ignore::telegram.warnings.PTBDeprecationWarning")
+async def test_send_photo_is_retried_once_after_retry_after():
+    bot = FakeBot()
+    failures = [RetryAfter(3)]
+    original = bot.send_photo
+
+    async def flaky(**kwargs):
+        if failures:
+            raise failures.pop()
+        await original(**kwargs)
+
+    bot.send_photo = flaky
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    await TelegramNotifier(bot, sleep=fake_sleep).send_photo(5, b"png", "x")
+    assert sleeps == [3]
+    assert len(bot.calls) == 1

@@ -63,6 +63,7 @@ class FakeNotifier:
         self.markups: list[object] = []
         self.stickers: list[tuple[int, str]] = []
         self.sticker_ok = True
+        self.photos: list[tuple[int, bytes, str, bool]] = []
 
     async def send(
         self, chat_id: int, text: str, *, silent: bool = False, reply_markup: object = None
@@ -71,6 +72,11 @@ class FakeNotifier:
         self.markups.append(reply_markup)
         if self.fail_with is not None:
             raise self.fail_with
+
+    async def send_photo(
+        self, chat_id: int, photo: bytes, caption: str, *, silent: bool = False
+    ) -> None:
+        self.photos.append((chat_id, photo, caption, silent))
 
     async def send_sticker(self, chat_id: int, file_id: str) -> bool:
         self.stickers.append((chat_id, file_id))

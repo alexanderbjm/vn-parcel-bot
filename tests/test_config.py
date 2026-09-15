@@ -240,3 +240,15 @@ def test_collects_multiple_errors(valid_env):
         Settings.from_env({**valid_env, "POLL_INTERVAL_MINUTES": "1", "LOG_LEVEL": "LOUD"})
     assert "POLL_INTERVAL_MINUTES" in str(exc.value)
     assert "LOG_LEVEL" in str(exc.value)
+
+
+def test_maps_enabled_defaults_on_and_can_be_switched_off(valid_env):
+    assert Settings.from_env(valid_env).maps_enabled is True
+    for value in ("false", "0", "off", "no", "FALSE"):
+        assert Settings.from_env({**valid_env, "MAPS_ENABLED": value}).maps_enabled is False
+    assert Settings.from_env({**valid_env, "MAPS_ENABLED": "on"}).maps_enabled is True
+
+
+def test_maps_enabled_rejects_other_values(valid_env):
+    with pytest.raises(ConfigError, match="MAPS_ENABLED"):
+        Settings.from_env({**valid_env, "MAPS_ENABLED": "maybe"})

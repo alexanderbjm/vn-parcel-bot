@@ -58,6 +58,9 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.digest import DigestService
+from vn_parcel_bot.services.geo import Geocoder
+from vn_parcel_bot.services.maps import TileCache
+from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
 from vn_parcel_bot.services.vision_engines import build_vision_engine
@@ -126,6 +129,8 @@ async def _post_init(app: Application) -> None:
     poller = Poller(repo, registry, http, notifier, settings, _utc_now)
     vision = build_vision_engine(settings, http)
     digests = DigestService(repo, notifier, settings, _utc_now)
+    tile_cache = TileCache(http, settings.db_path.parent / "tiles")
+    maps = ParcelMaps(repo, Geocoder(repo, http, _utc_now), tile_cache.get, settings)
     app.bot_data["deps"] = Deps(
         settings,
         repo,
@@ -136,6 +141,7 @@ async def _post_init(app: Application) -> None:
         vision=vision,
         digests=digests,
         registry=registry,
+        maps=maps,
     )
     await alert_rejections(app.bot_data["deps"], registry.startup_rejections)
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
