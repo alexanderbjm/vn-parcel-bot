@@ -56,3 +56,16 @@ def test_unknown_chinese_words_do_not_break_the_line():
     text = translate_cn("【上海市】某些未知状态 快件已到达")
     assert "Thượng Hải" in text
     assert "đã đến" in text
+
+
+def test_repeated_places_and_full_width_punctuation_are_tidied():
+    text = translate_cn("【东莞市】广东东莞沙田镇公司 已签收！")
+    assert "！" not in text
+    assert "đã ký nhận" in text
+    assert text.count("Đông Quản") <= 2
+    assert "  " not in text
+
+
+def test_a_location_field_becomes_a_place_name():
+    assert translate_cn("东莞市") == "Đông Quản"
+    assert translate_cn("上海市") == "Thượng Hải"

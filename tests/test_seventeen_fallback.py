@@ -54,6 +54,7 @@ async def test_client_without_a_carrier_id_lets_17track_detect_it():
     assert result.found is True
     assert "đã đến" in result.latest.description
     assert "快件" not in result.latest.description
+    assert result.latest.location == "Thượng Hải"
 
 
 @pytest.fixture

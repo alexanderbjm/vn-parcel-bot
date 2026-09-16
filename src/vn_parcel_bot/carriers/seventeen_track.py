@@ -194,7 +194,7 @@ class SeventeenTrackCarrier:
             if not desc:
                 continue
 
-            loc = clean_text(ev.get("location") or "") or None
+            loc = translate_cn(clean_text(ev.get("location") or "")) or None
             stage = ev.get("stage")
             events.append(
                 TrackingEvent(

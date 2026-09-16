@@ -17,6 +17,7 @@ _LONG_DIGITS = re.compile(r"\d{5,}")
 _SPACES = re.compile(r"\s+")
 _LEFTOVER_PUNCTUATION = re.compile(r"\s*[，、。；：,;:]\s*")
 _EDGE_PUNCTUATION = re.compile(r"^[\s,;:.\-–—/]+|[\s,;:\-–—/]+$")
+_FULL_WIDTH = "！？。，、：；（）「」［］"
 
 # Longest first: "快件已到达" must win over "到达".
 PHRASES: tuple[tuple[str, str], ...] = (
@@ -115,10 +116,27 @@ def _drop_padding(text: str) -> str:
     return _LONG_DIGITS.sub(" ", text)
 
 
+def _collapse_repeats(text: str) -> str:
+    """Drop a phrase that repeats itself straight away ("Đông Quản Đông Quản")."""
+    kept: list[str] = []
+    for word in text.split(" "):
+        kept.append(word)
+        for size in (3, 2, 1):
+            if len(kept) >= 2 * size:
+                tail = [w.casefold() for w in kept[-size:]]
+                before = [w.casefold() for w in kept[-2 * size : -size]]
+                if tail == before:
+                    del kept[-size:]
+                    break
+    return " ".join(kept)
+
+
 def _tidy(text: str) -> str:
+    for mark in _FULL_WIDTH:
+        text = text.replace(mark, " ")
     text = _LEFTOVER_PUNCTUATION.sub(" ", text)
     text = _SPACES.sub(" ", text)
-    return _EDGE_PUNCTUATION.sub("", text).strip()
+    return _collapse_repeats(_EDGE_PUNCTUATION.sub("", text).strip())
 
 
 def translate_cn(text: str) -> str:
