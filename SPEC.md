@@ -60,7 +60,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
 | `/users` *(admin)* | – | All users with role and active parcel count. |
-| `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count, and the deployed revision (`build_info.deployed_revision()`: short commit and commit date, resolved once per process). The revision line is left out when git cannot answer. |
+| `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count, and the deployed revision (`build_info.deployed_revision_async()`: short commit and commit date). The git lookup runs off the event loop via `asyncio.to_thread` so it cannot stall other handlers, and only a successful lookup is remembered — a transient failure is retried rather than hiding the line until the next restart. The line is left out when git cannot answer. |
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
@@ -127,6 +127,8 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 - The image is written into that folder as `screenshot.<png|jpg|gif|webp>` (an unknown media type becomes JPEG) and the folder is removed afterwards. cmdc has no streamed-image input and no `--input-format`, so the prompt is `tool_file_prompt("read_file", <name>)` and the run opens the saved copy itself with its own `read_file` tool.
 - The prompt travels on **stdin**, never as the `-p` argument: a query passed to `-p` is answered as plain prose and no `result` frame is emitted at all, so the answer cannot be parsed. With the query on stdin, `--output-format json` gives newline-delimited JSON; the last `{"type": "result", …}` line's `finalText` goes to `parse_vision_text`. Non-zero exit, a missing `result` frame, or a `subtype` other than `success` → `cli_error`; empty text → `invalid_response`; timeout → `timeout`; start failure → `not_configured`.
 - Never pass `--yolo` (or its alias `--dangerously-skip-permissions`): a headless cmdc run denies file writes and shell commands unless it is given, which is what stops text inside a screenshot from steering the run. `--no-skills` and `--skip-onboarding` keep the run deterministic and free of user-level skills.
+- The run gets the environment minus `SECRET_ENV_PREFIXES` (`ANTHROPIC_*`, `TELEGRAM_*`, `SEVENTEEN_TRACK_*`), the same scrub the OCR proxy applies. cmdc authenticates from its own login, and the bot loads `.env` into `os.environ`, so it would otherwise inherit the bot token and the 17TRACK key.
+- Making the temporary folder, writing the screenshot into it and starting the CLI are all inside the error contract, so `analyze_image` always returns a `VisionResult`: a missing executable → `not_configured`, any other setup `OSError` (a full or read-only temp volume, say) → `cli_error`, timeout → `timeout`. Nothing escapes to the caller.
 - A code that `looks_misread` (see §4.6) makes the image be read once more with `REREAD_NOTE` in the prompt; the second read is used when it has no error, at least as many tracking codes and no more doubtful codes, otherwise the first read is kept. Logs hold error codes, exit codes and durations only.
 - Each run costs roughly 30k input tokens of agent-prompt overhead on top of the image — cached across calls, but far more than the other engines — and takes about 10–20 s. The model must accept images; `deepseek/deepseek-v4-flash-vision-exp` added a digit to a 17-character SPX code in testing, while `qwen/qwen3.8-27b` and `moonshotai/kimi-k2.6` read it correctly.
 
@@ -317,9 +319,11 @@ Tracking code format: exactly 12 digits (e.g. `841000072647`).
 now = clock()
 parcels = repo.due_parcels(now)                    # active, owner allowed, next_check_at <= now
           or repo.active_parcels_for_user(uid)     # when only_user_id is given
-fetch_keys(parcel) = [FetchKey(c, parcel.tracking_number, parcel.phone_last4 if needs_phone(c) else None)
-                      for c in parcel.try_order()  # (carrier,) when resolved, else candidates
-                      if c in carriers and (not needs_phone(c) or parcel.phone_last4)]
+fetch_keys(parcel, default_phone_last4=None)
+    = [FetchKey(c, parcel.tracking_number,
+                (parcel.phone_last4 or default_phone_last4) if needs_phone(c) else None)
+       for c in parcel.try_order()  # (carrier,) when resolved, else candidates
+       if c in carriers and (not needs_phone(c) or parcel.phone_last4 or default_phone_last4)]
 
 # fetch phase
 keys = unique fetch keys of all parcels, in first-appearance order, grouped by carrier
@@ -332,7 +336,7 @@ for each carrier concurrently:
 # process phase, parcels in order (each parcel is re-read first and skipped if it was
 # deleted or is no longer active since the cycle started)
 for parcel in parcels:
-    keys = fetch_keys(parcel)
+    keys = keys_by_parcel[parcel.id]
     if not keys: continue
     if parcel.is_resolved:
         outcome = outcomes[keys[0]]
@@ -345,6 +349,8 @@ for parcel in parcels:
 
 after all parcels: stale check, carrier alerts, purge, save meta "last_poll_report"
 ```
+
+`default_phone_last4` is the parcel owner's saved `/phone` value, read once per cycle. A carrier that needs the recipient's digits yields no fetch key without them, so without the fallback a parcel stored before its owner saved a default would never be polled again — no fetch, no expiry, no purge, no notification, just a permanent `pending` row in `/list`. A parcel that still produces no keys is counted in one `parcels awaiting saved phone digits` warning per cycle rather than being skipped silently.
 
 ### 6.3 Handling a result for one parcel
 
