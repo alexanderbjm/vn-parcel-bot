@@ -60,7 +60,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
 | `/users` *(admin)* | – | All users with role and active parcel count. |
-| `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count, and the deployed revision (`build_info.deployed_revision_async()`: short commit and commit date). The git lookup runs off the event loop via `asyncio.to_thread` so it cannot stall other handlers, and only a successful lookup is remembered — a transient failure is retried rather than hiding the line until the next restart. The line is left out when git cannot answer. |
+| `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count. |
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
@@ -107,7 +107,7 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 ### 4.5 Screenshots (`photo_message`)
 
 - A photo or image document in a private chat goes to the vision engine chosen by `VISION_ENGINE` (§10), one photo at a time per user. Documents that are not JPEG/PNG/WebP/GIF or exceed `VISION_MAX_IMAGE_BYTES` (5 MB) get `VISION_UNSUPPORTED_IMAGE` without downloading.
-- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. `agy`: the image goes to the local OCR proxy (§4.6). `cmdc`: the Command Code CLI on this PC (§4.7). All four parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
+- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. `agy`: the image goes to the local OCR proxy (§4.6). All three parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
 - Error codes: `not_configured` → `VISION_NOT_CONFIGURED`; `timeout`, `cli_error`, `http_status`, `network`, `invalid_response`, `blocked` → `VISION_ERROR`. Logs hold error codes, exit codes and durations only.
 - Shipping codes → the add flow (§4.3) with `label` = the product name (first item, ` +N` for more items, at most 40 characters); a duplicate parcel gets the label only if it has none; a pending phone question keeps the label. Replies start with `VISION_DETECTED_HEADER` and `VISION_PRODUCT`.
 - Only an order number → `VISION_ORDER_ONLY`, nothing stored. Nothing found → `VISION_NO_DATA`.
@@ -120,17 +120,6 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 - The stream's `result` event gives `status`, `response` and `denied_actions`. Any tool other than `view_file`, or any denied action → `blocked` (the reply is discarded; logs name the tools only). Non-zero exit or a status other than `SUCCESS` → `cli_error`; empty response → `invalid_response`; start failure → `not_configured`. After `cli_error` or `timeout` the run is repeated once with `AGY_FALLBACK_MODEL` when it is set and differs from `AGY_MODEL`.
 - Bot side, `AgyProxyVisionEngine` (`services/vision_agy.py`): `httpx` with `trust_env=False`, waiting `2 × VISION_TIMEOUT_SECONDS + 60` s. Connection failures → `network`, timeouts → `timeout`, non-200 → `http_status`; proxy error codes pass through (unknown ones → `cli_error`); text goes to `parse_vision_text`. When a tracking code `looks_misread` (no carrier detects it and it is not a seller-fleet code, or every detected carrier lists `code_lengths` without its length), the image is sent once more with the re-read header; the second read is used when it has no error, at least as many tracking codes and no more doubtful codes, otherwise the first read is kept. Logs hold error codes, doubtful-code counts and durations only.
 - Why a file: agy's print mode accepts text only (image content blocks are refused), so agy opens the saved copy itself. Headless agy auto-denies commands and URL reads unless its `settings.json` allows them; keep that allow list free of commands a screenshot could trick agy into running.
-
-### 4.7 Command Code engine (`services/vision_cmdc.py`)
-
-- `CmdcVisionEngine` runs the Command Code CLI already logged in on this PC: `cmdc -p --output-format json --model <CMDC_MODEL> --no-skills --skip-onboarding`, in a new `vn-parcel-vision-*` temporary folder, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `CMDC_PATH` must be an existing file, else `not_configured` before any call is made.
-- The image is written into that folder as `screenshot.<png|jpg|gif|webp>` (an unknown media type becomes JPEG) and the folder is removed afterwards. cmdc has no streamed-image input and no `--input-format`, so the prompt is `tool_file_prompt("read_file", <name>)` and the run opens the saved copy itself with its own `read_file` tool.
-- The prompt travels on **stdin**, never as the `-p` argument: a query passed to `-p` is answered as plain prose and no `result` frame is emitted at all, so the answer cannot be parsed. With the query on stdin, `--output-format json` gives newline-delimited JSON; the last `{"type": "result", …}` line's `finalText` goes to `parse_vision_text`. Non-zero exit, a missing `result` frame, or a `subtype` other than `success` → `cli_error`; empty text → `invalid_response`; timeout → `timeout`; start failure → `not_configured`.
-- Never pass `--yolo` (or its alias `--dangerously-skip-permissions`): a headless cmdc run denies file writes and shell commands unless it is given, which is what stops text inside a screenshot from steering the run. `--no-skills` and `--skip-onboarding` keep the run deterministic and free of user-level skills.
-- The run gets the environment minus `SECRET_ENV_PREFIXES` (`ANTHROPIC_*`, `TELEGRAM_*`, `SEVENTEEN_TRACK_*`), the same scrub the OCR proxy applies. cmdc authenticates from its own login, and the bot loads `.env` into `os.environ`, so it would otherwise inherit the bot token and the 17TRACK key.
-- Making the temporary folder, writing the screenshot into it and starting the CLI are all inside the error contract, so `analyze_image` always returns a `VisionResult`: a missing executable → `not_configured`, any other setup `OSError` (a full or read-only temp volume, say) → `cli_error`, timeout → `timeout`. Nothing escapes to the caller.
-- A code that `looks_misread` (see §4.6) makes the image be read once more with `REREAD_NOTE` in the prompt; the second read is used when it has no error, at least as many tracking codes and no more doubtful codes, otherwise the first read is kept. Logs hold error codes, exit codes and durations only.
-- Each run costs roughly 30k input tokens of agent-prompt overhead on top of the image — cached across calls, but far more than the other engines — and takes about 10–20 s. The model must accept images; `deepseek/deepseek-v4-flash-vision-exp` added a digit to a 17-character SPX code in testing, while `qwen/qwen3.8-27b` and `moonshotai/kimi-k2.6` read it correctly.
 
 ## 5. Carriers
 
@@ -146,7 +135,7 @@ Facts probed from this PC on 2026-09-13 with fake codes unless marked otherwise.
 | `fourpx` | 4PX | tracked | no | JSON API, HTTP 200, no captcha (§5.6) | – |
 | `ninjavan` | Ninja Van | tracked | no | JSON API, 404 JSON for unknown codes (§5.7) | – |
 | `ghn` | GHN | tracked | yes | JSON API with `phone_verify` hash (§5.8) | – |
-| `best` | BEST Express | link-only; tracked through 17TRACK (carrier 101194) with `SEVENTEEN_TRACK_KEY` | yes | 17TRACK refuses a BEST registration without `phone_number_last_4` ("The 'phone_number_last_4' field is required for this tracking", verified 2026-09-16), so the recipient's saved digits ride along on every gettrackinfo and register call. Old API path now serves the new site's HTML; the tracking page shows a rotate-puzzle captcha (`captcha-sg.800best.com`, error `risk_001`, reported 2026-09-15), which the bot does not work around. Promote only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
+| `best` | BEST Express | link-only; tracked through 17TRACK (carrier 101194) with `SEVENTEEN_TRACK_KEY` | – | Old API path now serves the new site's HTML; the tracking page shows a rotate-puzzle captcha (`captcha-sg.800best.com`, error `risk_001`, reported 2026-09-15), which the bot does not work around. Promote only if an open endpoint is found (Appendix B) | `https://www.best-inc.vn/track?bills={code}` |
 | `yunexpress` | YunExpress | link-only | – | `services.yuntrack.com` returns an Alibaba Cloud firewall page (HTTP 405) | `https://www.yuntrack.com/parcelTracking?id={code}` |
 | `ghtk` | GHTK | link-only | – | Tracking page requires Google reCAPTCHA (`invalid_captcha` error code in its script) | `https://i.ghtk.vn/{code}` |
 | `viettelpost` | Viettel Post | link-only | – | JavaScript cookie challenge (`document.cookie=…; location.reload`) | `https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/` |
@@ -319,11 +308,9 @@ Tracking code format: exactly 12 digits (e.g. `841000072647`).
 now = clock()
 parcels = repo.due_parcels(now)                    # active, owner allowed, next_check_at <= now
           or repo.active_parcels_for_user(uid)     # when only_user_id is given
-fetch_keys(parcel, default_phone_last4=None)
-    = [FetchKey(c, parcel.tracking_number,
-                (parcel.phone_last4 or default_phone_last4) if needs_phone(c) else None)
-       for c in parcel.try_order()  # (carrier,) when resolved, else candidates
-       if c in carriers and (not needs_phone(c) or parcel.phone_last4 or default_phone_last4)]
+fetch_keys(parcel) = [FetchKey(c, parcel.tracking_number, parcel.phone_last4 if needs_phone(c) else None)
+                      for c in parcel.try_order()  # (carrier,) when resolved, else candidates
+                      if c in carriers and (not needs_phone(c) or parcel.phone_last4)]
 
 # fetch phase
 keys = unique fetch keys of all parcels, in first-appearance order, grouped by carrier
@@ -336,7 +323,7 @@ for each carrier concurrently:
 # process phase, parcels in order (each parcel is re-read first and skipped if it was
 # deleted or is no longer active since the cycle started)
 for parcel in parcels:
-    keys = keys_by_parcel[parcel.id]
+    keys = fetch_keys(parcel)
     if not keys: continue
     if parcel.is_resolved:
         outcome = outcomes[keys[0]]
@@ -349,8 +336,6 @@ for parcel in parcels:
 
 after all parcels: stale check, carrier alerts, purge, save meta "last_poll_report"
 ```
-
-`default_phone_last4` is the parcel owner's saved `/phone` value, read once per cycle. A carrier that needs the recipient's digits yields no fetch key without them, so without the fallback a parcel stored before its owner saved a default would never be polled again — no fetch, no expiry, no purge, no notification, just a permanent `pending` row in `/list`. A parcel that still produces no keys is counted in one `parcels awaiting saved phone digits` warning per cycle rather than being skipped silently.
 
 ### 6.3 Handling a result for one parcel
 
@@ -486,7 +471,6 @@ vn-parcel-bot/
 ├─ src/vn_parcel_bot/
 │  ├─ __init__.py               __version__
 │  ├─ __main__.py               main(): python -m vn_parcel_bot
-│  ├─ build_info.py             deployed_revision()
 │  ├─ config.py                 Settings, ConfigError
 │  ├─ constants.py              policy constants (§10.2)
 │  ├─ logging_setup.py          setup_logging, RedactTokenFilter
@@ -517,7 +501,7 @@ vn-parcel-bot/
 │  └─ bot/
 │     ├─ __init__.py
 │     ├─ deps.py                Deps, get_deps
-│     ├─ app.py                 build_application, announce_update, poll_job, on_error
+│     ├─ app.py                 build_application, poll_job, on_error
 │     ├─ auth.py                is_authorized, gate, admin_only
 │     ├─ commands.py            BOT_COMMANDS
 │     ├─ notifier.py            TelegramNotifier
@@ -1038,12 +1022,7 @@ def format_stale(parcel: Parcel) -> str: ...
 def format_carrier_alert(carrier: CarrierCode, count: int, detail: str) -> str: ...
 def format_users(users: Sequence[User], active_counts: Mapping[int, int], admin_id: int) -> str: ...
 def format_health(
-    last_poll_at: datetime | None,
-    report: dict | None,
-    active: int,
-    users: int,
-    tz: ZoneInfo,
-    revision: str | None = None,
+    last_poll_at: datetime | None, report: dict | None, active: int, users: int, tz: ZoneInfo
 ) -> str: ...
 def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str: ...
 ```
@@ -1214,7 +1193,6 @@ def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps: ...  # context.bot_dat
 
 # app.py
 def build_application(settings: Settings) -> Application: ...
-async def announce_update(deps: Deps) -> None: ...
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None: ...
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: ...
 
@@ -1222,8 +1200,6 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: 
 # __main__.py
 def main() -> int: ...
 ```
-
-`announce_update` runs in `_post_init` ahead of the carrier-rejection alerts. When `deployed_revision()` resolves and differs from meta key `notify:revision`, it DMs the admin `BOT_UPDATED` with that revision and then records it. The notice is keyed on the commit rather than on the start, so the logon restarts stay quiet and the admin only hears about it when the running code actually changed; the meta key is written only after a successful send, so a failed one is retried on the next start.
 
 `parse_track_args` rules: blank args are dropped; none left → `None`. If at least 2 args remain, the last is 4 digits, and `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone → it is `last4` (drop it). `joined = normalize_code("".join(remaining args))`; if `detect_carriers(joined)` is non-empty or `is_order_number(joined)` or `is_seller_fleet(joined)` → `(joined, last4)`; else the first result of `extract_codes(" ".join(remaining args))` if any; else `(joined, last4)`.
 
@@ -1275,7 +1251,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `QUIET_HOURS` | no | `22-7` | `H-H` with 0..23, `H1 != H2`; empty string → disabled |
 | `MAX_PARCELS_PER_USER` | no | `30` | int 1..200 |
 | `TELEGRAM_PROXY_URL` | no | – | `http://`, `https://`, `socks5://` or `socks5h://` URL |
-| `VISION_ENGINE` | no | `claude_code` | `claude_code`, `api`, `agy` or `cmdc` |
+| `VISION_ENGINE` | no | `claude_code` | `claude_code`, `api` or `agy` |
 | `CLAUDE_CODE_PATH` | no | `claude` on `PATH`, else `%USERPROFILE%\.local\bin\claude.exe` | path to the Claude Code executable |
 | `VISION_MODEL` | no | `sonnet` | Claude Code model alias or id |
 | `VISION_TIMEOUT_SECONDS` | no | `90` | 10..300 |
@@ -1283,8 +1259,6 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `AGY_PATH` | no | `agy` on `PATH`, else `%LOCALAPPDATA%\agy\bin\agy.exe` | proxy only |
 | `AGY_MODEL` | no | `gemini-3.8-flash-low` | proxy only |
 | `AGY_FALLBACK_MODEL` | no | `gemini-3.7-flash-low` | proxy only; empty disables |
-| `CMDC_PATH` | no | `cmdc` on `PATH`, else `%APPDATA%\npm\cmdc.cmd` | path to the Command Code executable |
-| `CMDC_MODEL` | no | `qwen/qwen3.8-27b` | `cmdc` engine model id; must accept images |
 | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
 | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
@@ -1626,14 +1600,12 @@ HEALTH = (
     "Chu kỳ gần nhất: {fetches} lượt tra cứu, {new_events} cập nhật mới, lỗi: {failures}"
 )
 HEALTH_NEVER = "chưa chạy"
-HEALTH_REVISION = "Bản cập nhật: {revision}"
 
 ALERT_CARRIER = (
     "⚠️ <b>{carrier}</b>: {count} lỗi liên tiếp khi tra cứu.\n"
     "Có thể trang tra cứu đã thay đổi hoặc đang chặn. Lỗi gần nhất: <code>{detail}</code>"
 )
 ALERT_ERROR = "⚠️ Bot gặp lỗi: <code>{detail}</code>"
-BOT_UPDATED = "🔄 <b>Cập nhật bot</b>\nPhiên bản: <code>{revision}</code>"
 
 VISION_NOT_CONFIGURED = (
     "📷 Tính năng đọc ảnh chưa sẵn sàng trên máy chạy bot. Bạn gửi mã vận đơn trực tiếp nhé."

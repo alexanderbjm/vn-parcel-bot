@@ -58,6 +58,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
    | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
    | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
+   | `SEVENTEEN_FALLBACK` | no | `true` | Ask 17TRACK about a parcel none of the supported carriers can track (costs one 17TRACK registration per parcel); Chinese updates are shown in Vietnamese |
    | `SEVENTEEN_TRACK_KEY` | no | – | 17TRACK API key: tracks BEST, SF and cross-border J&T (`JNTX…`, after the phone digits). Each newly registered parcel uses one 17TRACK quota |
    | `MAPS_ENABLED` | no | `true` | Hub lines, distances and map pictures (see *Maps and distance*); `false` turns them off |
 
