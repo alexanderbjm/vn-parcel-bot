@@ -251,7 +251,7 @@ class JtCarrier:
             if seventeen is not None:
                 try:
                     overseas_result = await seventeen.fetch(
-                        http, tracking_number, auto_register=False
+                        http, tracking_number, phone_last4, auto_register=False
                     )
                     if overseas_result.found and overseas_result.events:
                         return _merge_results(domestic_result, overseas_result)
@@ -262,7 +262,9 @@ class JtCarrier:
         # Phase 2: If cross-border and 17TRACK is available, query/register on 17TRACK
         if seventeen is not None:
             try:
-                overseas_result = await seventeen.fetch(http, tracking_number, auto_register=True)
+                overseas_result = await seventeen.fetch(
+                    http, tracking_number, phone_last4, auto_register=True
+                )
                 if overseas_result.found:
                     return overseas_result
                 log.info("17track no data carrier=jt code=%s", mask_code(tracking_number))

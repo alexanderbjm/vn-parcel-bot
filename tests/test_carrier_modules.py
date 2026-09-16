@@ -37,7 +37,11 @@ def test_builtin_modules_in_display_order(snapshot):
 def test_tracked_and_phone_carriers(snapshot):
     tracked = [module.code for module in snapshot.ordered() if snapshot.is_tracked(module.code)]
     assert tracked == ["spx", "jt", "cainiao", "fourpx", "ninjavan", "ghn"]
-    assert {module.code for module in snapshot.ordered() if module.needs_phone} == {"jt", "ghn"}
+    assert {module.code for module in snapshot.ordered() if module.needs_phone} == {
+        "jt",
+        "ghn",
+        "best",
+    }
 
 
 def test_display_names(snapshot):
@@ -150,11 +154,14 @@ def test_best_and_sf_clients_with_and_without_key(monkeypatch):
     assert isinstance(best_client, SeventeenTrackCarrier)
     assert best_client.code == "best"
     assert best_client.seventeen_carrier_id == 101194
+    # 17TRACK asks BEST registrations for the recipient's last 4 digits.
+    assert best_client.needs_phone is True
 
     sf_client = build_sf_client()
     assert isinstance(sf_client, SeventeenTrackCarrier)
     assert sf_client.code == "sf"
     assert sf_client.seventeen_carrier_id == 100012
+    assert sf_client.needs_phone is False
 
 
 AT = datetime(2026, 9, 15, 1, 0, tzinfo=UTC)

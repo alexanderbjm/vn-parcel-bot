@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -302,6 +303,41 @@ async def test_fetch_reads_documented_track_info_nesting():
         "Giao hàng thành công",
     ]
     assert result.events[0].location is None
+
+
+@respx.mock
+async def test_phone_digits_ride_along_on_query_and_register():
+    carrier = make_carrier()
+    info_route = respx.post(GET_TRACK_INFO_URL)
+    info_route.side_effect = [
+        httpx.Response(200, json=track_info_rejected(CODE, ERR_NOT_REGISTERED, "Not registered")),
+        httpx.Response(200, json=track_info_response(CODE, "InTransit")),
+    ]
+    reg_route = respx.post(REGISTER_URL).mock(
+        return_value=httpx.Response(200, json={"code": 0, "data": {"accepted": [{"number": CODE}]}})
+    )
+
+    async with httpx.AsyncClient() as http:
+        result = await carrier.fetch(http, CODE, "4567")
+
+    assert result.found is True
+    expected = [{"number": CODE, "carrier": CARRIER_ID, "phone_number_last_4": "4567"}]
+    assert json.loads(info_route.calls[0].request.content) == expected
+    assert json.loads(reg_route.calls.last.request.content) == expected
+    assert json.loads(info_route.calls.last.request.content) == expected
+
+
+@respx.mock
+async def test_phone_field_is_absent_when_no_digits_are_known():
+    carrier = make_carrier()
+    route = respx.post(GET_TRACK_INFO_URL).mock(
+        return_value=httpx.Response(200, json=track_info_response(CODE, "InTransit"))
+    )
+
+    async with httpx.AsyncClient() as http:
+        await carrier.fetch(http, CODE)
+
+    assert json.loads(route.calls.last.request.content) == [{"number": CODE, "carrier": CARRIER_ID}]
 
 
 @respx.mock

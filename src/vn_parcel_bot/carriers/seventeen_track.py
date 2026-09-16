@@ -49,7 +49,7 @@ class SeventeenTrackCarrier:
         auto_register: bool = True,
     ) -> TrackingResult:
         # Step 1: Query tracking info first (free, 0 quota consumed)
-        result = await self._query_track_info(http, tracking_number)
+        result = await self._query_track_info(http, tracking_number, phone_last4)
         if result is not None:
             return result
 
@@ -57,19 +57,30 @@ class SeventeenTrackCarrier:
             return TrackingResult(carrier=self.code, tracking_number=tracking_number, found=False)
 
         # Step 2: Not registered yet (-18019902), register with carrier ID
-        await self._register_number(http, tracking_number)
+        await self._register_number(http, tracking_number, phone_last4)
 
         # Step 3: Re-query after registration
-        result = await self._query_track_info(http, tracking_number)
+        result = await self._query_track_info(http, tracking_number, phone_last4)
         if result is not None:
             return result
 
         return TrackingResult(carrier=self.code, tracking_number=tracking_number, found=False)
 
+    def _payload(self, tracking_number: str, phone_last4: str | None) -> list[dict[str, Any]]:
+        """17TRACK carries no recipient data of its own: some carriers refuse a number
+        unless the last 4 digits of the recipient's phone come with it."""
+        item: dict[str, Any] = {"number": tracking_number, "carrier": self.seventeen_carrier_id}
+        if phone_last4:
+            item["phone_number_last_4"] = phone_last4
+        return [item]
+
     async def _query_track_info(
-        self, http: httpx.AsyncClient, tracking_number: str
+        self,
+        http: httpx.AsyncClient,
+        tracking_number: str,
+        phone_last4: str | None = None,
     ) -> TrackingResult | None:
-        payload = [{"number": tracking_number, "carrier": self.seventeen_carrier_id}]
+        payload = self._payload(tracking_number, phone_last4)
         response = await request(
             http,
             self.code,
@@ -108,8 +119,13 @@ class SeventeenTrackCarrier:
 
         return None
 
-    async def _register_number(self, http: httpx.AsyncClient, tracking_number: str) -> None:
-        payload = [{"number": tracking_number, "carrier": self.seventeen_carrier_id}]
+    async def _register_number(
+        self,
+        http: httpx.AsyncClient,
+        tracking_number: str,
+        phone_last4: str | None = None,
+    ) -> None:
+        payload = self._payload(tracking_number, phone_last4)
         response = await request(
             http,
             self.code,

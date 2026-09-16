@@ -100,7 +100,7 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 | `/check` | Refresh all your parcels now (once every 2 minutes): load new carrier scripts, match carriers again and rebuild each parcel's history, progress and hub from a fresh check, without repeating old updates. The 🔄 Kiểm tra tất cả button under `/list` does the same, and a card's 🔄 Kiểm tra does it for one parcel |
 | `/cancel` | Cancel a pending question (phone digits, name, remove, list selection); every question also has a ↩ Hủy button |
 
-- **Phone digits:** J&T and GHN only show tracking with the last 4 digits of the recipient's phone. Save them once with `/phone 1234`, or give them per parcel with `/track <mã> 1234`.
+- **Phone digits:** J&T, GHN and BEST Express only show tracking with the last 4 digits of the recipient's phone. Save them once with `/phone 1234`, or give them per parcel with `/track <mã> 1234`.
 - **Automatic detection:** if a code matches several carriers, `/list` shows "Đang xác định hãng" until one of them has data; the update message then names the carrier. Use `/track <mã> <hãng>` to force a carrier.
 - **Link-only carriers:** codes from YunExpress, GHTK, Viettel Post, VNPost and LEX VN get an official tracking link plus a 17TRACK link; they are not tracked. BEST Express and SF Express are the same unless `SEVENTEEN_TRACK_KEY` is set, in which case they are tracked through the 17TRACK API.
 - **15-digit numbers** are tracked as Cainiao. A number that turns out to be an order number never gets data and stops after 7 days.

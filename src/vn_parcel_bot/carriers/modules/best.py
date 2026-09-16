@@ -20,6 +20,7 @@ def build_best_client() -> Carrier | None:
         display_name="BEST Express",
         seventeen_carrier_id=101194,
         api_key=api_key.strip(),
+        needs_phone=True,
     )
 
 
@@ -27,6 +28,7 @@ MODULE = CarrierModule(
     code="best",
     display_name="BEST Express",
     order=70,
+    needs_phone=True,
     rules=(
         Rule(r"BEST[A-Z]{0,6}\d{8,16}(?:VN[A-Z]{0,3})?", PRIORITY_PREFIXED),
         Rule(r"\d{13}", PRIORITY_NUMERIC),
