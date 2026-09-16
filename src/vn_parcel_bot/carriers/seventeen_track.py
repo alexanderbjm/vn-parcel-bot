@@ -5,6 +5,7 @@ import httpx
 
 from vn_parcel_bot.carriers.common import clean_text, json_body, request
 from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
+from vn_parcel_bot.carriers.translate_cn import translate_cn
 
 SEVENTEEN_TRACK_BASE = "https://api.17track.net/track/v2.4"
 REGISTER_URL = f"{SEVENTEEN_TRACK_BASE}/register"
@@ -25,7 +26,7 @@ class SeventeenTrackCarrier:
         self,
         carrier_code: CarrierCode,
         display_name: str,
-        seventeen_carrier_id: int,
+        seventeen_carrier_id: int | None,
         api_key: str,
         *,
         needs_phone: bool = False,
@@ -69,7 +70,10 @@ class SeventeenTrackCarrier:
     def _payload(self, tracking_number: str, phone_last4: str | None) -> list[dict[str, Any]]:
         """17TRACK carries no recipient data of its own: some carriers refuse a number
         unless the last 4 digits of the recipient's phone come with it."""
-        item: dict[str, Any] = {"number": tracking_number, "carrier": self.seventeen_carrier_id}
+        item: dict[str, Any] = {"number": tracking_number}
+        # No carrier id: 17TRACK identifies the carrier itself (STO, YT, China Post...).
+        if self.seventeen_carrier_id is not None:
+            item["carrier"] = self.seventeen_carrier_id
         if phone_last4:
             item["phone_number_last_4"] = phone_last4
         return [item]
@@ -186,7 +190,7 @@ class SeventeenTrackCarrier:
             except ValueError:
                 continue
 
-            desc = clean_text(ev.get("description") or "")
+            desc = translate_cn(clean_text(ev.get("description") or ""))
             if not desc:
                 continue
 

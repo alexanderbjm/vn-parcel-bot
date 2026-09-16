@@ -67,7 +67,7 @@ from vn_parcel_bot.services.geo import Geocoder
 from vn_parcel_bot.services.maps import TileCache
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.parcels import ParcelService
-from vn_parcel_bot.services.poller import Poller
+from vn_parcel_bot.services.poller import Poller, build_seventeen
 from vn_parcel_bot.services.vision_engines import build_vision_engine
 
 log = logging.getLogger(__name__)
@@ -163,7 +163,16 @@ async def _post_init(app: Application) -> None:
     parcels = ParcelService(repo, registry, http, settings, _utc_now)
     tile_cache = TileCache(http, settings.db_path.parent / "tiles")
     maps = ParcelMaps(repo, Geocoder(repo, http, _utc_now), tile_cache.get, settings)
-    poller = Poller(repo, registry, http, notifier, settings, _utc_now, maps=maps)
+    poller = Poller(
+        repo,
+        registry,
+        http,
+        notifier,
+        settings,
+        _utc_now,
+        maps=maps,
+        seventeen=build_seventeen(settings),
+    )
     vision = build_vision_engine(settings, http)
     digests = DigestService(repo, notifier, settings, _utc_now)
     app.bot_data["deps"] = Deps(

@@ -183,6 +183,7 @@ class Settings:
     anthropic_workspace_id: str | None = None
     agy_proxy_url: str = DEFAULT_AGY_PROXY_URL
     seventeen_track_key: str | None = None
+    seventeen_fallback: bool = True
     maps_enabled: bool = True
 
     @classmethod
@@ -250,6 +251,9 @@ class Settings:
         if loopback_address(agy_proxy_url) is None:
             errors.append(_AGY_PROXY_URL_ERROR)
         digest_times = _digest_times(env, errors)
+        fallback_raw = (_get(env, "SEVENTEEN_FALLBACK") or "true").lower()
+        if fallback_raw not in _SWITCH_ON + _SWITCH_OFF:
+            errors.append("SEVENTEEN_FALLBACK must be true or false")
         maps_raw = (_get(env, "MAPS_ENABLED") or "true").lower()
         if maps_raw not in _SWITCH_ON + _SWITCH_OFF:
             errors.append("MAPS_ENABLED must be true or false")
@@ -282,6 +286,7 @@ class Settings:
             anthropic_workspace_id=_get(env, "ANTHROPIC_WORKSPACE_ID"),
             agy_proxy_url=agy_proxy_url,
             seventeen_track_key=_get(env, "SEVENTEEN_TRACK_KEY"),
+            seventeen_fallback=fallback_raw in _SWITCH_ON,
             maps_enabled=maps_raw in _SWITCH_ON,
         )
 

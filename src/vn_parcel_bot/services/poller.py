@@ -16,6 +16,7 @@ from vn_parcel_bot.carriers.models import (
     TrackingResult,
 )
 from vn_parcel_bot.carriers.registry import CarrierRegistry, CarrierSnapshot
+from vn_parcel_bot.carriers.seventeen_track import SeventeenTrackCarrier
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import (
     ALERT_COOLDOWN,
@@ -128,6 +129,7 @@ class Poller:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         rand: Callable[[], float] = random.random,
         maps: ParcelMaps | None = None,
+        seventeen: object | None = None,
     ) -> None:
         self._repo = repo
         self._registry = registry
@@ -138,6 +140,7 @@ class Poller:
         self._sleep = sleep
         self._rand = rand
         self._maps = maps
+        self._seventeen = seventeen
         self._lock = asyncio.Lock()
         self._broken_stickers: set[str] = set()
 
@@ -459,6 +462,8 @@ class Poller:
             error = CarrierError(parcel.carrier, "parse", "events disappeared")
             await self._handle_failure(parcel, error, now, report, alerts)
             return
+        if await self._seventeen_fallback(parcel, now, report, alerts):
+            return
         if now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)
             return
@@ -470,6 +475,43 @@ class Poller:
             next_check_at=now + self._settings.poll_interval,
             now=now,
         )
+
+    async def _seventeen_fallback(
+        self,
+        parcel: Parcel,
+        now: datetime,
+        report: PollReport,
+        alerts: dict[CarrierCode, tuple[int, str]],
+    ) -> bool:
+        """Ask 17TRACK about a parcel our own carriers cannot track.
+
+        17TRACK identifies the carrier itself, so a code that belongs to a carrier without a
+        module (STO, YT, China Post...) still gets a history. Registering costs one quota, so
+        it happens once per parcel and the attempt is recorded in `meta`.
+        """
+        if self._seventeen is None or not self._settings.seventeen_fallback:
+            return False
+        key = f"17track-tried:{parcel.id}"
+        if await self._repo.get_meta(key) is not None:
+            return False
+        await self._repo.set_meta(key, now.isoformat())
+        masked = mask_code(parcel.tracking_number)
+        try:
+            result = await self._seventeen.fetch(
+                self._http, parcel.tracking_number, parcel.phone_last4
+            )
+        except CarrierError as exc:
+            log.warning("17track fallback failed code=%s reason=%s", masked, exc.reason)
+            return False
+        except Exception as exc:
+            log.warning("17track fallback failed code=%s type=%s", masked, type(exc).__name__)
+            return False
+        if not result.found:
+            log.info("17track fallback has no data code=%s", masked)
+            return False
+        log.info("17track fallback found data code=%s events=%s", masked, len(result.events))
+        await self._handle_result(parcel, result, now, report, alerts)
+        return True
 
     @property
     def _maps_on(self) -> bool:
@@ -623,3 +665,16 @@ class Poller:
             log.warning("notification failed chat=%s", chat_id, exc_info=True)
             return
         report.messages_sent += 1
+
+
+def build_seventeen(settings: Settings) -> SeventeenTrackCarrier | None:
+    """The 17TRACK client used as a last resort, or None when it is off or has no key."""
+    key = (settings.seventeen_track_key or "").strip()
+    if not key or not settings.seventeen_fallback:
+        return None
+    return SeventeenTrackCarrier(
+        carrier_code="17track",
+        display_name="17TRACK",
+        seventeen_carrier_id=None,
+        api_key=key,
+    )
