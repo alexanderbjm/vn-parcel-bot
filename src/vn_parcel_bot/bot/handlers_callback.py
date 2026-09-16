@@ -515,11 +515,20 @@ async def _cmd_action(
         await query.answer()
         chat_id = _chat_id(query)
         if chat_id is not None:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=texts.LOCATION_ASK,
-                reply_markup=location_request_keyboard(),
-            )
+            deps = get_deps(context)
+            user = await current_user(update, deps)
+            drop_pending(context)
+            user_data(context)[PENDING_LOCATION] = {"map_parcel": None}
+            text = texts.LOCATION_STATUS if user.home_lat is not None else texts.LOCATION_ASK
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=location_request_keyboard(),
+                )
+            except TelegramError as exc:
+                log.info("location prompt failed type=%s", type(exc).__name__)
     elif action == "help":
         await query.answer()
         await _edit(query, format_help(), help_keyboard())

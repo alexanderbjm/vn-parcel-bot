@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from telegram.constants import ParseMode
 from telegram.error import BadRequest
 
 from tests.fakes import FakeCarrier, FakeNotifier, ev, fake_registry, found
@@ -37,6 +38,7 @@ class FakeBot:
 
     def __init__(self):
         self.sent = []
+        self.sent_kwargs = []
         self.deleted = []
         self.edited = []
         self.next_id = 900
@@ -44,6 +46,7 @@ class FakeBot:
     async def send_message(self, chat_id, text, **kwargs):
         self.next_id += 1
         self.sent.append((chat_id, text, kwargs.get("reply_markup")))
+        self.sent_kwargs.append(kwargs)
         return SimpleNamespace(message_id=self.next_id)
 
     async def delete_message(self, chat_id, message_id):
@@ -359,10 +362,18 @@ async def test_check_command_reports_redetected_parcels(env):
 
 
 async def test_cmd_action_location_and_help(env):
-    # Test cmd:loc triggers location prompt
+    # Test cmd:loc triggers location prompt with HTML parse_mode
     query_loc = await tap(env, "cmd:loc")
     assert query_loc.answers == [None]
     assert any(texts.LOCATION_ASK in item[1] for item in env.bot.sent)
+    assert any(kw.get("parse_mode") == ParseMode.HTML for kw in env.bot.sent_kwargs)
+    assert env.context.user_data["pending_location"] == {"map_parcel": None}
+
+    # When user already has home location saved
+    await env.repo.set_home(USER, 21.03, 105.85)
+    query_loc2 = await tap(env, "cmd:loc")
+    assert query_loc2.answers == [None]
+    assert any(texts.LOCATION_STATUS in item[1] for item in env.bot.sent)
 
     # Test cmd:help displays help with keyboard
     query_help = await tap(env, "cmd:help")

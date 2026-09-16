@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 from html import escape
 
 from telegram import BotCommandScopeChat, Update
+from telegram.constants import ParseMode
 from telegram.error import Conflict, NetworkError, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    Defaults,
     JobQueue,
     MessageHandler,
     TypeHandler,
@@ -78,6 +80,7 @@ def build_application(settings: Settings) -> Application:
     builder = (
         Application.builder()
         .token(settings.telegram_bot_token)
+        .defaults(Defaults(parse_mode=ParseMode.HTML))
         .post_init(_post_init)
         .post_shutdown(_post_shutdown)
     )
