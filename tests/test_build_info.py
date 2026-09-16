@@ -7,9 +7,9 @@ from vn_parcel_bot import build_info
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    build_info.deployed_revision.cache_clear()
+    build_info._cache = None
     yield
-    build_info.deployed_revision.cache_clear()
+    build_info._cache = None
 
 
 def completed(stdout: str, returncode: int = 0) -> SimpleNamespace:
@@ -89,3 +89,38 @@ def test_the_lookup_runs_once_per_process(monkeypatch):
     build_info.deployed_revision()
     build_info.deployed_revision()
     assert len(calls) == 1
+
+
+def test_a_failed_lookup_is_not_remembered(monkeypatch):
+    calls = []
+
+    def fake_run(*a, **k):
+        calls.append(1)
+        return completed("", 128)
+
+    monkeypatch.setattr(build_info.subprocess, "run", fake_run)
+    assert build_info.deployed_revision() is None
+    assert build_info.deployed_revision() is None
+    # A transient failure must not hide the line until the next restart.
+    assert len(calls) == 2
+
+
+async def test_async_wrapper_returns_the_same_value(monkeypatch):
+    monkeypatch.setattr(
+        build_info.subprocess, "run", lambda *a, **k: completed("abc1234|01/01/2026\n")
+    )
+    assert await build_info.deployed_revision_async() == "abc1234 · 01/01/2026"
+
+
+async def test_async_wrapper_runs_off_the_event_loop(monkeypatch):
+    import threading
+
+    seen = {}
+
+    def fake_run(*a, **k):
+        seen["thread"] = threading.current_thread().name
+        return completed("abc1234|01/01/2026\n")
+
+    monkeypatch.setattr(build_info.subprocess, "run", fake_run)
+    await build_info.deployed_revision_async()
+    assert seen["thread"] != threading.main_thread().name
