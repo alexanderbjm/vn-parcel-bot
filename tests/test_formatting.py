@@ -393,6 +393,16 @@ def test_health_never_and_with_report():
     assert "5 lượt tra cứu, 2 cập nhật mới, lỗi: spx=2, ghn=1" in text
 
 
+def test_health_shows_the_deployed_revision_when_known():
+    text = format_health(None, None, 0, 1, TZ, "1258faf · 16/09/2026")
+    assert text.endswith("\nBản cập nhật: 1258faf · 16/09/2026")
+
+
+def test_health_omits_the_revision_line_when_unknown():
+    assert "Bản cập nhật" not in format_health(None, None, 0, 1, TZ)
+    assert "Bản cập nhật" not in format_health(None, None, 0, 1, TZ, None)
+
+
 def test_truncate_message():
     assert truncate_message("short") == "short"
     long_text = "line\n" * 2000

@@ -31,6 +31,7 @@ from vn_parcel_bot.bot.handlers_user import (
     send_parcel_map,
     user_data,
 )
+from vn_parcel_bot.build_info import deployed_revision
 from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.constants import CHECK_COOLDOWN, MAX_EVENTS_IN_HISTORY
 from vn_parcel_bot.db.repo import Parcel
@@ -559,6 +560,7 @@ async def _adm_action(
             await deps.repo.count_all_active(),
             len(await deps.repo.list_users()),
             deps.settings.tz,
+            deployed_revision(),
         )
         await _edit(query, text, admin_sub_keyboard())
     elif action == "users":

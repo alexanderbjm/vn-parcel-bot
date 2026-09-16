@@ -223,6 +223,7 @@ HEALTH = (
     "Chu kỳ gần nhất: {fetches} lượt tra cứu, {new_events} cập nhật mới, lỗi: {failures}"
 )
 HEALTH_NEVER = "chưa chạy"
+HEALTH_REVISION = "Bản cập nhật: {revision}"
 
 ALERT_CARRIER = (
     "⚠️ <b>{carrier}</b>: {count} lỗi liên tiếp khi tra cứu.\n"

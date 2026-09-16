@@ -13,6 +13,7 @@ from vn_parcel_bot import texts
 from vn_parcel_bot.bot.auth import admin_only
 from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import reply
+from vn_parcel_bot.build_info import deployed_revision
 from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.keyboards import admin_keyboard, admin_sub_keyboard
 from vn_parcel_bot.services.formatting import format_health, format_users
@@ -88,6 +89,7 @@ async def health_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await deps.repo.count_all_active(),
             len(await deps.repo.list_users()),
             deps.settings.tz,
+            deployed_revision(),
         ),
         reply_markup=admin_sub_keyboard(),
     )

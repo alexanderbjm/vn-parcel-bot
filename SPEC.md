@@ -60,7 +60,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/allow` *(admin)* | `<telegram_id> [name…]` | Upsert user with `is_allowed=1`; reply `ALLOWED`; try to DM `ALLOWED_NOTICE`. |
 | `/revoke` *(admin)* | `<telegram_id>` | `is_allowed=0`; reply `REVOKED`. Admin id → `CANNOT_REVOKE_ADMIN`. |
 | `/users` *(admin)* | – | All users with role and active parcel count. |
-| `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count. |
+| `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count, and the deployed revision (`build_info.deployed_revision()`: short commit and commit date, resolved once per process). The revision line is left out when git cannot answer. |
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
@@ -480,6 +480,7 @@ vn-parcel-bot/
 ├─ src/vn_parcel_bot/
 │  ├─ __init__.py               __version__
 │  ├─ __main__.py               main(): python -m vn_parcel_bot
+│  ├─ build_info.py             deployed_revision()
 │  ├─ config.py                 Settings, ConfigError
 │  ├─ constants.py              policy constants (§10.2)
 │  ├─ logging_setup.py          setup_logging, RedactTokenFilter
@@ -1031,7 +1032,12 @@ def format_stale(parcel: Parcel) -> str: ...
 def format_carrier_alert(carrier: CarrierCode, count: int, detail: str) -> str: ...
 def format_users(users: Sequence[User], active_counts: Mapping[int, int], admin_id: int) -> str: ...
 def format_health(
-    last_poll_at: datetime | None, report: dict | None, active: int, users: int, tz: ZoneInfo
+    last_poll_at: datetime | None,
+    report: dict | None,
+    active: int,
+    users: int,
+    tz: ZoneInfo,
+    revision: str | None = None,
 ) -> str: ...
 def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str: ...
 ```

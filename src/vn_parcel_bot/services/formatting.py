@@ -415,11 +415,12 @@ def format_health(
     active: int,
     users: int,
     tz: ZoneInfo,
+    revision: str | None = None,
 ) -> str:
     report = report or {}
     failures = report.get("failures") or {}
     failures_text = ", ".join(f"{name}={count}" for name, count in failures.items()) or "0"
-    return texts.HEALTH.format(
+    text = texts.HEALTH.format(
         last_poll=format_time(last_poll_at, tz) if last_poll_at else texts.HEALTH_NEVER,
         active=active,
         users=users,
@@ -427,6 +428,9 @@ def format_health(
         new_events=report.get("new_events", 0),
         failures=_escape(failures_text),
     )
+    if revision:
+        text += "\n" + texts.HEALTH_REVISION.format(revision=_escape(revision))
+    return text
 
 
 def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str:
