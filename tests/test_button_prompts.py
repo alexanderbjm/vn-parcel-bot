@@ -21,6 +21,7 @@ from vn_parcel_bot.bot.handlers_user import (
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
+from vn_parcel_bot.tracking_codes import mask_code
 
 T0 = datetime(2026, 9, 1, 5, 0, tzinfo=UTC)
 USER = 111
@@ -30,8 +31,13 @@ CODES = [f"SPXVN00000000000{index}" for index in range(1, 8)]
 JT = "840000000001"
 
 
-def blurred(code: str) -> str:
+def full_blurred(code: str) -> str:
+    """The rename prompt still shows the whole code."""
     return f'<span class="tg-spoiler">{code}</span>'
+
+
+def blurred(code: str) -> str:
+    return f'<span class="tg-spoiler">{mask_code(code)}</span>'
 
 
 def items(*codes: str) -> str:
@@ -228,11 +234,11 @@ async def test_label_prompt_offers_clear_and_cancel_buttons(env):
     await add_all(env, 1)
     await env.deps.parcels.rename(USER, CODES[0], "Tai nghe")
     prompt = await command(env, label_cmd, 60, f"/label {CODES[0]}", [CODES[0]])
-    assert prompt.text == texts.LABEL_ASK.format(code=blurred(CODES[0]))
+    assert prompt.text == texts.LABEL_ASK.format(code=full_blurred(CODES[0]))
     assert buttons(prompt.markup) == [["lb:clr", "lb:no"]]
     await tap(env, "lb:clr", prompt.id)
     assert (await env.repo.find_parcel(USER, CODES[0])).label is None
-    assert env.log.replies[-1].text == texts.LABEL_CLEARED.format(code=blurred(CODES[0]))
+    assert env.log.replies[-1].text == texts.LABEL_CLEARED.format(code=full_blurred(CODES[0]))
     assert sorted(env.context.bot.deleted) == sorted([60, prompt.id])
     assert PENDING_LABEL not in env.context.user_data
 
@@ -272,7 +278,7 @@ async def test_picker_without_a_name_asks_for_one(env):
     bot_message = Msg(env.log, 50, text=f"1. {CODES[0]}\n2. {CODES[1]}", from_bot=True)
     picker = await command(env, label_cmd, 60, "/label", [], bot_message)
     query = await tap(env, f"lb:p:{parcels[0].id}", picker.id)
-    assert query.edits[0][0] == texts.LABEL_ASK.format(code=blurred(CODES[0]))
+    assert query.edits[0][0] == texts.LABEL_ASK.format(code=full_blurred(CODES[0]))
     assert env.context.user_data[PENDING_LABEL]["prompt_id"] == picker.id
     await answer(env, 61, "Ốp")
     assert (await env.repo.find_parcel(USER, CODES[0])).label == "Ốp"
