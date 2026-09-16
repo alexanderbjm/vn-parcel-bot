@@ -67,14 +67,25 @@ class FetchKey:
     phone_last4: str | None
 
 
-def fetch_keys(parcel: Parcel, snapshot: CarrierSnapshot) -> list[FetchKey]:
+def fetch_keys(
+    parcel: Parcel,
+    snapshot: CarrierSnapshot,
+    default_phone_last4: str | None = None,
+) -> list[FetchKey]:
+    """The calls to make for one parcel.
+
+    A carrier that needs the recipient's digits is skipped without them, so a parcel stored
+    before its owner saved a default would otherwise never be polled again. Fall back to the
+    owner's saved digits, exactly as ``ParcelService.add`` does, so setting /phone revives it.
+    """
     keys = []
     for carrier in parcel.try_order():
         if snapshot.client(carrier) is None:
             continue
         if snapshot.needs_phone(carrier):
-            if parcel.phone_last4:
-                keys.append(FetchKey(carrier, parcel.tracking_number, parcel.phone_last4))
+            digits = parcel.phone_last4 or default_phone_last4
+            if digits:
+                keys.append(FetchKey(carrier, parcel.tracking_number, digits))
         else:
             keys.append(FetchKey(carrier, parcel.tracking_number, None))
     return keys
@@ -202,7 +213,25 @@ class Poller:
         for carrier, count in sorted(missing.items()):
             log.warning("carrier module missing carrier=%s parcels=%d", carrier, count)
 
-        keys_by_parcel = {parcel.id: fetch_keys(parcel, snapshot) for parcel in parcels}
+        defaults = {
+            user.telegram_id: user.default_phone_last4 for user in await self._repo.list_users()
+        }
+        keys_by_parcel = {
+            parcel.id: fetch_keys(parcel, snapshot, defaults.get(parcel.user_id))
+            for parcel in parcels
+        }
+        stranded = [
+            parcel
+            for parcel in parcels
+            if not keys_by_parcel[parcel.id]
+            and any(snapshot.needs_phone(carrier) for carrier in parcel.try_order())
+        ]
+        if stranded:
+            # Otherwise these sit in /list as pending forever, with nothing in the logs.
+            log.warning(
+                "parcels awaiting saved phone digits parcels=%d (set them with /phone)",
+                len(stranded),
+            )
         by_carrier: dict[CarrierCode, list[FetchKey]] = {}
         for parcel in parcels:
             for key in keys_by_parcel[parcel.id]:

@@ -104,6 +104,35 @@ async def test_fetch_keys(repo, fakes):
     assert fetch_keys(unmapped, fake_registry(fakes).current) == []
 
 
+async def test_fetch_keys_falls_back_to_the_owners_saved_digits(repo, fakes):
+    bare = await add(repo, GEN, None, candidates=("ghn", "ninjavan"))
+    snapshot = fake_registry(fakes).current
+    assert fetch_keys(bare, snapshot) == [FetchKey("ninjavan", GEN, None)]
+    assert fetch_keys(bare, snapshot, "7777") == [
+        FetchKey("ghn", GEN, "7777"),
+        FetchKey("ninjavan", GEN, None),
+    ]
+
+
+async def test_a_parcel_with_no_digits_polls_once_the_owner_saves_them(poller, repo, fakes):
+    # A carrier whose only candidate needs the recipient's digits yields no fetch key at all,
+    # so the parcel would sit in /list pending forever without the fallback.
+    await add(repo, JT, "jt", last4=None)
+    await poller.run_cycle()
+    assert fakes["jt"].calls == []
+
+    await repo.set_default_phone(USER, "7777")
+    await poller.run_cycle()
+    assert fakes["jt"].calls == [(JT, "7777")]
+
+
+async def test_a_stored_parcel_digit_wins_over_the_saved_default(poller, repo, fakes):
+    await add(repo, JT, "jt", last4="2222")
+    await repo.set_default_phone(USER, "7777")
+    await poller.run_cycle()
+    assert fakes["jt"].calls == [(JT, "2222")]
+
+
 async def test_no_due_parcels(poller, notifier):
     report = await poller.run_cycle()
     assert (report.parcels_checked, report.fetches, report.new_events, report.messages_sent) == (
