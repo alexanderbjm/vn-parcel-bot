@@ -118,6 +118,42 @@ def test_agy_path_prefers_path_lookup_then_local_app_data(monkeypatch, tmp_path)
     assert config.default_agy_path() == str(exe)
 
 
+def test_cmdc_settings_from_env(valid_env):
+    s = Settings.from_env(
+        {
+            **valid_env,
+            "VISION_ENGINE": "cmdc",
+            "CMDC_PATH": r"D:\tools\cmdc.cmd",
+            "CMDC_MODEL": "moonshotai/kimi-k2.6",
+        }
+    )
+    assert s.vision_engine == "cmdc"
+    assert s.cmdc_path == r"D:\tools\cmdc.cmd"
+    assert s.cmdc_model == "moonshotai/kimi-k2.6"
+
+
+def test_cmdc_model_has_its_own_default(valid_env, monkeypatch):
+    monkeypatch.setattr(config.shutil, "which", lambda name: None)
+    monkeypatch.delenv("APPDATA", raising=False)
+    s = Settings.from_env(valid_env)
+    assert s.cmdc_model == config.DEFAULT_CMDC_MODEL
+    assert s.cmdc_path is None
+
+
+def test_cmdc_path_prefers_path_lookup_then_app_data(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        config.shutil, "which", lambda name: r"C:\bin\cmdc.cmd" if name == "cmdc" else None
+    )
+    assert config.default_cmdc_path() == r"C:\bin\cmdc.cmd"
+    monkeypatch.setattr(config.shutil, "which", lambda name: None)
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    assert config.default_cmdc_path() is None
+    shim = tmp_path / "npm" / "cmdc.cmd"
+    shim.parent.mkdir(parents=True)
+    shim.write_bytes(b"")
+    assert config.default_cmdc_path() == str(shim)
+
+
 def test_claude_code_path_prefers_path_lookup(monkeypatch):
     monkeypatch.setattr(
         config.shutil, "which", lambda name: r"C:\bin\claude.exe" if name == "claude" else None

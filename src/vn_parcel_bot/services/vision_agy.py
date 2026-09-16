@@ -5,8 +5,12 @@ import httpx
 
 from vn_parcel_bot.agy_proxy import PROXY_HEADER, READ_PATH, REREAD_HEADER
 from vn_parcel_bot.config import Settings
-from vn_parcel_bot.services.vision import SUPPORTED_MEDIA_TYPES, VisionResult, parse_vision_text
-from vn_parcel_bot.tracking_codes import looks_misread
+from vn_parcel_bot.services.vision import (
+    SUPPORTED_MEDIA_TYPES,
+    VisionResult,
+    doubtful_codes,
+    parse_vision_text,
+)
 
 log = logging.getLogger(__name__)
 
@@ -16,10 +20,6 @@ PROXY_ERRORS = frozenset({"not_configured", "timeout", "cli_error", "invalid_res
 def proxy_wait_seconds(settings: Settings) -> float:
     """Room for the proxy's first model, its fallback model and some slack."""
     return settings.vision_timeout_seconds * 2 + 60
-
-
-def doubtful_codes(result: VisionResult) -> int:
-    return sum(looks_misread(code) for code in result.tracking_codes)
 
 
 class AgyProxyVisionEngine:

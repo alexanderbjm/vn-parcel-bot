@@ -13,12 +13,13 @@ _TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 _QUIET_HOURS_RE = re.compile(r"^(\d{1,2})-(\d{1,2})$")
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 _PROXY_SCHEMES = ("http://", "https://", "socks5://", "socks5h://")
-_VISION_ENGINES = ("claude_code", "api", "agy")
+_VISION_ENGINES = ("claude_code", "api", "agy", "cmdc")
 _DIGEST_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 DEFAULT_DIGEST_TIMES = (time(7), time(12), time(19), time(22))
 DEFAULT_AGY_PROXY_URL = "http://127.0.0.1:8765"
 DEFAULT_AGY_MODEL = "gemini-3.8-flash-low"
 DEFAULT_AGY_FALLBACK_MODEL = "gemini-3.7-flash-low"
+DEFAULT_CMDC_MODEL = "qwen/qwen3.8-27b"
 _LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 _AGY_PROXY_URL_ERROR = "AGY_PROXY_URL must look like http://127.0.0.1:8765 (an address on this PC)"
 
@@ -105,6 +106,17 @@ def default_agy_path() -> str | None:
     return str(fallback) if fallback.is_file() else None
 
 
+def default_cmdc_path() -> str | None:
+    found = shutil.which("cmdc")
+    if found:
+        return found
+    app_data = os.environ.get("APPDATA")
+    if not app_data:
+        return None
+    fallback = Path(app_data) / "npm" / "cmdc.cmd"
+    return str(fallback) if fallback.is_file() else None
+
+
 def loopback_address(url: str) -> tuple[str, int] | None:
     """Host and port of an ``http://127.0.0.1:PORT`` or ``http://localhost:PORT`` URL, else None."""
     parts = urlsplit(url.strip())
@@ -164,6 +176,8 @@ class Settings:
     claude_code_path: str | None = None
     vision_model: str = "sonnet"
     vision_timeout_seconds: int = 90
+    cmdc_path: str | None = None
+    cmdc_model: str = DEFAULT_CMDC_MODEL
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
     anthropic_workspace_id: str | None = None
@@ -261,6 +275,8 @@ class Settings:
             claude_code_path=_get(env, "CLAUDE_CODE_PATH") or default_claude_code_path(),
             vision_model=_get(env, "VISION_MODEL") or "sonnet",
             vision_timeout_seconds=vision_timeout,
+            cmdc_path=_get(env, "CMDC_PATH") or default_cmdc_path(),
+            cmdc_model=_get(env, "CMDC_MODEL") or DEFAULT_CMDC_MODEL,
             anthropic_api_key=_get(env, "ANTHROPIC_API_KEY"),
             anthropic_model=_get(env, "ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001",
             anthropic_workspace_id=_get(env, "ANTHROPIC_WORKSPACE_ID"),

@@ -107,7 +107,7 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 ### 4.5 Screenshots (`photo_message`)
 
 - A photo or image document in a private chat goes to the vision engine chosen by `VISION_ENGINE` (§10), one photo at a time per user. Documents that are not JPEG/PNG/WebP/GIF or exceed `VISION_MAX_IMAGE_BYTES` (5 MB) get `VISION_UNSUPPORTED_IMAGE` without downloading.
-- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. `agy`: the image goes to the local OCR proxy (§4.6). All three parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
+- `claude_code` (default): `claude -p --input-format stream-json --output-format stream-json --verbose --model <VISION_MODEL> --tools "" --no-session-persistence --strict-mcp-config --setting-sources project` in an empty temporary directory, image as a base64 block on stdin, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `api`: the same content to the Anthropic Messages API. `agy`: the image goes to the local OCR proxy (§4.6). `cmdc`: the Command Code CLI on this PC (§4.7). All four parse the reply with `parse_vision_text` (JSON with `tracking_codes`, `order_ids`, `carrier`, `product_names`, `phone_last4`; free text falls back to `extract_codes`).
 - Error codes: `not_configured` → `VISION_NOT_CONFIGURED`; `timeout`, `cli_error`, `http_status`, `network`, `invalid_response`, `blocked` → `VISION_ERROR`. Logs hold error codes, exit codes and durations only.
 - Shipping codes → the add flow (§4.3) with `label` = the product name (first item, ` +N` for more items, at most 40 characters); a duplicate parcel gets the label only if it has none; a pending phone question keeps the label. Replies start with `VISION_DETECTED_HEADER` and `VISION_PRODUCT`.
 - Only an order number → `VISION_ORDER_ONLY`, nothing stored. Nothing found → `VISION_NO_DATA`.
@@ -120,6 +120,15 @@ Inputs: the user, the raw code, an optional phone override. A candidate counts a
 - The stream's `result` event gives `status`, `response` and `denied_actions`. Any tool other than `view_file`, or any denied action → `blocked` (the reply is discarded; logs name the tools only). Non-zero exit or a status other than `SUCCESS` → `cli_error`; empty response → `invalid_response`; start failure → `not_configured`. After `cli_error` or `timeout` the run is repeated once with `AGY_FALLBACK_MODEL` when it is set and differs from `AGY_MODEL`.
 - Bot side, `AgyProxyVisionEngine` (`services/vision_agy.py`): `httpx` with `trust_env=False`, waiting `2 × VISION_TIMEOUT_SECONDS + 60` s. Connection failures → `network`, timeouts → `timeout`, non-200 → `http_status`; proxy error codes pass through (unknown ones → `cli_error`); text goes to `parse_vision_text`. When a tracking code `looks_misread` (no carrier detects it and it is not a seller-fleet code, or every detected carrier lists `code_lengths` without its length), the image is sent once more with the re-read header; the second read is used when it has no error, at least as many tracking codes and no more doubtful codes, otherwise the first read is kept. Logs hold error codes, doubtful-code counts and durations only.
 - Why a file: agy's print mode accepts text only (image content blocks are refused), so agy opens the saved copy itself. Headless agy auto-denies commands and URL reads unless its `settings.json` allows them; keep that allow list free of commands a screenshot could trick agy into running.
+
+### 4.7 Command Code engine (`services/vision_cmdc.py`)
+
+- `CmdcVisionEngine` runs the Command Code CLI already logged in on this PC: `cmdc -p --output-format json --model <CMDC_MODEL> --no-skills --skip-onboarding`, in a new `vn-parcel-vision-*` temporary folder, no console window, one call at a time, `VISION_TIMEOUT_SECONDS`. `CMDC_PATH` must be an existing file, else `not_configured` before any call is made.
+- The image is written into that folder as `screenshot.<png|jpg|gif|webp>` (an unknown media type becomes JPEG) and the folder is removed afterwards. cmdc has no streamed-image input and no `--input-format`, so the prompt is `tool_file_prompt("read_file", <name>)` and the run opens the saved copy itself with its own `read_file` tool.
+- The prompt travels on **stdin**, never as the `-p` argument: a query passed to `-p` is answered as plain prose and no `result` frame is emitted at all, so the answer cannot be parsed. With the query on stdin, `--output-format json` gives newline-delimited JSON; the last `{"type": "result", …}` line's `finalText` goes to `parse_vision_text`. Non-zero exit, a missing `result` frame, or a `subtype` other than `success` → `cli_error`; empty text → `invalid_response`; timeout → `timeout`; start failure → `not_configured`.
+- Never pass `--yolo` (or its alias `--dangerously-skip-permissions`): a headless cmdc run denies file writes and shell commands unless it is given, which is what stops text inside a screenshot from steering the run. `--no-skills` and `--skip-onboarding` keep the run deterministic and free of user-level skills.
+- A code that `looks_misread` (see §4.6) makes the image be read once more with `REREAD_NOTE` in the prompt; the second read is used when it has no error, at least as many tracking codes and no more doubtful codes, otherwise the first read is kept. Logs hold error codes, exit codes and durations only.
+- Each run costs roughly 30k input tokens of agent-prompt overhead on top of the image — cached across calls, but far more than the other engines — and takes about 10–20 s. The model must accept images; `deepseek/deepseek-v4-flash-vision-exp` added a digit to a 17-character SPX code in testing, while `qwen/qwen3.8-27b` and `moonshotai/kimi-k2.6` read it correctly.
 
 ## 5. Carriers
 
@@ -1251,7 +1260,7 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `QUIET_HOURS` | no | `22-7` | `H-H` with 0..23, `H1 != H2`; empty string → disabled |
 | `MAX_PARCELS_PER_USER` | no | `30` | int 1..200 |
 | `TELEGRAM_PROXY_URL` | no | – | `http://`, `https://`, `socks5://` or `socks5h://` URL |
-| `VISION_ENGINE` | no | `claude_code` | `claude_code`, `api` or `agy` |
+| `VISION_ENGINE` | no | `claude_code` | `claude_code`, `api`, `agy` or `cmdc` |
 | `CLAUDE_CODE_PATH` | no | `claude` on `PATH`, else `%USERPROFILE%\.local\bin\claude.exe` | path to the Claude Code executable |
 | `VISION_MODEL` | no | `sonnet` | Claude Code model alias or id |
 | `VISION_TIMEOUT_SECONDS` | no | `90` | 10..300 |
@@ -1259,6 +1268,8 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 | `AGY_PATH` | no | `agy` on `PATH`, else `%LOCALAPPDATA%\agy\bin\agy.exe` | proxy only |
 | `AGY_MODEL` | no | `gemini-3.8-flash-low` | proxy only |
 | `AGY_FALLBACK_MODEL` | no | `gemini-3.7-flash-low` | proxy only; empty disables |
+| `CMDC_PATH` | no | `cmdc` on `PATH`, else `%APPDATA%\npm\cmdc.cmd` | path to the Command Code executable |
+| `CMDC_MODEL` | no | `qwen/qwen3.8-27b` | `cmdc` engine model id; must accept images |
 | `ANTHROPIC_API_KEY` | no | – | `api` engine only |
 | `ANTHROPIC_MODEL` | no | `claude-haiku-4-5-20251001` | `api` engine only |
 | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |

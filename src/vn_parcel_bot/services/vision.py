@@ -9,7 +9,12 @@ import httpx
 
 from vn_parcel_bot.config import Settings
 from vn_parcel_bot.constants import MAX_LABEL_LENGTH
-from vn_parcel_bot.tracking_codes import extract_codes, is_order_number, normalize_code
+from vn_parcel_bot.tracking_codes import (
+    extract_codes,
+    is_order_number,
+    looks_misread,
+    normalize_code,
+)
 
 log = logging.getLogger(__name__)
 
@@ -38,15 +43,20 @@ REREAD_NOTE = (
 )
 
 
-def file_prompt(image_path: str, *, reread: bool = False) -> str:
-    """Prompt for agents that open the screenshot from disk themselves (agy)."""
+def tool_file_prompt(tool_name: str, image_path: str, *, reread: bool = False) -> str:
+    """Prompt for agents that open the screenshot from disk with a named tool."""
     note = REREAD_NOTE if reread else ""
     return (
-        f"Use the view_file tool to open the image file {image_path} and use no other tool."
+        f"Use the {tool_name} tool to open the image file {image_path} and use no other tool."
         + note
         + " That image"
         + _PROMPT_BODY
     )
+
+
+def file_prompt(image_path: str, *, reread: bool = False) -> str:
+    """Prompt for agents that open the screenshot from disk themselves (agy)."""
+    return tool_file_prompt("view_file", image_path, reread=reread)
 
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
@@ -166,6 +176,11 @@ def parse_vision_text(text: str) -> VisionResult:
         product_name=_product_name(parsed.get("product_names") or parsed.get("product_name")),
         notes=_optional_text(parsed.get("notes")),
     )
+
+
+def doubtful_codes(result: VisionResult) -> int:
+    """Tracking codes whose length no carrier uses, so the read may be wrong."""
+    return sum(looks_misread(code) for code in result.tracking_codes)
 
 
 class AnthropicVisionEngine:
