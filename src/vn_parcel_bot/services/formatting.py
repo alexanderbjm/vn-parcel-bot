@@ -17,7 +17,6 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.parcels import AddOutcome
-from vn_parcel_bot.tracking_codes import mask_code
 
 _INDEX_REF = re.compile(r"\d{1,3}", re.ASCII)
 
@@ -35,13 +34,8 @@ def ref_text(ref: str) -> str:
 
 
 def parcel_title(parcel: Parcel) -> str:
-    """The label, if any, then the blurred code, shortened.
-
-    Telegram keeps a spoiler revealed once tapped, and paging through /list edits the same
-    message, so it stays revealed. Titles carry only the masked code; the full code stays in
-    the history header and behind the card's lookup link.
-    """
-    code = spoiler(mask_code(parcel.tracking_number))
+    """The label, if any, then the blurred tracking code: the code is always shown."""
+    code = spoiler(parcel.tracking_number)
     return f"{_escape(parcel.label)} · {code}" if parcel.label else code
 
 

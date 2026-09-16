@@ -22,7 +22,6 @@ from vn_parcel_bot.services.formatting import format_check_done, format_parcel_c
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller
 from vn_parcel_bot.services.sharing import share_token
-from vn_parcel_bot.tracking_codes import mask_code
 
 T0 = datetime(2026, 9, 1, 5, 0, tzinfo=UTC)
 USER = 111
@@ -31,7 +30,6 @@ OTHER = 222
 CHAT = 111
 SPX = "SPXVN000000000001"
 BLURRED = f'<span class="tg-spoiler">{SPX}</span>'
-SHORT_BLURRED = f'<span class="tg-spoiler">{mask_code(SPX)}</span>'
 
 
 class FakeBot:
@@ -190,12 +188,12 @@ async def test_check_refreshes_card_and_has_cooldown(env):
 async def test_remove_confirm_cancel_and_remove(env):
     parcel = await add_spx(env)
     ask = await tap(env, f"p:{parcel.id}:del")
-    assert ask.edits[0][0] == texts.REMOVE_CONFIRM.format(title=SHORT_BLURRED)
+    assert ask.edits[0][0] == texts.REMOVE_CONFIRM.format(title=BLURRED)
     assert first_data(ask.edits[0][1]) == f"p:{parcel.id}:dok"
     cancel = await tap(env, f"p:{parcel.id}:dno")
     assert first_data(cancel.edits[0][1]) == f"p:{parcel.id}:ren"
     confirm = await tap(env, f"p:{parcel.id}:dok:2")
-    assert confirm.edits[0][0] == texts.REMOVED.format(title=SHORT_BLURRED)
+    assert confirm.edits[0][0] == texts.REMOVED.format(title=BLURRED)
     assert last_row_data(confirm.edits[0][1]) == ["l:2"]
     assert await env.repo.get_parcel(parcel.id) is None
 
@@ -215,7 +213,7 @@ async def test_rename_from_card_updates_card_and_cleans_up(env):
     assert (await env.repo.get_parcel(parcel.id)).label == "Bàn chải"
     edited_id, edited_text, markup = env.bot.edited[-1]
     assert edited_id == 70
-    assert f"<b>Bàn chải · {SHORT_BLURRED}</b>" in edited_text
+    assert f"<b>Bàn chải · {BLURRED}</b>" in edited_text
     assert first_data(markup) == f"p:{parcel.id}:ren"
     assert sorted(env.bot.deleted) == sorted([prompt_id, 71])
 
@@ -274,7 +272,7 @@ async def test_shared_link_lets_another_user_track(env):
     opened = []
     await start(other_update(Msg(80, "/start", opened)), env.context)
     text, markup = opened[-1]
-    assert text == texts.SHARE_OPEN.format(title=f"Áo · {SHORT_BLURRED}", carrier="SPX")
+    assert text == texts.SHARE_OPEN.format(title=f"Áo · {BLURRED}", carrier="SPX")
     assert [b.callback_data for b in markup.inline_keyboard[0]] == [
         f"s:{token}:ok",
         f"s:{token}:no",
