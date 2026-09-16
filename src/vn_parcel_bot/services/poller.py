@@ -487,25 +487,38 @@ class Poller:
 
         17TRACK identifies the carrier itself, so a code that belongs to a carrier without a
         module (STO, YT, China Post...) still gets a history. Registering costs one quota, so
-        it happens once per parcel and the attempt is recorded in `meta`.
+        it happens once per parcel and is recorded in `meta`; afterwards each poll re-queries
+        for free, and data appears as soon as 17TRACK has it. Running out of quota records
+        nothing, so the parcel can still be registered later.
         """
         if self._seventeen is None or not self._settings.seventeen_fallback:
             return False
         key = f"17track-tried:{parcel.id}"
-        if await self._repo.get_meta(key) is not None:
-            return False
-        await self._repo.set_meta(key, now.isoformat())
+        registered = await self._repo.get_meta(key) is not None
         masked = mask_code(parcel.tracking_number)
         try:
             result = await self._seventeen.fetch(
-                self._http, parcel.tracking_number, parcel.phone_last4
+                self._http,
+                parcel.tracking_number,
+                parcel.phone_last4,
+                auto_register=not registered,
             )
         except CarrierError as exc:
+            if exc.reason == "blocked":
+                # Out of registration quota: leave the parcel unregistered and try another day.
+                log.warning("17track fallback out of quota code=%s", masked)
+                return False
+            if not registered:
+                await self._repo.set_meta(key, now.isoformat())
             log.warning("17track fallback failed code=%s reason=%s", masked, exc.reason)
             return False
         except Exception as exc:
+            if not registered:
+                await self._repo.set_meta(key, now.isoformat())
             log.warning("17track fallback failed code=%s type=%s", masked, type(exc).__name__)
             return False
+        if not registered:
+            await self._repo.set_meta(key, now.isoformat())
         if not result.found:
             log.info("17track fallback has no data code=%s", masked)
             return False

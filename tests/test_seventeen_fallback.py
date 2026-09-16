@@ -153,3 +153,38 @@ async def test_no_fallback_for_a_parcel_that_already_has_events(env):
     await poller.run_cycle()
     assert seventeen.calls == []
     assert await repo.count_events(parcel.id) == 1
+
+
+async def test_a_registered_parcel_is_queried_again_for_free(env):
+    repo, carrier, notifier, settings, no_sleep = env
+    from tests.fakes import ev, found
+
+    parcel = await add(repo, CODE, "cainiao")
+    seventeen = FakeSeventeen()
+    poller = build(repo, carrier, notifier, settings, no_sleep, seventeen)
+    await poller.run_cycle()
+    assert seventeen.calls == [(CODE, True)], "registers once"
+    seventeen.result = found("cainiao", CODE, ev(0, "Đã đến Thượng Hải"))
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert seventeen.calls[-1] == (CODE, False), "later polls are free queries"
+    assert await repo.count_events(parcel.id) == 1
+    assert (await repo.get_parcel(parcel.id)).state == "in_transit"
+
+
+class BlockedSeventeen(FakeSeventeen):
+    async def fetch(self, http, tracking_number, phone_last4=None, *, auto_register=True):
+        from vn_parcel_bot.carriers.models import CarrierError
+
+        self.calls.append((tracking_number, auto_register))
+        raise CarrierError("cainiao", "blocked", "17track quota exceeded")
+
+
+async def test_a_quota_error_leaves_the_parcel_for_another_day(env):
+    repo, carrier, notifier, settings, no_sleep = env
+    parcel = await add(repo, CODE, "cainiao")
+    seventeen = BlockedSeventeen()
+    poller = build(repo, carrier, notifier, settings, no_sleep, seventeen)
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert await repo.get_meta(f"17track-tried:{parcel.id}") is None
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert len(seventeen.calls) == 2, "a parcel is not written off because quota ran out"
