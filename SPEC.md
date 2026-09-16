@@ -517,7 +517,7 @@ vn-parcel-bot/
 │  └─ bot/
 │     ├─ __init__.py
 │     ├─ deps.py                Deps, get_deps
-│     ├─ app.py                 build_application, poll_job, on_error
+│     ├─ app.py                 build_application, announce_update, poll_job, on_error
 │     ├─ auth.py                is_authorized, gate, admin_only
 │     ├─ commands.py            BOT_COMMANDS
 │     ├─ notifier.py            TelegramNotifier
@@ -1214,6 +1214,7 @@ def get_deps(context: ContextTypes.DEFAULT_TYPE) -> Deps: ...  # context.bot_dat
 
 # app.py
 def build_application(settings: Settings) -> Application: ...
+async def announce_update(deps: Deps) -> None: ...
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None: ...
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: ...
 
@@ -1221,6 +1222,8 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None: 
 # __main__.py
 def main() -> int: ...
 ```
+
+`announce_update` runs in `_post_init` ahead of the carrier-rejection alerts. When `deployed_revision()` resolves and differs from meta key `notify:revision`, it DMs the admin `BOT_UPDATED` with that revision and then records it. The notice is keyed on the commit rather than on the start, so the logon restarts stay quiet and the admin only hears about it when the running code actually changed; the meta key is written only after a successful send, so a failed one is retried on the next start.
 
 `parse_track_args` rules: blank args are dropped; none left → `None`. If at least 2 args remain, the last is 4 digits, and `detect_carriers(normalize_code("".join(args[:-1])))` contains a carrier that needs a phone → it is `last4` (drop it). `joined = normalize_code("".join(remaining args))`; if `detect_carriers(joined)` is non-empty or `is_order_number(joined)` or `is_seller_fleet(joined)` → `(joined, last4)`; else the first result of `extract_codes(" ".join(remaining args))` if any; else `(joined, last4)`.
 
@@ -1623,12 +1626,14 @@ HEALTH = (
     "Chu kỳ gần nhất: {fetches} lượt tra cứu, {new_events} cập nhật mới, lỗi: {failures}"
 )
 HEALTH_NEVER = "chưa chạy"
+HEALTH_REVISION = "Bản cập nhật: {revision}"
 
 ALERT_CARRIER = (
     "⚠️ <b>{carrier}</b>: {count} lỗi liên tiếp khi tra cứu.\n"
     "Có thể trang tra cứu đã thay đổi hoặc đang chặn. Lỗi gần nhất: <code>{detail}</code>"
 )
 ALERT_ERROR = "⚠️ Bot gặp lỗi: <code>{detail}</code>"
+BOT_UPDATED = "🔄 <b>Cập nhật bot</b>\nPhiên bản: <code>{revision}</code>"
 
 VISION_NOT_CONFIGURED = (
     "📷 Tính năng đọc ảnh chưa sẵn sàng trên máy chạy bot. Bạn gửi mã vận đơn trực tiếp nhé."

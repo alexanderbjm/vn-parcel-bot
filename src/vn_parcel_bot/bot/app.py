@@ -51,6 +51,7 @@ from vn_parcel_bot.bot.handlers_user import (
     unknown_command,
 )
 from vn_parcel_bot.bot.notifier import TelegramNotifier
+from vn_parcel_bot.build_info import deployed_revision_async
 from vn_parcel_bot.carriers.http import make_http_client
 from vn_parcel_bot.carriers.registry import CarrierRegistry, set_registry
 from vn_parcel_bot.config import Settings
@@ -70,6 +71,8 @@ from vn_parcel_bot.services.poller import Poller
 from vn_parcel_bot.services.vision_engines import build_vision_engine
 
 log = logging.getLogger(__name__)
+
+UPDATE_META_KEY = "notify:revision"
 
 
 def _utc_now() -> datetime:
@@ -122,6 +125,31 @@ def build_application(settings: Settings) -> Application:
     return app
 
 
+async def announce_update(deps: Deps) -> None:
+    """DM the admin once per deployed revision.
+
+    The bot restarts at every logon as well as after every deploy, so the notice is keyed on the
+    commit rather than on the start: the admin hears about it when the running code changes, not
+    on every reboot.
+    """
+    revision = await deployed_revision_async()
+    if revision is None:
+        return
+    if await deps.repo.get_meta(UPDATE_META_KEY) == revision:
+        return
+    try:
+        await deps.notifier.send(
+            deps.settings.admin_telegram_id,
+            texts.BOT_UPDATED.format(revision=escape(revision)),
+            silent=False,
+        )
+    except Exception:
+        # Leave the meta key unwritten so the next start tries again.
+        log.warning("update notice failed revision=%s", revision, exc_info=True)
+        return
+    await deps.repo.set_meta(UPDATE_META_KEY, revision)
+
+
 async def _post_init(app: Application) -> None:
     settings: Settings = app.bot_data["settings"]
     repo = await Repository.open(settings.db_path)
@@ -150,6 +178,7 @@ async def _post_init(app: Application) -> None:
         registry=registry,
         maps=maps,
     )
+    await announce_update(app.bot_data["deps"])
     await alert_rejections(app.bot_data["deps"], registry.startup_rejections)
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     schedule_jobs(app.job_queue, settings)
