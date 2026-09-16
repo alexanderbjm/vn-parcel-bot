@@ -316,6 +316,34 @@ async def test_logs_hold_no_model_text_or_stderr(cmdc_settings, caplog):
     assert "stderr-secret" not in caplog.text
 
 
+async def test_the_run_does_not_inherit_bot_secrets(cmdc_settings, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:secret")
+    monkeypatch.setenv("SEVENTEEN_TRACK_KEY", "17track-secret")
+    monkeypatch.setenv("VN_PARCEL_MARKER", "keep-me")
+    runner = FakeRunner()
+    await CmdcVisionEngine(cmdc_settings, runner).analyze_image(b"img")
+
+    env = runner.calls[0].env
+    assert env is not None
+    leaked = [
+        key
+        for key in env
+        if key.upper().startswith(("ANTHROPIC_", "TELEGRAM_", "SEVENTEEN_TRACK_"))
+    ]
+    assert leaked == []
+    assert env["VN_PARCEL_MARKER"] == "keep-me"
+
+
+async def test_a_failed_image_write_is_an_error_not_an_exception(cmdc_settings, monkeypatch):
+    def boom(self, data):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_bytes", boom)
+    result = await CmdcVisionEngine(cmdc_settings, FakeRunner()).analyze_image(b"img")
+    assert result.error == "cli_error"
+
+
 async def test_run_process_passes_stdin_and_uses_the_given_environment(tmp_path):
     env = {**os.environ, "VN_PARCEL_MARKER": "from-env"}
     output = await run_process(

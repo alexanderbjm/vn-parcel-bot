@@ -1,12 +1,14 @@
 import asyncio
 import json
 import logging
+import os
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 from vn_parcel_bot.config import Settings
+from vn_parcel_bot.constants import SECRET_ENV_PREFIXES
 from vn_parcel_bot.services.vision import (
     SUPPORTED_MEDIA_TYPES,
     VisionResult,
@@ -65,6 +67,20 @@ def last_result_event(stdout: bytes) -> dict[str, Any] | None:
     return result
 
 
+def cmdc_environment() -> dict[str, str]:
+    """This process's environment without the bot's secrets.
+
+    cmdc authenticates from its own login, so the bot token and the 17TRACK key have no business
+    in its process. The bot loads .env into os.environ, so without this the screenshot run would
+    inherit both.
+    """
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith(SECRET_ENV_PREFIXES)
+    }
+
+
 class CmdcVisionEngine:
     """Reads screenshots with the Command Code CLI (``cmdc -p``) already logged in on this PC.
 
@@ -111,25 +127,31 @@ class CmdcVisionEngine:
         args = build_args(self._settings.cmdc_path or "", self._settings.cmdc_model)
         async with self._lock:
             started = time.monotonic()
-            with tempfile.TemporaryDirectory(
-                prefix="vn-parcel-vision-", ignore_cleanup_errors=True
-            ) as workdir:
-                (Path(workdir) / name).write_bytes(image_bytes)
-                try:
+            # Everything that can fail before a reply is parsed -- making the temporary folder,
+            # writing the screenshot into it, starting the CLI -- is inside this try, so
+            # analyze_image always returns a VisionResult rather than letting an OSError escape
+            # to the caller.
+            try:
+                with tempfile.TemporaryDirectory(
+                    prefix="vn-parcel-vision-", ignore_cleanup_errors=True
+                ) as workdir:
+                    (Path(workdir) / name).write_bytes(image_bytes)
                     output = await self._runner(
                         args,
                         prompt.encode("utf-8"),
                         workdir,
                         self._settings.vision_timeout_seconds,
+                        cmdc_environment(),
                     )
-                except TimeoutError:
-                    log.warning(
-                        "vision cmdc error=timeout duration=%.1fs", time.monotonic() - started
-                    )
-                    return VisionResult(error="timeout")
-                except OSError as exc:
-                    log.warning("vision cmdc error=not_configured type=%s", type(exc).__name__)
-                    return VisionResult(error="not_configured")
+            except TimeoutError:
+                log.warning("vision cmdc error=timeout duration=%.1fs", time.monotonic() - started)
+                return VisionResult(error="timeout")
+            except FileNotFoundError as exc:
+                log.warning("vision cmdc error=not_configured type=%s", type(exc).__name__)
+                return VisionResult(error="not_configured")
+            except OSError as exc:
+                log.warning("vision cmdc error=cli_error stage=setup type=%s", type(exc).__name__)
+                return VisionResult(error="cli_error")
             elapsed = time.monotonic() - started
         event = last_result_event(output.stdout)
         subtype = event.get("subtype") if event else None

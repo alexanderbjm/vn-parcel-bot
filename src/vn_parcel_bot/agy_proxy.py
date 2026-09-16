@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from dotenv import dotenv_values
 
 from vn_parcel_bot.config import AgyProxyConfig, ConfigError
-from vn_parcel_bot.constants import VISION_MAX_IMAGE_BYTES
+from vn_parcel_bot.constants import SECRET_ENV_PREFIXES, VISION_MAX_IMAGE_BYTES
 from vn_parcel_bot.logging_setup import LOG_FORMAT
 from vn_parcel_bot.services.vision import file_prompt
 from vn_parcel_bot.services.vision_claude_code import ProcessOutput
@@ -43,7 +43,6 @@ IMAGE_SUFFIXES = {
 }
 ALLOWED_TOOLS = frozenset({"view_file"})
 PROCESS_GRACE_SECONDS = 15
-_SECRET_ENV_PREFIXES = ("ANTHROPIC_", "TELEGRAM_", "SEVENTEEN_TRACK_")
 
 SyncRunner = Callable[[Sequence[str], str, float, Mapping[str, str]], ProcessOutput]
 
@@ -86,7 +85,7 @@ def agy_environment() -> dict[str, str]:
     return {
         key: value
         for key, value in os.environ.items()
-        if not key.upper().startswith(_SECRET_ENV_PREFIXES)
+        if not key.upper().startswith(SECRET_ENV_PREFIXES)
     }
 
 
