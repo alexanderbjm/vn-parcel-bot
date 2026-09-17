@@ -249,3 +249,35 @@ async def test_delivery_to_the_buyer_still_counts():
     result = await fetch_payload(delivered_payload("Giao hàng thành công", "Hà Nội"))
     assert result.found is True
     assert result.delivered is True
+
+
+class ErroringCarrier(FakeCarrier):
+    async def fetch(self, http, tracking_number, phone_last4=None):
+        from vn_parcel_bot.carriers.models import CarrierError
+
+        self.calls.append((tracking_number, phone_last4))
+        raise CarrierError(self.code, "parse", "no result or not-found marker")
+
+
+async def test_a_registered_parcel_is_requeried_when_its_own_carrier_errors(env):
+    repo, _, notifier, settings, no_sleep = env
+    from tests.fakes import ev, found
+
+    parcel = await add(repo, CODE, "cainiao")
+    await repo.set_meta(f"17track-tried:{parcel.id}", T0.isoformat())
+    seventeen = FakeSeventeen(found("cainiao", CODE, ev(0, "Đã đến Thượng Hải")))
+    poller = build(repo, ErroringCarrier("cainiao"), notifier, settings, no_sleep, seventeen)
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert seventeen.calls == [(CODE, False)], "a free re-query, never a second registration"
+    assert await repo.count_events(parcel.id) == 1
+    assert (await repo.get_parcel(parcel.id)).state == "in_transit"
+
+
+async def test_a_carrier_error_never_spends_registration_quota(env):
+    repo, _, notifier, settings, no_sleep = env
+    parcel = await add(repo, CODE, "cainiao")
+    seventeen = FakeSeventeen()
+    poller = build(repo, ErroringCarrier("cainiao"), notifier, settings, no_sleep, seventeen)
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert seventeen.calls == [], "an unregistered parcel waits for the not-found path"
+    assert await repo.get_meta(f"17track-tried:{parcel.id}") is None

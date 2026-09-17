@@ -482,6 +482,8 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        *,
+        register: bool = True,
     ) -> bool:
         """Ask 17TRACK about a parcel our own carriers cannot track.
 
@@ -490,11 +492,16 @@ class Poller:
         it happens once per parcel and is recorded in `meta`; afterwards each poll re-queries
         for free, and data appears as soon as 17TRACK has it. Running out of quota records
         nothing, so the parcel can still be registered later.
+
+        `register=False` re-queries a parcel that is already registered and does nothing
+        otherwise, so a carrier having a bad day never costs a registration.
         """
         if self._seventeen is None or not self._settings.seventeen_fallback:
             return False
         key = f"17track-tried:{parcel.id}"
         registered = await self._repo.get_meta(key) is not None
+        if not registered and not register:
+            return False
         masked = mask_code(parcel.tracking_number)
         try:
             result = await self._seventeen.fetch(
@@ -589,6 +596,10 @@ class Poller:
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
     ) -> None:
+        # The parcel's own carrier is failing, so 17TRACK answers instead when it already
+        # tracks this parcel. Without this a carrier that keeps erroring freezes the parcel.
+        if await self._seventeen_fallback(parcel, now, report, alerts, register=False):
+            return
         if parcel.state == "pending" and now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)
             return
