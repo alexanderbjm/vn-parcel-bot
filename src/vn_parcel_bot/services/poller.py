@@ -431,6 +431,8 @@ class Poller:
             state = (
                 "delivered" if result.delivered else "returned" if result.returned else "in_transit"
             )
+            if state == "in_transit" and not new and parcel.state == "stale":
+                state = "stale"
             newly_delivered = state == "delivered" and parcel.state != "delivered"
             newly_returned = state == "returned" and parcel.state != "returned"
             latest = result.latest
@@ -485,6 +487,13 @@ class Poller:
         if parcel.carrier is not None and await self._repo.count_events(parcel.id) > 0:
             report.failures[parcel.carrier] = report.failures.get(parcel.carrier, 0) + 1
             error = CarrierError(parcel.carrier, "parse", "events disappeared")
+            # Every other failure branch says so out loud. This one used to fail in silence,
+            # countable only in the poll-cycle summary, so hours of it looked like calm.
+            log.warning(
+                "carrier returned nothing for a parcel with history carrier=%s code=%s",
+                parcel.carrier,
+                mask_code(parcel.tracking_number),
+            )
             await self._handle_failure(parcel, error, now, report, alerts, updates)
             return
         if await self._aggregator_fallback(parcel, now, report, alerts, updates):

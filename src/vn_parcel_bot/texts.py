@@ -17,7 +17,7 @@ STATE_TEXT = {
     "delivered": "Đã giao",
     "returned": "Hoàn hàng",
     "expired": "Đã ngừng theo dõi (không có dữ liệu)",
-    "stale": "Đã ngừng theo dõi (quá lâu không cập nhật)",
+    "stale": "Lâu không có cập nhật (vẫn âm thầm kiểm tra)",
 }
 
 WELCOME = (
@@ -87,7 +87,7 @@ ADDED_PENDING_AUTO = (
 )
 ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
 ADDED_ERROR = (
-    "✅ Đã thêm <b>{title}</b> · {carrier}\n"
+    "⚠️ Đã thêm <b>{title}</b> · {carrier}\n"
     "Hiện chưa kết nối được với {carrier}, mình sẽ thử lại sau."
 )
 DUPLICATE = "Bạn đã theo dõi đơn {code} rồi."
@@ -212,7 +212,10 @@ EXPIRED = (
     "⌛ Sau 7 ngày vẫn chưa có dữ liệu cho {code}, mình đã ngừng theo dõi.\n"
     "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T hoặc GHN)."
 )
-STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày, mình đã ngừng theo dõi."
+STALE = (
+    "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày. "
+    "Mình vẫn âm thầm kiểm tra, chỉ là sẽ không nhắc nữa trừ khi có gì mới."
+)
 
 ADMIN_HELP = (
     "<b>🛠 Lệnh quản lý</b>\n"

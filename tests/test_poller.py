@@ -354,6 +354,44 @@ async def test_stale_after_thirty_days(poller, repo, fakes, notifier):
     assert "30 ngày" in notifier.sent[0][1]
 
 
+async def test_stale_stays_stale_without_new_events(poller, repo, fakes, notifier):
+    parcel = await add(repo, SPX, "spx", created=T0 - timedelta(days=40))
+    old = TrackingEvent(time=T0 - timedelta(days=31), description="Đang vận chuyển")
+    await repo.insert_events(parcel.id, [old], T0)
+    await repo.record_check_success(
+        parcel.id,
+        state="stale",
+        last_status_text=old.description,
+        last_event_at=old.time,
+        next_check_at=T0,
+        now=T0,
+    )
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, old)
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).state == "stale"
+    assert len(notifier.sent) == 0
+
+
+async def test_stale_revives_with_new_events(poller, repo, fakes, notifier):
+    parcel = await add(repo, SPX, "spx", created=T0 - timedelta(days=40))
+    old = TrackingEvent(time=T0 - timedelta(days=31), description="Đang vận chuyển")
+    await repo.insert_events(parcel.id, [old], T0)
+    await repo.record_check_success(
+        parcel.id,
+        state="stale",
+        last_status_text=old.description,
+        last_event_at=old.time,
+        next_check_at=T0,
+        now=T0,
+    )
+    new_event = TrackingEvent(time=T0, description="Đã đến kho phân loại")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, old, new_event)
+    await poller.run_cycle()
+    assert (await repo.get_parcel(parcel.id)).state == "in_transit"
+    assert len(notifier.sent) == 1
+
+
+
 async def test_quiet_hours_silent_flag(repo, fakes, notifier, settings, clock, sleeps):
     await add(repo, SPX, "spx")
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0))
