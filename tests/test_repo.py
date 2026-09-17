@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.fakes import ev
+from vn_parcel_bot.carriers.models import TrackingEvent
 from vn_parcel_bot.db.repo import DuplicateParcelError, Repository
 from vn_parcel_bot.db.schema import MIGRATIONS
 
@@ -220,6 +221,40 @@ async def test_insert_events_returns_only_new_ascending(repo):
     assert await repo.insert_events(parcel.id, [e1, e2, e3], T0) == [e3]
     assert await repo.insert_events(parcel.id, [e1, e2, e3], T0) == []
     assert await repo.count_events(parcel.id) == 3
+
+
+async def test_a_reworded_copy_of_a_scan_is_not_a_second_scan(repo):
+    """17TRACK re-renders one scan between polls; only the words it renders change."""
+    await make_user(repo)
+    parcel = await add(repo)
+    said = TrackingEvent(
+        time=T0, description="Kho đã nhận", location="Đông Quản", identity="您的快件已到达"
+    )
+    resaid = TrackingEvent(
+        time=T0, description="Kho  ĐÃ nhận", location="Đông Quản", identity="快件已到达"
+    )
+    assert await repo.insert_events(parcel.id, [said], T0) == [said]
+    assert await repo.insert_events(parcel.id, [resaid], T0) == []
+    assert await repo.count_events(parcel.id) == 1
+
+
+async def test_two_different_scans_in_one_second_are_both_kept(repo):
+    await make_user(repo)
+    parcel = await add(repo)
+    collected = TrackingEvent(time=T0, description="Đã lấy hàng", identity="已揽收")
+    signed = TrackingEvent(time=T0, description="Đã ký nhận", identity="已签收")
+    assert await repo.insert_events(parcel.id, [collected, signed], T0) == [collected, signed]
+    assert await repo.count_events(parcel.id) == 2
+
+
+async def test_replace_events_collapses_reworded_copies(repo):
+    await make_user(repo)
+    parcel = await add(repo)
+    said = TrackingEvent(time=T0, description="Kho đã nhận", identity="您的快件已到达")
+    resaid = TrackingEvent(time=T0, description="Kho đã nhận", identity="快件已到达")
+    await repo.replace_events(parcel.id, [said, resaid], T0)
+    stored = await repo.list_events(parcel.id, 10)
+    assert [event.description for event in stored] == ["Kho đã nhận"]
 
 
 async def test_list_events_limit_returns_most_recent_ascending(repo):

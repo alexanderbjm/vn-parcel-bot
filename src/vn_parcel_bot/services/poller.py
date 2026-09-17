@@ -45,6 +45,7 @@ from vn_parcel_bot.services.formatting import (
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.scheduling import capped, check_interval
+from vn_parcel_bot.services.stickers import sticker_for
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
@@ -749,7 +750,7 @@ class Poller:
     async def _send_sticker(self, chat_id: int, carrier: str) -> None:
         if carrier in self._broken_stickers:
             return
-        file_id = await self._repo.get_meta(f"sticker:{carrier}")
+        file_id = await sticker_for(self._repo, carrier)
         if not file_id:
             return
         try:

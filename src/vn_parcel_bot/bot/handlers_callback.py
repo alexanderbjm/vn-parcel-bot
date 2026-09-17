@@ -12,6 +12,7 @@ from telegram.ext import ContextTypes
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.carrier_scripts import reload_carrier_scripts
 from vn_parcel_bot.bot.deps import get_deps
+from vn_parcel_bot.bot.handlers_admin import sticker_carriers
 from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
     PENDING_LABEL_PICK,
@@ -596,12 +597,8 @@ async def _adm_action(
     elif action == "sticker":
         await query.answer()
         snapshot = deps.registry.current if deps.registry is not None else current_snapshot()
-        mapped = [
-            escape(module.display_name)
-            for module in snapshot.ordered()
-            if await deps.repo.get_meta(f"sticker:{module.code}")
-        ]
-        text = texts.STICKER_LIST.format(carriers=", ".join(mapped) or "—")
+        mapped = await sticker_carriers(deps.repo, snapshot)
+        text = texts.STICKER_LIST.format(carriers=mapped or "—")
         await _edit(query, text, admin_sub_keyboard())
     else:
         await query.answer()

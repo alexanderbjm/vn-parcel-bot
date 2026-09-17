@@ -62,6 +62,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/users` *(admin)* | – | All users with role and active parcel count. |
 | `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count. |
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
+| `/sticker` *(admin)* | `<code> [off]` | The sticker sent just before a carrier's updates (§9.13). No args → `STICKER_LIST` naming every carrier that has one (a shipped icon counts). Replying to a sticker with `/sticker <code>` stores it as that carrier's choice (`STICKER_SET`); `off` deletes the choice → `STICKER_REMOVED`, or `STICKER_REMOVED_SHIPPED` when a shipped icon still applies. Unknown carrier → `STICKER_UNKNOWN`; no replied sticker → `STICKER_USAGE`. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
 Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): only the four you cannot reach by tapping — start, help, list, location. The rest (track, status, label, remove, phone, check, cancel) stay registered and still work when typed. `/help` follows the same rule and documents only the two with no button equivalent anywhere (`/track`, `/phone`) plus what a pasted code or photo does; everything else is reachable from a card, `/list` or a prompt. The admin's private chat also gets `ADMIN_COMMANDS` (hozk, users, allow, revoke, health, sticker) through `BotCommandScopeChat`; a Telegram error there is logged and ignored.
@@ -441,7 +442,9 @@ States: active = `pending`, `in_transit`; terminal = `delivered`, `returned`, `e
 - Schema v4 (2.8) adds `users.home_lat REAL` and `users.home_lon REAL` (both set or both NULL, rounded to 2 decimals), `parcels.place TEXT` (the newest hub as the carrier wrote it) and `places(name TEXT PRIMARY KEY, lat REAL, lon REAL, source TEXT NOT NULL CHECK (source IN ('osm', 'province', 'none')), looked_up_at TEXT NOT NULL)`, keyed by the cleaned `CODE|district`. `none` rows have NULL coordinates. Migration 3 writes `<db_path>.bak-v3` first.
 - `parcels.phone_last4` stores the digits **actually used** for the parcel (override or the user's default at add time), so later changes to the default do not affect existing parcels. It is `NULL` when no candidate needs a phone.
 
-**Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`.
+**Event key**: first 16 hex chars of SHA-1 over `"{utc_iso_seconds}|{norm(description)}|{norm(location or '')}"`, where `norm` = collapse whitespace, strip, `casefold()`. `TrackingEvent.identity` replaces the description part with the carrier's own wording for carriers that translate or tidy what they received, so improving a translation cannot make old scans look new.
+
+**Scan identity** (what `insert_events` and `replace_events` consider new): an event is **not** new when the parcel already stores one with the same `event_time` whose `description` and `location` read the same after `norm`. Presentation decides here rather than the event key, because a source can re-render one scan in different raw wording between polls — 17TRACK returns the same scan as `您的快件已到达` and `快件已到达`, both of which become one Vietnamese line, but their `identity` differs. Without this the parcel grew a row per poll and the owner was told the same thing again every 10 minutes. Two genuinely different scans in the same second are still kept separately: their `description` or `location` differs.
 
 ## 8. Architecture
 
@@ -478,6 +481,7 @@ vn-parcel-bot/
 │  ├─ texts.py                  all user-facing strings (§17)
 │  ├─ carrier_catalog.py        CarrierCode, CarrierInfo, CATALOG, links
 │  ├─ tracking_codes.py         normalize/detect/extract codes
+│  ├─ assets/carriers/          <hãng>.webp icons sent before an update (§9.13)
 │  ├─ carriers/
 │  │  ├─ __init__.py            CARRIERS registry, get_carrier
 │  │  ├─ models.py              TrackingEvent, TrackingResult, CarrierError, Carrier protocol
@@ -497,7 +501,8 @@ vn-parcel-bot/
 │  │  ├─ __init__.py
 │  │  ├─ formatting.py          pure message builders
 │  │  ├─ parcels.py             AddOutcome, ParcelService
-│  │  └─ poller.py              Notifier protocol, FetchKey, PollReport, Poller
+│  │  ├─ poller.py              Notifier protocol, FetchKey, PollReport, Poller
+│  │  └─ stickers.py            shipped carrier icons: upload once, look one up
 │  └─ bot/
 │     ├─ __init__.py
 │     ├─ deps.py                Deps, get_deps
@@ -711,6 +716,7 @@ class TrackingEvent:
     description: str
     location: str | None = None
     raw_status: str | None = None
+    identity: str | None = None  # the carrier's own wording, when it translates
 
     @property
     def key(self) -> str: ...  # §7 event key
@@ -1233,6 +1239,36 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 ]
 ```
 
+### 9.13 `services/stickers.py`
+
+```python
+ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "carriers"
+MANUAL_KEY = "sticker:"            # a sticker the admin mapped with /sticker
+SHIPPED_KEY = "sticker-auto:"      # the icon that ships with the bot, once uploaded
+SEEDED_KEY = "stickers:shipped-icons"
+
+
+class StickerRepo(Protocol):
+    async def get_meta(self, key: str) -> str | None: ...
+    async def set_meta(self, key: str, value: str) -> None: ...
+    async def delete_meta(self, key: str) -> None: ...
+
+
+class StickerNotifier(Protocol):
+    async def upload_sticker(self, chat_id: int, image: bytes) -> str | None: ...
+
+
+def icon_carriers() -> tuple[str, ...]: ...          # every <code>.webp in ICON_DIR, sorted
+async def sticker_for(repo: StickerRepo, carrier: str) -> str | None: ...
+async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id: int) -> int: ...
+```
+
+- One icon per carrier in `assets/carriers/`: 512×512 WEBP with a transparent background, under Telegram's 512 KB sticker limit. The five that ship today are `spx`, `jt`, `ghn`, `ninjavan` and `cainiao`; adding `<code>.webp` to the directory adds that carrier's icon with no code change.
+- `sticker_for` is the only lookup: `sticker:<carrier>` from `/sticker` when the admin set one, else `sticker-auto:<carrier>`, else nothing (no sticker, as before).
+- `register_icons` runs once at startup (§9.12 `_post_init`), after the deps are built. A sticker that belongs to no pack has no `file_id` until it has been sent once, so it sends each icon Telegram has not been given yet to `admin_id`, stores the returned `file_id` as `sticker-auto:<code>` and deletes that message. The second start uploads nothing. A missing icon is never fatal: an upload that returns nothing, raises or is refused is logged (`carrier icon upload failed carrier=…`) and skipped, and so is the whole step when Telegram is unreachable.
+- On the first start after this shipped (meta `SEEDED_KEY` unset) a `sticker:<code>` for a carrier that has an icon is deleted once, so a sticker mapped before the icons existed gives way to the shipped one; `/sticker` afterwards is untouched.
+- `TelegramNotifier.upload_sticker` is the Telegram side: `send_sticker(chat_id, sticker=<bytes>, disable_notification=True)`, return `message.sticker.file_id`, delete the message, and return `None` on any `TelegramError`.
+
 ## 10. Configuration
 
 ### 10.1 `.env`
@@ -1362,6 +1398,8 @@ See §9.2. They are code constants, not env vars.
 ## 17. Text catalog (`texts.py`)
 
 > **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`. 2.1: templates take `{code}`, `{ref}` and `{order_id}` without `<code>` because formatting wraps them in a spoiler; `LIST_ITEM` gains `{bar}`; new `PROGRESS_SUFFIX` and `PROGRESS_BAR_LINE`.
+
+> **2.9 string changes**: new `STICKER_REMOVED_SHIPPED` — `/sticker <hãng> off` on a carrier with a shipped icon (§9.13) removes the admin's own sticker and says the built-in icon applies again.
 
 > **2.7 string changes**: `LABEL_AMBIGUOUS` became `LABEL_PICK`; `REMOVE_CONFIRM`, `LABEL_ASK` and `ASK_PHONE` no longer tell the user to type `có`, `-` or `/cancel`; new `REMOVE_CONFIRM_MANY`, `REMOVE_ITEM`, `REMOVE_MISSING`, `REMOVED_MANY`, `SELECT_HEADER`, `SELECT_NONE`, `BUTTON_EXPIRED`, `BTN_SELECT_REMOVE`, `BTN_REMOVE_SELECTED`, `BTN_CONFIRM_REMOVE_MANY`, `BTN_CLEAR_LABEL`, `SELECT_MARK`. `texts.py` has the exact wording.
 

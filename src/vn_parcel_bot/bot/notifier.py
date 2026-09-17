@@ -7,7 +7,7 @@ from typing import Any
 
 from telegram import Bot, LinkPreviewOptions
 from telegram.constants import ParseMode
-from telegram.error import BadRequest, Forbidden, RetryAfter
+from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.warnings import PTBDeprecationWarning
 
 log = logging.getLogger(__name__)
@@ -79,3 +79,26 @@ class TelegramNotifier:
         except BadRequest:
             return False
         return True
+
+    async def upload_sticker(self, chat_id: int, image: bytes) -> str | None:
+        """Send a sticker that belongs to no pack to learn its file_id, then take it back.
+
+        Telegram lets a bot upload a .webp as a sticker, but the file_id — the cheap way to
+        send it again — only exists once it has been sent. The message is deleted straight
+        away, so the only trace left is the id.
+        """
+        try:
+            message = await self._bot.send_sticker(
+                chat_id=chat_id, sticker=image, disable_notification=True
+            )
+        except Forbidden:
+            log.info("user %s blocked the bot", chat_id)
+            return None
+        except TelegramError:
+            return None
+        sticker = message.sticker
+        try:
+            await self._bot.delete_message(chat_id=chat_id, message_id=message.message_id)
+        except TelegramError:
+            log.info("could not remove the uploaded sticker message")
+        return sticker.file_id if sticker is not None else None

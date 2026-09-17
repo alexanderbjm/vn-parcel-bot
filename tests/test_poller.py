@@ -680,6 +680,44 @@ async def test_sticker_sent_before_update_and_skipped_after_failure(
     assert len(notifier.sent) == 3
 
 
+async def test_a_rescan_of_the_same_moment_is_not_a_second_update(
+    poller, repo, fakes, notifier, clock
+):
+    """The owner must not be told the same thing twice because a source re-worded it."""
+    await repo.set_meta("sticker:spx", "file-spx")
+    await add(repo, SPX, "spx")
+    scan = TrackingEvent(time=T0, description="Đã đến kho", identity="您的快件已到达")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, scan)
+    await poller.run_cycle()
+    assert len(notifier.sent) == 1
+    assert notifier.stickers == [(USER, "file-spx")]
+
+    clock.advance(timedelta(minutes=11))
+    resaid = TrackingEvent(time=T0, description="Đã đến kho", identity="快件已到达")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, resaid)
+    await poller.run_cycle()
+    assert len(notifier.sent) == 1
+    assert notifier.stickers == [(USER, "file-spx")]
+    stored = await repo.active_parcels_for_user(USER)
+    assert await repo.count_events(stored[0].id) == 1
+
+
+async def test_a_new_scan_at_a_new_moment_still_updates(poller, repo, fakes, notifier, clock):
+    await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found(
+        "spx", SPX, ev(0, "Đã đến kho"), ev(30, "Đang giao hàng")
+    )
+    await poller.run_cycle()
+    assert len(notifier.sent) == 1
+    clock.advance(timedelta(minutes=11))
+    fakes["spx"].results[(SPX, None)] = found(
+        "spx", SPX, ev(0, "Đã đến kho"), ev(30, "Đang giao hàng"), ev(45, "Giao hàng thành công")
+    )
+    await poller.run_cycle()
+    assert len(notifier.sent) == 2
+    assert "Giao hàng thành công" in notifier.sent[-1][1]
+
+
 async def test_check_parcel_only_checks_that_parcel(poller, repo, fakes):
     first = await add(repo, SPX, "spx")
     await add(repo, "SPXVN000000000002", "spx")

@@ -64,6 +64,8 @@ class FakeNotifier:
         self.stickers: list[tuple[int, str]] = []
         self.sticker_ok = True
         self.photos: list[tuple[int, bytes, str, bool]] = []
+        self.uploads: list[tuple[int, bytes]] = []
+        self.upload_file_id: str | None = "file-uploaded"
 
     async def send(
         self, chat_id: int, text: str, *, silent: bool = False, reply_markup: object = None
@@ -81,6 +83,10 @@ class FakeNotifier:
     async def send_sticker(self, chat_id: int, file_id: str) -> bool:
         self.stickers.append((chat_id, file_id))
         return self.sticker_ok
+
+    async def upload_sticker(self, chat_id: int, image: bytes) -> str | None:
+        self.uploads.append((chat_id, image))
+        return self.upload_file_id
 
 
 def ev(

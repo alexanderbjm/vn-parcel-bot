@@ -299,6 +299,7 @@ SHARE_OPEN = "📦 Bạn được chia sẻ đơn <b>{title}</b> · {carrier}. T
 SHARE_NOT_FOUND = "Link chia sẻ này không còn dùng được."
 STICKER_SET = "🎨 Đã lưu sticker cho {carrier}."
 STICKER_REMOVED = "🎨 Đã xóa sticker của {carrier}."
+STICKER_REMOVED_SHIPPED = "🎨 Đã xóa sticker tùy chỉnh của {carrier}; dùng lại icon có sẵn."
 STICKER_LIST = "🎨 Hãng có sticker: {carriers}"
 STICKER_USAGE = (
     "Cách dùng: trả lời một sticker bằng /sticker &lt;hãng&gt;, hoặc /sticker &lt;hãng&gt; off"

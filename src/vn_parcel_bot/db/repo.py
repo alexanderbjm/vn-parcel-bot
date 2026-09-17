@@ -107,6 +107,22 @@ def _flag(value: bool | None) -> int | None:
     return None if value is None else int(value)
 
 
+def _clean(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
+def _scan_line(when: str, description: str, location: str | None) -> tuple[str, str, str]:
+    """One stored scan as the owner reads it: when it happened, and the words shown for it.
+
+    A re-worded copy of a scan is not a second scan. A carrier that reads a parcel through an
+    aggregator gets the same scan re-rendered between polls ("您的快件已到达" one minute,
+    "快件已到达" the next), and both become the same Vietnamese line, but ``TrackingEvent.key``
+    follows the carrier's raw wording there, so each re-render used to be stored as another
+    scan and announced again. What the owner can read is what decides.
+    """
+    return (_clean(when), _clean(description), _clean(location or ""))
+
+
 def _user(row: aiosqlite.Row) -> User:
     return User(
         telegram_id=row["telegram_id"],
@@ -447,8 +463,12 @@ class Repository:
         self, parcel_id: int, events: Sequence[TrackingEvent], now: datetime
     ) -> list[TrackingEvent]:
         created = _to_db(now)
+        stored = await self._stored_scan_lines(parcel_id)
         inserted: list[TrackingEvent] = []
         for event in sorted(events, key=lambda e: e.time):
+            line = _scan_line(_to_db(event.time), event.description, event.location)
+            if line in stored:
+                continue
             async with self._conn.execute(
                 "INSERT OR IGNORE INTO events "
                 "(parcel_id, event_key, event_time, description, location, raw_status, created_at) "
@@ -465,17 +485,30 @@ class Repository:
             ) as cursor:
                 if cursor.rowcount == 1:
                     inserted.append(event)
+                    stored.add(line)
         await self._conn.commit()
         return inserted
+
+    async def _stored_scan_lines(self, parcel_id: int) -> set[tuple[str, str, str]]:
+        rows = await self._fetchall(
+            "SELECT event_time, description, location FROM events WHERE parcel_id = ?",
+            (parcel_id,),
+        )
+        return {_scan_line(row["event_time"], row["description"], row["location"]) for row in rows}
 
     async def replace_events(
         self, parcel_id: int, events: Sequence[TrackingEvent], now: datetime
     ) -> None:
         """Swap a parcel's stored history for a fresh read in one transaction."""
         created = _to_db(now)
+        written: set[tuple[str, str, str]] = set()
         try:
             await self._conn.execute("DELETE FROM events WHERE parcel_id = ?", (parcel_id,))
             for event in sorted(events, key=lambda e: e.time):
+                line = _scan_line(_to_db(event.time), event.description, event.location)
+                if line in written:
+                    continue
+                written.add(line)
                 await self._conn.execute(
                     "INSERT OR IGNORE INTO events "
                     "(parcel_id, event_key, event_time, description, location, raw_status, "
