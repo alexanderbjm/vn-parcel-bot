@@ -1,4 +1,4 @@
-# Claude Code Project Guidelines - VN Parcel Bot
+# Command Code Project Guidelines - VN Parcel Bot
 
 ## Core Directive: Parcel Tracking & Order Updates
 
