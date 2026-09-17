@@ -259,11 +259,15 @@ class JtCarrier:
                     _log_seventeen_error(err, tracking_number, logging.INFO)
             return domestic_result
 
-        # Phase 2: If cross-border and 17TRACK is available, query/register on 17TRACK
+        # Phase 2: If cross-border and 17TRACK is available, read 17TRACK (free query).
+        # Registering is not attempted here: 17TRACK refuses J&T cross-border codes under
+        # carrier 100295 (2026-09-15), so asking on every poll only spent the account's
+        # allowance and left none for the free re-queries other parcels depend on. The
+        # poller's fallback registers instead, once per parcel and recorded in `meta`.
         if seventeen is not None:
             try:
                 overseas_result = await seventeen.fetch(
-                    http, tracking_number, phone_last4, auto_register=True
+                    http, tracking_number, phone_last4, auto_register=False
                 )
                 if overseas_result.found:
                     return overseas_result

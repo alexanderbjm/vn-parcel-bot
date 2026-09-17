@@ -359,7 +359,7 @@ async def test_empty_17track_answer_is_logged(caplog):
     async with httpx.AsyncClient() as http:
         with pytest.raises(CarrierError):
             await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, "1234")
-    assert register.called
+    assert not register.called, "the poller owns registration; asking here is always refused"
     assert "17track no data carrier=jt" in jt_log(caplog)
     assert JNTX_CODE not in jt_log(caplog)
 
@@ -418,7 +418,10 @@ REGISTER_REFUSED = {
 
 
 @respx.mock
-async def test_cross_border_not_yet_in_vietnam_waits_when_17track_refuses(caplog):
+async def test_cross_border_not_yet_in_vietnam_waits_without_registering(caplog):
+    """17TRACK refuses to register J&T cross-border codes, so asking on every poll only
+    spent the account's allowance. The parcel waits; the poller registers it if it can.
+    """
     from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, REGISTER_URL
 
     caplog.set_level("INFO")
@@ -426,28 +429,32 @@ async def test_cross_border_not_yet_in_vietnam_waits_when_17track_refuses(caplog
         return_value=httpx.Response(200, text=load_html("not_found"))
     )
     empty = {"code": 0, "data": {"accepted": [], "rejected": []}}
-    respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=empty))
+    track = respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=empty))
     register = respx.post(REGISTER_URL).mock(
         return_value=httpx.Response(200, json=REGISTER_REFUSED)
     )
     async with httpx.AsyncClient() as http:
         result = await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, "1234")
-    assert register.called
+    assert not register.called, "a registration that is always refused is never attempted"
+    assert track.called, "the free query still happens, so overseas events still arrive"
     assert result.found is False
-    line = next(r for r in caplog.records if r.getMessage().startswith("17track error"))
-    assert line.levelname == "INFO"
-    assert "does not support registration" in line.getMessage()
+    assert "17track no data carrier=jt" in jt_log(caplog)
     assert JNTX_CODE not in jt_log(caplog)
 
 
 @respx.mock
-async def test_cross_border_without_phone_still_fails_when_17track_refuses():
+async def test_cross_border_without_phone_waits_instead_of_failing():
+    """Nothing on 17TRACK yet is "not here yet", not a carrier failure: a failure would
+    count towards the alert threshold and back the parcel off for hours for no reason.
+    """
     from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, REGISTER_URL
 
     empty = {"code": 0, "data": {"accepted": [], "rejected": []}}
     respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=empty))
-    respx.post(REGISTER_URL).mock(return_value=httpx.Response(200, json=REGISTER_REFUSED))
+    register = respx.post(REGISTER_URL).mock(
+        return_value=httpx.Response(200, json=REGISTER_REFUSED)
+    )
     async with httpx.AsyncClient() as http:
-        with pytest.raises(CarrierError) as raised:
-            await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, None)
-    assert "does not support registration" in str(raised.value.detail)
+        result = await JtCarrier(seventeen_key="key123").fetch(http, JNTX_CODE, None)
+    assert result.found is False
+    assert not register.called
