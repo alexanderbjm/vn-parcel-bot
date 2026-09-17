@@ -155,14 +155,22 @@ def format_event_update(
     return truncate_message("\n".join(lines))
 
 
-def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "", place: str = "") -> str:
+def _list_item(
+    index: int,
+    parcel: Parcel,
+    tz: ZoneInfo,
+    mark: str = "",
+    place: str = "",
+    *,
+    heading: bool = False,
+) -> str:
     status = (
         _escape(parcel.last_status_text)
         if parcel.last_status_text
         else texts.STATE_TEXT[parcel.state]
     )
     suffix = (
-        texts.LIST_TIME_SUFFIX.format(time=format_time(parcel.last_event_at, tz))
+        texts.LIST_TIME_LINE.format(time=format_time(parcel.last_event_at, tz))
         if parcel.last_event_at
         else ""
     )
@@ -170,14 +178,18 @@ def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "", place: 
         carrier_name(parcel.carrier) if parcel.carrier is not None else texts.CARRIER_UNRESOLVED
     )
     progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
+    # Where the parcel is says more than the carrier's own wording, so it takes that line.
+    # A row that would only repeat its own section heading says nothing, so it stays empty.
+    body = place or ("" if status == texts.STATE_TEXT[parcel.state] and heading else status)
     return texts.LIST_ITEM.format(
         index=index,
-        emoji=texts.STATE_EMOJI[parcel.state],
-        title=parcel_title(parcel),
+        title=_escape(parcel.label) if parcel.label else spoiler(parcel.tracking_number),
         carrier=carrier + progress_suffix + mark,
-        # Where the parcel is says more than the carrier's own wording, so it takes that line.
-        body=place or status,
-        time_suffix=suffix,
+        code=texts.LIST_CODE_LINE.format(code=spoiler(parcel.tracking_number))
+        if parcel.label
+        else "",
+        body=texts.LIST_BODY_LINE.format(body=body) if body else "",
+        time_suffix=suffix if body else "",
         bar=texts.PROGRESS_BAR_LINE.format(bar=bar) if bar else "",
     )
 
@@ -335,8 +347,20 @@ def format_parcel_list(
         group: int | bool = _stage(parcel) if stages else parcel.is_active
         if (stages or mixed) and group != shown:
             shown = group
+            if lines:
+                lines.append("")
             lines.append(_list_heading(parcel, stages=stages))
-        lines.append(_list_item(index, parcel, tz, place=(places or {}).get(parcel.id, "")))
+            lines.append("")
+        lines.append(
+            _list_item(
+                index,
+                parcel,
+                tz,
+                place=(places or {}).get(parcel.id, ""),
+                heading=stages or mixed,
+            )
+        )
+    # A blank line under each heading is what makes the sections read as sections.
     text = texts.LIST_HEADER + "\n\n" + "\n".join(lines)
     if pages > 1:
         text += "\n\n" + texts.LIST_PAGE.format(page=page, pages=pages)

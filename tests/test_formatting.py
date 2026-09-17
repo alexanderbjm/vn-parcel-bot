@@ -187,9 +187,9 @@ def test_parcel_list_items():
     ]
     text = format_parcel_list(parcels, TZ)
     assert text.startswith(texts.LIST_HEADER + "\n\n")
-    assert f"1. 🚚 <b>Áo · {blurred(SPX)}</b> · SPX\n    Đang giao · 🕒 01/09 08:30" in text
+    assert f"1. <b>Áo</b> · SPX\n    {blurred(SPX)}\n    Đang giao\n    🕒 01/09 08:30" in text
     assert (
-        f"2. ⏳ <b>{blurred('GA0000000001')}</b> · Đang xác định hãng\n"
+        f"2. <b>{blurred('GA0000000001')}</b> · Đang xác định hãng\n"
         "    Chưa có thông tin vận chuyển" in text
     )
 
@@ -446,8 +446,9 @@ def test_list_item_shows_progress_and_bar():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=80)
     text = format_parcel_list([parcel], TZ)
     assert (
-        f"1. 🚚 <b>Áo · {blurred(SPX)}</b> · SPX · 80%\n"
-        "    Đã đến kho · 🕒 01/09 08:30\n    🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥" in text
+        "1. <b>Áo</b> · SPX · 80%\n"
+        "    " + blurred(SPX) + "\n    Đã đến kho\n    🕒 01/09 08:30"
+        "\n    🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥" in text
     )
 
 
@@ -459,7 +460,7 @@ def test_list_item_hides_progress_for_returned_and_unknown():
 
 def test_digest_puts_new_mark_after_progress():
     text = format_digest([make_parcel(label="Áo", progress=50)], {1}, T0, TZ)
-    assert f"<b>Áo · {blurred(SPX)}</b> · SPX · 50% 🆕" in text
+    assert "<b>Áo</b> · SPX · 50% 🆕" in text
 
 
 def test_event_update_header_shows_progress_and_bar():
@@ -474,7 +475,7 @@ def test_event_update_header_shows_progress_and_bar():
 def test_delivered_parcel_shows_100_percent_without_a_bar():
     parcel = make_parcel(label="Áo", state="delivered", progress=95)
     text = format_parcel_list([parcel], TZ)
-    assert f"<b>Áo · {blurred(SPX)}</b> · SPX · 100%" in text
+    assert "<b>Áo</b> · SPX · 100%" in text, "the code sits on its own line now"
     assert "🟩" not in text and "🟥" not in text
     card = format_parcel_card(parcel, TZ)
     assert card.startswith(f"✅ <b>Áo · {blurred(SPX)}</b> · SPX · 100%\n")
