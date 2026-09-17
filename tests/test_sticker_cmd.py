@@ -44,11 +44,11 @@ def sticker_message(file_id="file-test"):
 
 async def test_set_list_and_remove_sticker(env):
     assert await run(env, ["spx"], reply_to=sticker_message()) == [
-        texts.STICKER_SET.format(carrier="SPX")
+        texts.STICKER_SET.format(carrier="🧡 SPX")
     ]
     assert await env.repo.get_meta("sticker:spx") == "file-test"
-    assert await run(env, []) == [texts.STICKER_LIST.format(carriers="SPX")]
-    assert await run(env, ["SPX", "off"]) == [texts.STICKER_REMOVED.format(carrier="SPX")]
+    assert await run(env, []) == [texts.STICKER_LIST.format(carriers="🧡 SPX")]
+    assert await run(env, ["SPX", "off"]) == [texts.STICKER_REMOVED.format(carrier="🧡 SPX")]
     assert await env.repo.get_meta("sticker:spx") is None
     assert await run(env, []) == [texts.STICKER_LIST.format(carriers="—")]
 

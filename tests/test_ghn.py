@@ -154,4 +154,4 @@ async def test_fetch_maps_errors():
 
 def test_carrier_attributes():
     carrier = GhnCarrier()
-    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("ghn", "GHN", True)
+    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("ghn", "🟠 GHN", True)

@@ -157,7 +157,7 @@ async def test_fetch_challenge_page_blocked():
 
 def test_carrier_attributes():
     carrier = JtCarrier()
-    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("jt", "J&T", True)
+    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("jt", "🔴 J&T", True)
 
 
 JNTX_CODE = "JNTXB0000000001"

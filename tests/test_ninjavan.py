@@ -159,6 +159,6 @@ def test_carrier_attributes():
     carrier = NinjaVanCarrier()
     assert (carrier.code, carrier.display_name, carrier.needs_phone) == (
         "ninjavan",
-        "Ninja Van",
+        "🥷 Ninja Van",
         False,
     )

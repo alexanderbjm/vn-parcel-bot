@@ -146,4 +146,8 @@ async def test_fetch_maps_errors(response, reason):
 
 def test_carrier_attributes():
     carrier = FourPxCarrier()
-    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("fourpx", "4PX", False)
+    assert (carrier.code, carrier.display_name, carrier.needs_phone) == (
+        "fourpx",
+        "📦 4PX",
+        False,
+    )

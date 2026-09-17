@@ -45,10 +45,10 @@ def test_tracked_and_phone_carriers(snapshot):
 
 
 def test_display_names(snapshot):
-    assert snapshot.display_name("jt") == "J&T"
-    assert snapshot.display_name("lex") == "LEX VN"
-    assert snapshot.display_name("fourpx") == "4PX"
-    assert snapshot.display_name("sf") == "SF Express"
+    assert snapshot.display_name("jt") == "🔴 J&T"
+    assert snapshot.display_name("lex") == "💙 LEX VN"
+    assert snapshot.display_name("fourpx") == "📦 4PX"
+    assert snapshot.display_name("sf") == "✈️ SF Express"
 
 
 def test_links(snapshot):

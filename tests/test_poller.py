@@ -491,7 +491,7 @@ async def test_unresolved_resolves_on_found_candidate(poller, repo, fakes, notif
     )
     assert fakes["ghn"].calls == [(GEN, "1111")]
     assert len(notifier.sent) == 1
-    assert "Đã xác định hãng vận chuyển: <b>Ninja Van</b>" in notifier.sent[0][1]
+    assert "Đã xác định hãng vận chuyển: <b>🥷 Ninja Van</b>" in notifier.sent[0][1]
     assert "Đã nhập kho" in notifier.sent[0][1]
 
 

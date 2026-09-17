@@ -212,7 +212,7 @@ async def test_fetch_network_error():
 
 def test_carrier_attributes():
     carrier = SpxCarrier()
-    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("spx", "SPX", False)
+    assert (carrier.code, carrier.display_name, carrier.needs_phone) == ("spx", "🧡 SPX", False)
 
 
 def test_event_times_are_utc_aware():

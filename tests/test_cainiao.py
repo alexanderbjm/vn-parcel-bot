@@ -185,6 +185,6 @@ def test_carrier_attributes():
     carrier = CainiaoCarrier()
     assert (carrier.code, carrier.display_name, carrier.needs_phone) == (
         "cainiao",
-        "Cainiao",
+        "🦅 Cainiao",
         False,
     )

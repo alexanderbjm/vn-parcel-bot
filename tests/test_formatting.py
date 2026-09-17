@@ -92,10 +92,10 @@ def test_title_prefers_escaped_label():
 
 
 def test_carrier_labels():
-    assert carrier_name("jt") == "J&amp;T"
-    assert carrier_names(["spx", "jt"]) == "SPX / J&amp;T"
-    assert parcel_carrier_label(make_parcel(carrier="jt", candidates=("jt",))) == "J&amp;T"
-    assert parcel_carrier_label(unresolved()) == "GHN / Ninja Van"
+    assert carrier_name("jt") == "🔴 J&amp;T"
+    assert carrier_names(["spx", "jt"]) == "🧡 SPX / 🔴 J&amp;T"
+    assert parcel_carrier_label(make_parcel(carrier="jt", candidates=("jt",))) == "🔴 J&amp;T"
+    assert parcel_carrier_label(unresolved()) == "🟠 GHN / 🥷 Ninja Van"
 
 
 def test_format_time_local():
@@ -107,7 +107,7 @@ def test_format_links_official_then_17track():
     assert len(lines) == 2
     assert lines[0].startswith('• <a href="https://vnpost.vn/')
     assert "&amp;code=EB123456789VN" in lines[0]
-    assert lines[0].endswith(">VNPost</a>")
+    assert lines[0].endswith(">🏣 VNPost</a>")
     assert lines[1] == '• <a href="https://t.17track.net/vi#nums=EB123456789VN">17TRACK</a>'
 
 
@@ -133,7 +133,7 @@ def test_event_update_lines_and_location():
         delivered=False,
         returned=False,
     )
-    assert text.split("\n")[0] == f"📦 <b>{blurred(SPX)}</b> · SPX"
+    assert text.split("\n")[0] == f"📦 <b>{blurred(SPX)}</b> · 🧡 SPX"
     assert bullet_lines(text) == ["• 01/09 15:00 — A (Kho HCM)", "• 01/09 15:10 — B"]
 
 
@@ -172,8 +172,8 @@ def test_event_update_resolved_note():
     text = format_event_update(
         unresolved(), [ev(0)], TZ, delivered=False, returned=False, resolved_carrier="ninjavan"
     )
-    assert text.split("\n")[0] == f"📦 <b>{blurred('GA0000000001')}</b> · Ninja Van"
-    assert "🔎 Đã xác định hãng vận chuyển: <b>Ninja Van</b>" in text
+    assert text.split("\n")[0] == f"📦 <b>{blurred('GA0000000001')}</b> · 🥷 Ninja Van"
+    assert "🔎 Đã xác định hãng vận chuyển: <b>🥷 Ninja Van</b>" in text
 
 
 def test_parcel_list_empty():
@@ -187,7 +187,7 @@ def test_parcel_list_items():
     ]
     text = format_parcel_list(parcels, TZ, sort="n")
     assert text.startswith(texts.LIST_HEADER + "\n\n")
-    assert f"1. <b>Áo</b> · SPX · 0%\n├ {blurred(SPX)}\n├ Đang giao\n└ 🕒 01/09 08:30" in text, (
+    assert f"1. <b>Áo</b> · 🧡 SPX · 0%\n├ {blurred(SPX)}\n├ Đang giao\n└ 🕒 01/09 08:30" in text, (
         "a parcel whose progress nobody worked out reads 0%, not blank"
     )
     assert (
@@ -198,7 +198,7 @@ def test_parcel_list_items():
 
 def test_history_newest_first_and_empty():
     text = format_history(make_parcel(), [ev(0, "A"), ev(5, "B")], TZ)
-    assert text.startswith(f"<b>📦 {blurred(SPX)}</b> · SPX · {blurred(SPX)}")
+    assert text.startswith(f"<b>📦 {blurred(SPX)}</b> · 🧡 SPX · {blurred(SPX)}")
     assert text.index("B") < text.index("— A")
     assert texts.HISTORY_EMPTY in format_history(make_parcel(), [], TZ)
 
@@ -274,7 +274,7 @@ def test_add_outcome_error():
     text = outcome_text(
         AddOutcome("added", code=SPX, parcel=make_parcel(state="pending"), error=error)
     )
-    assert "chưa kết nối được với SPX" in text
+    assert "chưa kết nối được với 🧡 SPX" in text
     assert "Nếu đây là đơn" not in text
     jt_parcel = make_parcel(carrier="jt", candidates=("jt",), tracking_number="841000072647")
     with_links = outcome_text(
@@ -286,7 +286,7 @@ def test_add_outcome_error():
             link_carriers=("best", "viettelpost"),
         )
     )
-    assert "Nếu đây là đơn BEST Express / Viettel Post" in with_links
+    assert "Nếu đây là đơn 🌟 BEST Express / 🟥 Viettel Post" in with_links
 
 
 def test_add_outcome_pending_variants():
@@ -310,7 +310,7 @@ def test_add_outcome_pending_variants():
         )
     )
     assert "kiểm tra lại 4 số cuối SĐT" in jt_text
-    assert "Nếu đây là đơn BEST Express / Viettel Post, xem tại:" in jt_text
+    assert "Nếu đây là đơn 🌟 BEST Express / 🟥 Viettel Post, xem tại:" in jt_text
     assert "17TRACK" in jt_text
 
     auto = outcome_text(
@@ -321,13 +321,13 @@ def test_add_outcome_pending_variants():
             result=TrackingResult("ninjavan", "GA0000000001", False),
         )
     )
-    assert "Chưa có thông tin vận chuyển tại GHN / Ninja Van." in auto
+    assert "Chưa có thông tin vận chuyển tại 🟠 GHN / 🥷 Ninja Van." in auto
     assert "kiểm tra lại 4 số cuối SĐT" in auto
 
 
 def test_add_outcome_other_kinds():
     ask = outcome_text(AddOutcome("needs_phone", code="841000072647", candidates=("jt",)))
-    assert f"{blurred('841000072647')} (J&amp;T) cần 4 số cuối SĐT" in ask
+    assert f"{blurred('841000072647')} (🔴 J&amp;T) cần 4 số cuối SĐT" in ask
     link = outcome_text(AddOutcome("link_only", code="EB123456789VN", link_carriers=("vnpost",)))
     assert "Mình chưa tự theo dõi được hãng này" in link
     duplicate = outcome_text(AddOutcome("duplicate", code=SPX))
@@ -370,7 +370,7 @@ def test_needs_phone_multi_expired_and_stale():
 
 def test_carrier_alert_escapes_and_cuts():
     text = format_carrier_alert("jt", 5, "<x>" * 100)
-    assert "<b>J&amp;T</b>: 5 lỗi" in text
+    assert "<b>🔴 J&amp;T</b>: 5 lỗi" in text
     assert "&lt;x&gt;" in text
     assert "<x>" not in text
     assert text.count("&lt;x&gt;") <= 67
@@ -426,10 +426,12 @@ def test_seventeen_track_url():
 
 def test_help_lists_carriers_from_modules():
     text = format_help()
-    assert "Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n" in text
     assert (
-        "Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
-        "SF Express\n"
+        "Tự động theo dõi: 🧡 SPX, 🔴 J&amp;T, 🦅 Cainiao, 📦 4PX, 🥷 Ninja Van, 🟠 GHN\n" in text
+    )
+    assert (
+        "Gửi link tra cứu: 🌟 BEST Express, ☁️ YunExpress, 🟢 GHTK, 🟥 Viettel Post, 🏣 VNPost, "
+        "💙 LEX VN, ✈️ SF Express\n"
     ) in text
 
 
@@ -449,7 +451,8 @@ def test_list_row_hangs_its_details_off_branches_without_a_bar():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=80)
     text = format_parcel_list([parcel], TZ)
     assert (
-        "1. <b>Áo</b> · SPX · 80%\n├ " + blurred(SPX) + "\n├ Đã đến kho\n└ 🕒 01/09 08:30" in text
+        "1. <b>Áo</b> · 🧡 SPX · 80%\n├ " + blurred(SPX) + "\n├ Đã đến kho\n└ 🕒 01/09 08:30"
+        in text
     )
     assert "🟩" not in text and "🟥" not in text
 
@@ -462,7 +465,7 @@ def test_list_item_shows_a_percentage_even_when_none_is_known():
 
 def test_digest_puts_new_mark_after_progress():
     text = format_digest([make_parcel(label="Áo", progress=50)], {1}, T0, TZ)
-    assert "<b>Áo</b> · SPX · 50% 🆕" in text
+    assert "<b>Áo</b> · 🧡 SPX · 50% 🆕" in text
 
 
 def test_event_update_header_shows_progress_and_bar():
@@ -470,17 +473,17 @@ def test_event_update_header_shows_progress_and_bar():
         make_parcel(label="Áo"), [ev(0)], TZ, delivered=False, returned=False, progress=95
     )
     lines = text.split("\n")
-    assert lines[0] == f"📦 <b>Áo · {blurred(SPX)}</b> · SPX · 95%"
+    assert lines[0] == f"📦 <b>Áo · {blurred(SPX)}</b> · 🧡 SPX · 95%"
     assert lines[1] == "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥"
 
 
 def test_delivered_parcel_shows_100_percent_without_a_bar():
     parcel = make_parcel(label="Áo", state="delivered", progress=95)
     text = format_parcel_list([parcel], TZ)
-    assert "<b>Áo</b> · SPX · 100%" in text, "the code sits on its own line now"
+    assert "<b>Áo</b> · 🧡 SPX · 100%" in text, "the code sits on its own line now"
     assert "🟩" not in text and "🟥" not in text
     card = format_parcel_card(parcel, TZ)
-    assert card.startswith(f"✅ <b>Áo · {blurred(SPX)}</b> · SPX · 100%\n")
+    assert card.startswith(f"✅ <b>Áo · {blurred(SPX)}</b> · 🧡 SPX · 100%\n")
     assert "🟩" not in card and "🟥" not in card
 
 
@@ -488,25 +491,25 @@ def test_delivered_update_shows_100_percent_without_a_bar():
     text = format_event_update(
         make_parcel(label="Áo"), [ev(0)], TZ, delivered=True, returned=False, progress=100
     )
-    assert text.split("\n")[0] == f"📦 <b>Áo · {blurred(SPX)}</b> · SPX · 100%"
+    assert text.split("\n")[0] == f"📦 <b>Áo · {blurred(SPX)}</b> · 🧡 SPX · 100%"
     assert "🟩" not in text
 
 
 def test_parcel_card_shows_title_progress_bar_and_status():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=50)
     assert format_parcel_card(parcel, TZ) == (
-        f"🚚 <b>Áo · {blurred(SPX)}</b> · SPX · 50%\n"
+        f"🚚 <b>Áo · {blurred(SPX)}</b> · 🧡 SPX · 50%\n"
         "🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥\nĐã đến kho · 🕒 01/09 08:30"
     )
     pending = format_parcel_card(unresolved(), TZ)
-    assert pending.startswith(f"⏳ <b>{blurred('GA0000000001')}</b> · GHN / Ninja Van · 0%\n")
+    assert pending.startswith(f"⏳ <b>{blurred('GA0000000001')}</b> · 🟠 GHN / 🥷 Ninja Van · 0%\n")
 
 
 def test_parcel_link_prefers_module_link():
     assert parcel_link(make_parcel()) == ("17TRACK", f"https://t.17track.net/vi#nums={SPX}")
     vnpost = make_parcel(carrier="vnpost", candidates=("vnpost",), tracking_number="EB123456789VN")
     name, url = parcel_link(vnpost)
-    assert name == "VNPost"
+    assert name == "🏣 VNPost"
     assert url.startswith("https://vnpost.vn/")
 
 

@@ -278,7 +278,7 @@ async def test_shared_link_lets_another_user_track(env):
     opened = []
     await start(other_update(Msg(80, "/start", opened)), env.context)
     text, markup = opened[-1]
-    assert text == texts.SHARE_OPEN.format(title=f"Áo · {BLURRED}", carrier="SPX")
+    assert text == texts.SHARE_OPEN.format(title=f"Áo · {BLURRED}", carrier="🧡 SPX")
     assert [b.callback_data for b in markup.inline_keyboard[0]] == [
         f"s:{token}:ok",
         f"s:{token}:no",

@@ -53,7 +53,7 @@ def test_link_only_carrier_uses_its_page():
         id=3, carrier="vnpost", candidates=("vnpost",), tracking_number="EB123456789VN"
     )
     row = card_keyboard(parcel).inline_keyboard[2]
-    assert row[1].text == "🔗 Tra cứu VNPost ↗"
+    assert row[1].text == "🔗 Tra cứu 🏣 VNPost ↗"
     assert row[1].url.startswith("https://vnpost.vn/")
 
 
