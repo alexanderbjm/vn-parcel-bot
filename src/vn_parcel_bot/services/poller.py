@@ -41,7 +41,7 @@ from vn_parcel_bot.services.formatting import (
 )
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
-from vn_parcel_bot.services.scheduling import check_interval
+from vn_parcel_bot.services.scheduling import capped, check_interval
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ class Poller:
             parcel = await self._repo.get_parcel(parcel_id)
             if parcel is None or parcel.user_id != user_id:
                 return None
-            if parcel.is_active or rebuild:
+            if parcel.is_polled or rebuild:
                 await self._cycle(None, only_parcels=[parcel], rebuild=rebuild)
             return await self._repo.get_parcel(parcel_id)
 
@@ -332,11 +332,11 @@ class Poller:
         rebuild: bool = False,
     ) -> None:
         current = await self._repo.get_parcel(parcel.id)
-        if current is None or not (current.is_active or rebuild):
+        if current is None or not (current.is_polled or rebuild):
             return
         parcel = current
         # A finished parcel is only rebuilt from fresh data; errors and empty answers leave it.
-        finished = not parcel.is_active
+        finished = not parcel.is_polled
 
         if parcel.is_resolved:
             outcome = outcomes[keys[0]]
@@ -472,7 +472,7 @@ class Poller:
             state="pending",
             last_status_text=None,
             last_event_at=None,
-            next_check_at=now + self._settings.poll_interval,
+            next_check_at=now + capped(self._settings.poll_interval),
             now=now,
         )
 
@@ -604,7 +604,7 @@ class Poller:
             await self._expire(parcel, now, report)
             return
         base = check_interval(parcel.state, parcel.progress, self._settings.poll_interval)
-        delay = min(base * 2 ** (parcel.consecutive_failures + 1), MAX_BACKOFF)
+        delay = capped(min(base * 2 ** (parcel.consecutive_failures + 1), MAX_BACKOFF))
         failures = await self._repo.record_check_failure(
             parcel.id, next_check_at=now + delay, now=now
         )

@@ -8,6 +8,7 @@ import pytest
 from tests.fakes import FakeCarrier, FakeClock, FakeNotifier, ev, fake_registry, found
 from vn_parcel_bot import texts
 from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent
+from vn_parcel_bot.constants import MAX_CHECK_GAP
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.poller import FetchKey, Poller, fetch_keys
 
@@ -270,7 +271,8 @@ async def test_not_found_with_existing_events_counts_failure(poller, repo, notif
 async def test_failure_backoff_schedule(poller, repo, fakes, clock):
     parcel = await add(repo, SPX, "spx")
     fakes["spx"].results[(SPX, None)] = CarrierError("spx", "network", "timeout")
-    expected_minutes = [40, 80, 160, 320, 360]
+    # 20 minutes doubling, until the two-hour ceiling takes over.
+    expected_minutes = [40, 80, 120, 120, 120]
     for minutes in expected_minutes:
         now = clock()
         await poller.run_cycle()
@@ -757,3 +759,15 @@ async def test_check_parcel_rebuild_replaces_that_parcel(poller, repo, fakes):
     checked = await poller.check_parcel(USER, parcel.id, rebuild=True)
     assert checked.progress != 95
     assert await descriptions(repo, parcel.id) == ["Alpha"]
+
+
+async def test_a_failing_order_is_tried_again_within_the_ceiling(poller, repo, fakes, clock):
+    """Backoff doubles, but never past the ceiling: this is what froze a real parcel."""
+    parcel = await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = CarrierError("spx", "parse", "no result")
+    await drive_failures(poller, repo, clock, parcel.id, 7)
+    now = clock()
+    await poller.run_cycle()
+    stored = await repo.get_parcel(parcel.id)
+    assert stored.consecutive_failures == 8, "every cycle failed"
+    assert stored.next_check_at - now <= MAX_CHECK_GAP

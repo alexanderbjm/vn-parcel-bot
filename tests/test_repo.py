@@ -418,3 +418,13 @@ async def test_delete_meta(repo):
     await repo.delete_meta("sticker:spx")
     assert await repo.get_meta("sticker:spx") is None
     await repo.delete_meta("missing")
+
+
+async def test_due_parcels_keeps_checking_an_order_that_went_quiet(repo):
+    """A stale order has not arrived, so it keeps its place in the queue."""
+    await make_user(repo, 1)
+    quiet = await add(repo, code="SPXVN000000000009", next_check_at=T0 - timedelta(minutes=1))
+    await repo.set_state(quiet.id, "stale", T0)
+    gone = await add(repo, code="SPXVN000000000010", next_check_at=T0 - timedelta(minutes=1))
+    await repo.set_state(gone.id, "expired", T0)
+    assert [parcel.id for parcel in await repo.due_parcels(T0)] == [quiet.id]

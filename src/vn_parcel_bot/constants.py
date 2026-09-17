@@ -4,7 +4,9 @@ PENDING_EXPIRY = timedelta(days=7)
 STALE_AFTER = timedelta(days=30)
 DELIVERED_VISIBLE_FOR = timedelta(days=3)
 PURGE_AFTER = timedelta(days=30)
-MAX_BACKOFF = timedelta(hours=6)
+# Whatever the state or the backoff works out to, no order is left unchecked for longer.
+MAX_CHECK_GAP = timedelta(hours=2)
+MAX_BACKOFF = MAX_CHECK_GAP
 FAILURE_ALERT_THRESHOLD = 5
 CARRIER_ALL_FAILED_MIN_FETCHES = 3
 ALERT_COOLDOWN = timedelta(hours=6)

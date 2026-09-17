@@ -12,6 +12,9 @@ from vn_parcel_bot.db.schema import migrate
 
 ParcelState = Literal["pending", "in_transit", "delivered", "returned", "expired", "stale"]
 ACTIVE_STATES: tuple[ParcelState, ...] = ("pending", "in_transit")
+# A quiet order has still not arrived, so it keeps being checked even though the list
+# and the digests no longer count it as active.
+POLLED_STATES: tuple[ParcelState, ...] = (*ACTIVE_STATES, "stale")
 TERMINAL_STATES: tuple[ParcelState, ...] = ("delivered", "returned", "expired", "stale")
 
 _PARCEL_COLUMNS = (
@@ -73,6 +76,10 @@ class Parcel:
     @property
     def is_active(self) -> bool:
         return self.state in ACTIVE_STATES
+
+    @property
+    def is_polled(self) -> bool:
+        return self.state in POLLED_STATES
 
     @property
     def is_resolved(self) -> bool:
@@ -329,7 +336,7 @@ class Repository:
         rows = await self._fetchall(
             f"SELECT {_P_PARCEL_COLUMNS} FROM parcels p "  # noqa: S608
             "JOIN users u ON u.telegram_id = p.user_id "
-            "WHERE u.is_allowed = 1 AND p.state IN ('pending', 'in_transit') "
+            "WHERE u.is_allowed = 1 AND p.state IN ('pending', 'in_transit', 'stale') "
             "AND p.next_check_at <= ? ORDER BY p.next_check_at, p.id",
             (_to_db(now),),
         )

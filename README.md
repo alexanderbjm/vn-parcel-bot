@@ -34,7 +34,7 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    |---|---|---|---|
    | `TELEGRAM_BOT_TOKEN` | yes | – | Token from @BotFather |
    | `ADMIN_TELEGRAM_ID` | yes | – | Your numeric Telegram ID |
-   | `POLL_INTERVAL_MINUTES` | no | `20` | Minutes between checks for parcels with no tracking data yet (5–240). Parcels in transit are checked every 10 minutes, and at the delivery hub or out for delivery every 3 minutes (never less often than this value) |
+   | `POLL_INTERVAL_MINUTES` | no | `20` | Minutes between checks for parcels with no tracking data yet (5–240). Parcels in transit are checked every 10 minutes, and at the delivery hub or out for delivery every 3 minutes (never less often than this value). Whatever happens, no order waits more than 2 hours for its next check: a carrier that keeps failing is retried at least that often, and an order that has gone quiet for 30 days keeps its place in the queue instead of dropping out |
    | `REQUEST_DELAY_SECONDS` | no | `3` | Pause between requests to the same carrier |
    | `HTTP_TIMEOUT_SECONDS` | no | `15` | Carrier request timeout |
    | `DB_PATH` | no | `data/bot.sqlite3` | Database file |
