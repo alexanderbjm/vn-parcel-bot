@@ -11,11 +11,11 @@ from tests.test_poller import T0, USER, add
 from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, SeventeenTrackCarrier
 from vn_parcel_bot.constants import QUOTA_COOLDOWN
 from vn_parcel_bot.db.repo import Repository
-from vn_parcel_bot.services.poller import Poller
+from vn_parcel_bot.services.poller import Poller, quota_key, tried_key
 
 CODE = "773400000000001"
 OTHER = "773400000000002"
-QUOTA_KEY = "17track-quota-until"
+QUOTA_KEY = quota_key("17track")
 
 
 def track_info(number: str, description: str) -> dict:
@@ -194,7 +194,7 @@ async def test_one_quota_refusal_stops_the_others_asking_too(env):
     poller = build(repo, carrier, notifier, settings, no_sleep, seventeen)
     await poller.run_cycle(only_user_id=USER, wait=True)
     assert len(seventeen.calls) == 1, "the second parcel waits instead of asking as well"
-    assert await repo.get_meta(f"17track-tried:{parcel.id}") is None, "still not registered"
+    assert await repo.get_meta(tried_key("17track", parcel.id)) is None, "still not registered"
     assert await repo.get_meta(QUOTA_KEY) is not None, "the gate is closed"
 
 
@@ -207,7 +207,7 @@ async def test_a_registered_parcel_still_re_queries_while_the_gate_is_closed(env
 
     repo, carrier, notifier, settings, no_sleep = env
     parcel = await add(repo, CODE, "cainiao")
-    await repo.set_meta(f"17track-tried:{parcel.id}", T0.isoformat())
+    await repo.set_meta(tried_key("17track", parcel.id), T0.isoformat())
     await repo.set_meta(QUOTA_KEY, (T0 + timedelta(hours=5)).isoformat())
     seventeen = FakeSeventeen(found("cainiao", CODE, ev(0, "Đã đến Thượng Hải")))
     poller = build(repo, carrier, notifier, settings, no_sleep, seventeen)
@@ -302,7 +302,7 @@ async def test_a_registered_parcel_is_requeried_when_its_own_carrier_errors(env)
     from tests.fakes import ev, found
 
     parcel = await add(repo, CODE, "cainiao")
-    await repo.set_meta(f"17track-tried:{parcel.id}", T0.isoformat())
+    await repo.set_meta(tried_key("17track", parcel.id), T0.isoformat())
     seventeen = FakeSeventeen(found("cainiao", CODE, ev(0, "Đã đến Thượng Hải")))
     poller = build(repo, ErroringCarrier("cainiao"), notifier, settings, no_sleep, seventeen)
     await poller.run_cycle(only_user_id=USER, wait=True)
@@ -318,7 +318,7 @@ async def test_a_carrier_error_never_spends_registration_quota(env):
     poller = build(repo, ErroringCarrier("cainiao"), notifier, settings, no_sleep, seventeen)
     await poller.run_cycle(only_user_id=USER, wait=True)
     assert seventeen.calls == [], "an unregistered parcel waits for the not-found path"
-    assert await repo.get_meta(f"17track-tried:{parcel.id}") is None
+    assert await repo.get_meta(tried_key("17track", parcel.id)) is None
 
 
 @respx.mock
@@ -348,3 +348,129 @@ async def test_both_aggregators_are_offered_when_both_have_keys(env):
     settings = env[3]
     keyed = dc_replace(settings, aftership_key="k", aftership_fallback=True)
     assert [a.name for a in build_aggregators(keyed)] == ["17track", "aftership"]
+
+
+class NamedFake(FakeSeventeen):
+    """A fake that records how it was called, so a skipped aggregator is provable."""
+
+    def __init__(self, result=None, blocked: bool = False):
+        super().__init__(result)
+        self.blocked = blocked
+
+    async def fetch(self, http, tracking_number, phone_last4=None, *, auto_register=True):
+        if self.blocked:
+            from vn_parcel_bot.carriers.models import CarrierError
+
+            self.calls.append((tracking_number, auto_register))
+            raise CarrierError("aftership", "blocked", "out of allowance")
+        # super() records the call; recording here too would count every call twice.
+        return await super().fetch(http, tracking_number, phone_last4, auto_register=auto_register)
+
+
+def build_many(repo, carrier, notifier, settings, no_sleep, aggregators, clock=None):
+    from vn_parcel_bot.services.poller import Poller
+
+    return Poller(
+        repo,
+        fake_registry({"cainiao": carrier}),
+        None,
+        notifier,
+        settings,
+        clock or FakeClock(T0),
+        no_sleep,
+        lambda: 0.0,
+        aggregators=aggregators,
+    )
+
+
+async def test_a_second_aggregator_answers_when_the_first_has_nothing(env):
+    """17TRACK knowing nothing is not the end: AfterShip gets asked before we give up."""
+    from tests.fakes import ev, found
+    from vn_parcel_bot.services.poller import Aggregator
+
+    repo, carrier, notifier, settings, no_sleep = env
+    parcel = await add(repo, CODE, "cainiao")
+    first = NamedFake()
+    second = NamedFake(found("cainiao", CODE, ev(0, "Đã đến Thượng Hải")))
+    poller = build_many(
+        repo,
+        carrier,
+        notifier,
+        settings,
+        no_sleep,
+        [Aggregator("17track", first), Aggregator("aftership", second)],
+    )
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert first.calls and second.calls, "both were asked"
+    assert await repo.count_events(parcel.id) == 1
+    assert (await repo.get_parcel(parcel.id)).state == "in_transit"
+
+
+async def test_a_locked_out_aggregator_is_skipped_without_a_call(env):
+    """The gate must save the call, not just ignore its answer."""
+    from datetime import timedelta
+
+    from tests.fakes import ev, found
+    from vn_parcel_bot.services.poller import Aggregator, quota_key
+
+    repo, carrier, notifier, settings, no_sleep = env
+    await add(repo, CODE, "cainiao")
+    await repo.set_meta(quota_key("17track"), (T0 + timedelta(hours=5)).isoformat())
+    first = NamedFake()
+    second = NamedFake(found("cainiao", CODE, ev(0, "Đã đến Thượng Hải")))
+    poller = build_many(
+        repo,
+        carrier,
+        notifier,
+        settings,
+        no_sleep,
+        [Aggregator("17track", first), Aggregator("aftership", second)],
+    )
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert first.calls == [], "locked out, so never asked"
+    assert second.calls, "the one with allowance answered"
+
+
+async def test_each_aggregator_has_its_own_gate(env):
+    """One source running dry must not silence the other."""
+    from vn_parcel_bot.services.poller import Aggregator, quota_key
+
+    repo, carrier, notifier, settings, no_sleep = env
+    await add(repo, CODE, "cainiao")
+    first = NamedFake(blocked=True)
+    second = NamedFake()
+    poller = build_many(
+        repo,
+        carrier,
+        notifier,
+        settings,
+        no_sleep,
+        [Aggregator("17track", first), Aggregator("aftership", second)],
+    )
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert await repo.get_meta(quota_key("17track")) is not None, "the one that refused is held"
+    assert await repo.get_meta(quota_key("aftership")) is None, "the other is untouched"
+    assert second.calls, "and still gets asked"
+
+
+async def test_registration_is_recorded_per_aggregator(env):
+    """Registered with 17TRACK is not registered with AfterShip."""
+    from vn_parcel_bot.services.poller import Aggregator, tried_key
+
+    repo, carrier, notifier, settings, no_sleep = env
+    parcel = await add(repo, CODE, "cainiao")
+    first = NamedFake()
+    second = NamedFake()
+    poller = build_many(
+        repo,
+        carrier,
+        notifier,
+        settings,
+        no_sleep,
+        [Aggregator("17track", first), Aggregator("aftership", second)],
+    )
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert await repo.get_meta(tried_key("17track", parcel.id)) is not None
+    assert await repo.get_meta(tried_key("aftership", parcel.id)) is not None
+    assert first.calls == [(CODE, True)], "each registered once, on its own account"
+    assert second.calls == [(CODE, True)]

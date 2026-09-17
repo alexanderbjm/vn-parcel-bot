@@ -48,8 +48,16 @@ from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
 
-# One shared marker: 17TRACK answers "out of quota" for the whole account.
-QUOTA_KEY = "17track-quota-until"
+
+def quota_key(name: str) -> str:
+    """Running out of allowance is an account-wide answer, so it is held per aggregator."""
+    return f"quota-until:{name}"
+
+
+def tried_key(name: str, parcel_id: int) -> str:
+    """Registered with one aggregator is not registered with another."""
+    return f"tried:{name}:{parcel_id}"
+
 
 Outcome = TrackingResult | CarrierError
 
@@ -135,6 +143,7 @@ class Poller:
         rand: Callable[[], float] = random.random,
         maps: ParcelMaps | None = None,
         seventeen: object | None = None,
+        aggregators: Sequence["Aggregator"] | None = None,
     ) -> None:
         self._repo = repo
         self._registry = registry
@@ -146,6 +155,13 @@ class Poller:
         self._rand = rand
         self._maps = maps
         self._seventeen = seventeen
+        # `seventeen=` is the older way to pass the one aggregator there used to be.
+        if aggregators is not None:
+            self._aggregators = list(aggregators)
+        elif seventeen is not None:
+            self._aggregators = [Aggregator("17track", seventeen)]
+        else:
+            self._aggregators = []
         self._lock = asyncio.Lock()
         self._broken_stickers: set[str] = set()
 
@@ -467,7 +483,7 @@ class Poller:
             error = CarrierError(parcel.carrier, "parse", "events disappeared")
             await self._handle_failure(parcel, error, now, report, alerts)
             return
-        if await self._seventeen_fallback(parcel, now, report, alerts):
+        if await self._aggregator_fallback(parcel, now, report, alerts):
             return
         if now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)
@@ -481,7 +497,7 @@ class Poller:
             now=now,
         )
 
-    async def _seventeen_fallback(
+    async def _aggregator_fallback(
         self,
         parcel: Parcel,
         now: datetime,
@@ -505,18 +521,33 @@ class Poller:
         parcel until QUOTA_COOLDOWN passes. Re-queries for parcels already on 17TRACK cost
         nothing and carry on, so a registration that cannot succeed never starves them.
         """
-        if self._seventeen is None or not self._settings.seventeen_fallback:
+        if not self._settings.seventeen_fallback:
             return False
-        key = f"17track-tried:{parcel.id}"
+        masked = mask_code(parcel.tracking_number)
+        for source in self._aggregators:
+            if await self._ask_aggregator(source, parcel, now, report, alerts, register, masked):
+                return True
+        return False
+
+    async def _ask_aggregator(
+        self,
+        source: "Aggregator",
+        parcel: Parcel,
+        now: datetime,
+        report: PollReport,
+        alerts: dict[CarrierCode, tuple[int, str]],
+        register: bool,
+        masked: str,
+    ) -> bool:
+        key = tried_key(source.name, parcel.id)
         registered = await self._repo.get_meta(key) is not None
         if not registered:
             if not register:
                 return False
-            if await self._registrations_paused(now):
+            if await self._registrations_paused(now, source.name):
                 return False
-        masked = mask_code(parcel.tracking_number)
         try:
-            result = await self._seventeen.fetch(
+            result = await source.client.fetch(
                 self._http,
                 parcel.tracking_number,
                 parcel.phone_last4,
@@ -524,32 +555,38 @@ class Poller:
             )
         except CarrierError as exc:
             if exc.reason == "blocked":
-                # Out of registration quota: leave the parcel unregistered, and hold every
-                # other parcel back too, so retries cannot keep the quota pinned at zero.
-                await self._repo.set_meta(QUOTA_KEY, (now + QUOTA_COOLDOWN).isoformat())
-                log.warning("17track out of quota, registrations paused code=%s", masked)
+                # Out of allowance: leave the parcel unregistered, and hold every other parcel
+                # back from this source too, so retries cannot keep it pinned at zero.
+                await self._repo.set_meta(
+                    quota_key(source.name), (now + QUOTA_COOLDOWN).isoformat()
+                )
+                log.warning("%s out of quota, registrations paused code=%s", source.name, masked)
                 return False
             if not registered:
                 await self._repo.set_meta(key, now.isoformat())
-            log.warning("17track fallback failed code=%s reason=%s", masked, exc.reason)
+            log.warning("%s fallback failed code=%s reason=%s", source.name, masked, exc.reason)
             return False
         except Exception as exc:
             if not registered:
                 await self._repo.set_meta(key, now.isoformat())
-            log.warning("17track fallback failed code=%s type=%s", masked, type(exc).__name__)
+            log.warning(
+                "%s fallback failed code=%s type=%s", source.name, masked, type(exc).__name__
+            )
             return False
         if not registered:
             await self._repo.set_meta(key, now.isoformat())
         if not result.found:
-            log.info("17track fallback has no data code=%s", masked)
+            log.info("%s fallback has no data code=%s", source.name, masked)
             return False
-        log.info("17track fallback found data code=%s events=%s", masked, len(result.events))
+        log.info(
+            "%s fallback found data code=%s events=%s", source.name, masked, len(result.events)
+        )
         await self._handle_result(parcel, result, now, report, alerts)
         return True
 
-    async def _registrations_paused(self, now: datetime) -> bool:
-        """True while a recent quota refusal still stands."""
-        until = await self._repo.get_meta(QUOTA_KEY)
+    async def _registrations_paused(self, now: datetime, name: str) -> bool:
+        """True while a recent refusal from that aggregator still stands."""
+        until = await self._repo.get_meta(quota_key(name))
         if until is None:
             return False
         try:
@@ -622,7 +659,7 @@ class Poller:
     ) -> None:
         # The parcel's own carrier is failing, so 17TRACK answers instead when it already
         # tracks this parcel. Without this a carrier that keeps erroring freezes the parcel.
-        if await self._seventeen_fallback(parcel, now, report, alerts, register=False):
+        if await self._aggregator_fallback(parcel, now, report, alerts, register=False):
             return
         if parcel.state == "pending" and now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)

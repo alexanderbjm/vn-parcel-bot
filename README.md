@@ -60,6 +60,8 @@ The full specification and build steps are in [`BUILD_PLAN.md`](BUILD_PLAN.md) (
    | `ANTHROPIC_WORKSPACE_ID` | no | – | `api` engine only, for keys not scoped to a workspace |
    | `SEVENTEEN_FALLBACK` | no | `true` | Ask 17TRACK about a parcel none of the supported carriers can track (costs one 17TRACK registration per parcel); Chinese updates are shown in Vietnamese |
    | `SEVENTEEN_TRACK_KEY` | no | – | 17TRACK API key: tracks BEST, SF and cross-border J&T (`JNTX…`, after the phone digits). Each newly registered parcel uses one 17TRACK quota |
+   | `AFTERSHIP_API_KEY` | no | – | AfterShip API key: a second tracking source, used when 17TRACK has nothing or has run out of allowance. Creating a tracking spends one shipment from your AfterShip plan |
+   | `AFTERSHIP_FALLBACK` | no | `true` | Ask AfterShip about a parcel none of the supported carriers can track; `false` turns it off even when a key is set |
    | `MAPS_ENABLED` | no | `true` | Hub lines, distances and map pictures (see *Maps and distance*); `false` turns them off |
 
 5. **Check Telegram and carriers** (optional but recommended before the first run):
