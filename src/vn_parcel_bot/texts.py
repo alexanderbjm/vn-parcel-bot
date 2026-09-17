@@ -106,6 +106,12 @@ LIST_PLACE_LINE = "📦 Kiện hàng đã tới {place} · cách bạn {distance
 LIST_PLACE_ONLY = "📦 Kiện hàng đã tới {place}"
 LIST_SECTION_ACTIVE = "🚚 <b>Đang vận chuyển</b>"
 LIST_SECTION_DONE = "✅ <b>Đã xong</b>"
+# The rungs of the status order. "Đang trên đường" is deliberately not the same wording
+# as LIST_SECTION_ACTIVE: one is a stage, the other is half of the two-part split.
+LIST_STAGE_PENDING = "⏳ <b>Đang xác định hãng</b>"
+LIST_STAGE_MOVING = "🚚 <b>Đang trên đường</b>"
+LIST_STAGE_NEAR = "📦 <b>Sắp giao</b>"
+LIST_STAGE_QUIET = "💤 <b>Đã lâu không cập nhật</b>"
 PROGRESS_SUFFIX = " · {percent}%"
 PROGRESS_BAR_LINE = "\n    {bar}"
 
@@ -287,10 +293,12 @@ BTN_RECHECK = "🔄 Kiểm tra tất cả"
 BTN_SORT_NEAR = "📍 Gần bạn nhất"
 BTN_SORT_CARRIER = "🚚 Theo hãng"
 BTN_SORT_NAME = "🔤 Theo tên"
+BTN_SORT_STATUS = "📊 Theo trạng thái"
 SORT_LABELS = {
     "n": BTN_SORT_NEAR,
     "c": BTN_SORT_CARRIER,
     "a": BTN_SORT_NAME,
+    "s": BTN_SORT_STATUS,
 }
 BTN_SELECT_REMOVE = "🗑 Xóa nhiều"
 BTN_REMOVE_SELECTED = "✅ Xóa đã chọn ({count})"

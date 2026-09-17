@@ -89,7 +89,8 @@ def test_list_keyboard_sort_button_cycles_through_the_modes():
     for sort, label, following in (
         ("n", texts.BTN_SORT_NEAR, "c"),
         ("c", texts.BTN_SORT_CARRIER, "a"),
-        ("a", texts.BTN_SORT_NAME, "n"),
+        ("a", texts.BTN_SORT_NAME, "s"),
+        ("s", texts.BTN_SORT_STATUS, "n"),
     ):
         markup = list_keyboard([(1, make_parcel(id=1))], page=2, pages=1, recheck=True, sort=sort)
         assert labels(markup)[-1] == [label]

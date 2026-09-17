@@ -13,6 +13,7 @@ from vn_parcel_bot.constants import (
     LIST_PAGE_SIZE,
     MAX_EVENTS_IN_HISTORY,
     MAX_EVENTS_IN_UPDATE,
+    NEAR_DELIVERY_PROGRESS,
     TELEGRAM_TEXT_LIMIT,
 )
 from vn_parcel_bot.db.repo import Parcel, User
@@ -230,7 +231,7 @@ def list_page_items(
     return page, pages, numbered
 
 
-SORT_MODES = ("n", "c", "a")
+SORT_MODES = ("n", "c", "a", "s")
 DEFAULT_SORT = SORT_MODES[0]
 
 
@@ -243,6 +244,39 @@ def next_sort(sort: str) -> str:
 
 def _sort_name(parcel: Parcel) -> str:
     return (parcel.label or parcel.tracking_number).casefold()
+
+
+# One heading per rung of the ladder below.
+STAGE_HEADINGS = (
+    texts.LIST_STAGE_PENDING,
+    texts.LIST_STAGE_MOVING,
+    texts.LIST_STAGE_NEAR,
+    texts.LIST_STAGE_QUIET,
+    texts.LIST_SECTION_DONE,
+)
+
+
+def _stage(parcel: Parcel) -> int:
+    """How far the parcel has come: 0 still being identified, 4 finished.
+
+    A quiet parcel sits on its own rung rather than among the finished ones: nothing says it
+    has arrived, only that nobody has heard from it for a month.
+    """
+    if parcel.state == "pending":
+        return 0
+    if parcel.state == "stale":
+        return 3
+    if not parcel.is_active:
+        return 4
+    if parcel.progress is not None and parcel.progress >= NEAR_DELIVERY_PROGRESS:
+        return 2
+    return 1
+
+
+def _list_heading(parcel: Parcel, *, stages: bool) -> str:
+    if stages:
+        return STAGE_HEADINGS[_stage(parcel)]
+    return texts.LIST_SECTION_ACTIVE if parcel.is_active else texts.LIST_SECTION_DONE
 
 
 def sort_parcels(
@@ -258,6 +292,11 @@ def sort_parcels(
     def key(item: tuple[int, Parcel]) -> tuple:
         position, parcel = item
         done = not parcel.is_active
+        if sort == "s":
+            # Newest movement first inside a rung; a parcel nobody has heard from goes last.
+            moved = parcel.last_event_at
+            stamp = -moved.timestamp() if moved is not None else 0.0
+            return (_stage(parcel), moved is None, stamp, position)
         if sort == "a":
             return (done, _sort_name(parcel), position)
         if sort == "c":
@@ -279,18 +318,22 @@ def format_parcel_list(
     *,
     page: int = 1,
     places: Mapping[int, str] | None = None,
+    sort: str = DEFAULT_SORT,
 ) -> str:
     if not parcels:
         return texts.LIST_EMPTY
     page, pages, numbered = list_page_items(parcels, page)
     lines: list[str] = []
-    # Headers only earn their space when the list actually holds both kinds of order.
+    # In the status order the stage headings say what the order means, so they stand in for
+    # the two-part split; otherwise headers only earn their space when both kinds are present.
+    stages = sort == "s"
     mixed = len({parcel.is_active for parcel in parcels}) > 1
-    section: bool | None = None
+    shown: int | bool | None = None
     for index, parcel in numbered:
-        if mixed and parcel.is_active != section:
-            section = parcel.is_active
-            lines.append(texts.LIST_SECTION_ACTIVE if section else texts.LIST_SECTION_DONE)
+        group: int | bool = _stage(parcel) if stages else parcel.is_active
+        if (stages or mixed) and group != shown:
+            shown = group
+            lines.append(_list_heading(parcel, stages=stages))
         lines.append(_list_item(index, parcel, tz, place=(places or {}).get(parcel.id, "")))
     text = texts.LIST_HEADER + "\n\n" + "\n".join(lines)
     if pages > 1:

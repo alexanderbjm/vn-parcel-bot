@@ -582,3 +582,41 @@ def test_alphabetical_and_carrier_sorts():
     ghn = make_parcel(id=2, label="Alpha", carrier="ghn", candidates=("ghn",))
     assert [p.id for p in sort_parcels([spx, ghn], "a", {})] == [2, 1]
     assert [p.id for p in sort_parcels([spx, ghn], "c", {})] == [2, 1], "GHN before SPX"
+
+
+def test_status_sort_follows_the_stage_ladder():
+    """Still being identified, then moving, then nearly there, then quiet, then finished."""
+    new = unresolved(id=1, label="Mã mới")
+    moving = make_parcel(id=2, label="Sạc", progress=50)
+    near = make_parcel(id=3, label="Áo", progress=95)
+    quiet = make_parcel(id=4, label="Cũ", state="stale")
+    done = make_parcel(id=5, label="Xong", state="delivered")
+    ordered = sort_parcels([done, quiet, near, moving, new], "s", {})
+    assert [parcel.id for parcel in ordered] == [1, 2, 3, 4, 5]
+
+
+def test_status_sort_puts_the_newest_movement_first_inside_a_stage():
+    from datetime import timedelta
+
+    older = make_parcel(id=1, label="A", progress=50, last_event_at=T0)
+    newer = make_parcel(id=2, label="B", progress=50, last_event_at=T0 + timedelta(hours=5))
+    silent = make_parcel(id=3, label="C", progress=50)
+    ordered = sort_parcels([silent, older, newer], "s", {})
+    assert [parcel.id for parcel in ordered] == [2, 1, 3]
+
+
+def test_status_sort_heads_each_stage_that_has_parcels():
+    moving = make_parcel(id=1, label="Sạc", progress=50)
+    near = make_parcel(id=2, label="Áo", progress=95)
+    text = format_parcel_list([moving, near], TZ, sort="s")
+    assert text.index(texts.LIST_STAGE_MOVING) < text.index(texts.LIST_STAGE_NEAR)
+    assert texts.LIST_STAGE_QUIET not in text, "a stage with nothing in it earns no heading"
+    assert texts.LIST_SECTION_ACTIVE not in text, "stage headings replace the two-part split"
+
+
+def test_the_other_sorts_keep_the_two_part_split():
+    moving = make_parcel(id=1, label="Sạc", progress=50)
+    done = make_parcel(id=2, label="Xong", state="delivered")
+    text = format_parcel_list([moving, done], TZ)
+    assert texts.LIST_SECTION_ACTIVE in text
+    assert texts.LIST_STAGE_MOVING not in text

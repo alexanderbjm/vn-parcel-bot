@@ -379,7 +379,7 @@ async def list_view(
             places, distances = await maps.list_places(parcels, user)
     ordered = sort_parcels(parcels, sort, distances)
     page, pages, numbered = list_page_items(ordered, requested)
-    text = format_parcel_list(ordered, deps.settings.tz, page=page, places=places)
+    text = format_parcel_list(ordered, deps.settings.tz, page=page, places=places, sort=sort)
     return text, page, pages, numbered
 
 

@@ -413,5 +413,5 @@ async def test_sort_button_reorders_the_list_and_offers_the_next_order(env):
     await add_spx(env)
     query = await tap(env, "so:a:1")
     _, markup = query.edits[0]
-    assert last_row_data(markup) == ["so:n:1"], "tapping again moves on to nearest-first"
+    assert last_row_data(markup) == ["so:s:1"], "tapping again moves on to status"
     assert recheck_row_data(markup) == ["r:1:a", "m:on:1"], "the order sticks to the buttons"
