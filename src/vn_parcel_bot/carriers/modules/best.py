@@ -17,7 +17,7 @@ def build_best_client() -> Carrier | None:
         return None
     return SeventeenTrackCarrier(
         carrier_code="best",
-        display_name="BEST Express",
+        display_name="🌟 BEST Express",
         seventeen_carrier_id=101194,
         api_key=api_key.strip(),
         needs_phone=True,
@@ -26,7 +26,7 @@ def build_best_client() -> Carrier | None:
 
 MODULE = CarrierModule(
     code="best",
-    display_name="BEST Express",
+    display_name="🌟 BEST Express",
     order=70,
     needs_phone=True,
     rules=(

@@ -202,7 +202,7 @@ def _merge_results(domestic: TrackingResult, overseas: TrackingResult) -> Tracki
 
 class JtCarrier:
     code: CarrierCode = "jt"
-    display_name = "J&T"
+    display_name="🔴 J&T"
     needs_phone = True
 
     def __init__(self, seventeen_key: str | None = None) -> None:
@@ -214,7 +214,7 @@ class JtCarrier:
             return None
         return SeventeenTrackCarrier(
             carrier_code="jt",
-            display_name="J&T",
+            display_name="🔴 J&T",
             seventeen_carrier_id=100295,
             api_key=key.strip(),
         )
@@ -309,7 +309,7 @@ def cross_border_hint(tracking_number: str) -> str | None:
 
 MODULE = CarrierModule(
     code="jt",
-    display_name="J&T",
+    display_name="🔴 J&T",
     order=20,
     needs_phone=True,
     rules=(

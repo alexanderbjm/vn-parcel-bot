@@ -122,7 +122,7 @@ def spx_progress(result: TrackingResult) -> int | None:
 
 class SpxCarrier:
     code: CarrierCode = "spx"
-    display_name = "SPX"
+    display_name="🧡 SPX"
     needs_phone = False
 
     async def fetch(
@@ -147,7 +147,7 @@ def spx_place(event: TrackingEvent) -> str | None:
 
 MODULE = CarrierModule(
     code="spx",
-    display_name="SPX",
+    display_name="🧡 SPX",
     order=10,
     rules=(Rule(r"SPXVN[0-9A-Z]{8,16}", PRIORITY_PREFIXED),),
     examples=(("SPXVN05338454932C", True), ("SPEVN000000000001", False)),

@@ -7,7 +7,7 @@ from vn_parcel_bot.carriers.api import (
 
 MODULE = CarrierModule(
     code="viettelpost",
-    display_name="Viettel Post",
+    display_name="🟥 Viettel Post",
     order=100,
     rules=(
         Rule(r"VTP[0-9A-Z]{6,14}", PRIORITY_PREFIXED),

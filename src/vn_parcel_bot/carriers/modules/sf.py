@@ -11,7 +11,7 @@ def build_sf_client() -> Carrier | None:
         return None
     return SeventeenTrackCarrier(
         carrier_code="sf",
-        display_name="SF Express",
+        display_name="✈️ SF Express",
         seventeen_carrier_id=100012,
         api_key=api_key.strip(),
     )
@@ -19,7 +19,7 @@ def build_sf_client() -> Carrier | None:
 
 MODULE = CarrierModule(
     code="sf",
-    display_name="SF Express",
+    display_name="✈️ SF Express",
     order=130,
     rules=(Rule(r"SF\d{12,15}", PRIORITY_PREFIXED),),
     link_template="https://www.sf-express.com/chn/en/waybill/list",

@@ -91,7 +91,7 @@ def parse_cainiao_response(payload: object, tracking_number: str) -> TrackingRes
 
 class CainiaoCarrier:
     code: CarrierCode = "cainiao"
-    display_name = "Cainiao"
+    display_name="🦅 Cainiao"
     needs_phone = False
 
     async def fetch(
@@ -120,7 +120,7 @@ def lazada_hint(tracking_number: str) -> str | None:
 
 MODULE = CarrierModule(
     code="cainiao",
-    display_name="Cainiao",
+    display_name="🦅 Cainiao",
     order=30,
     rules=(
         Rule(r"LP\d{14,16}", PRIORITY_PREFIXED),

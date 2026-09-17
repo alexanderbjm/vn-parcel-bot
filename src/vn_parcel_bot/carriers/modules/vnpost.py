@@ -2,7 +2,7 @@ from vn_parcel_bot.carriers.api import PRIORITY_PREFIXED, CarrierModule, Rule
 
 MODULE = CarrierModule(
     code="vnpost",
-    display_name="VNPost",
+    display_name="🏣 VNPost",
     order=110,
     rules=(
         Rule(r"[A-Z]{2}\d{9}VN", PRIORITY_PREFIXED),

@@ -109,7 +109,7 @@ def parse_ninjavan_response(payload: object, tracking_number: str) -> TrackingRe
 
 class NinjaVanCarrier:
     code: CarrierCode = "ninjavan"
-    display_name = "Ninja Van"
+    display_name="🥷 Ninja Van"
     needs_phone = False
 
     async def fetch(
@@ -139,7 +139,7 @@ class NinjaVanCarrier:
 
 MODULE = CarrierModule(
     code="ninjavan",
-    display_name="Ninja Van",
+    display_name="🥷 Ninja Van",
     order=50,
     rules=(
         Rule(r"(SPEVN|NLVN|NVN)[0-9A-Z]{6,20}", PRIORITY_PREFIXED),

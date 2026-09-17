@@ -67,7 +67,7 @@ def parse_fourpx_response(payload: object, tracking_number: str) -> TrackingResu
 
 class FourPxCarrier:
     code: CarrierCode = "fourpx"
-    display_name = "4PX"
+    display_name="📦 4PX"
     needs_phone = False
 
     async def fetch(
@@ -89,7 +89,7 @@ class FourPxCarrier:
 
 MODULE = CarrierModule(
     code="fourpx",
-    display_name="4PX",
+    display_name="📦 4PX",
     order=40,
     rules=(Rule(r"4PX[0-9A-Z]{10,20}", PRIORITY_PREFIXED),),
     examples=(("4PX3000123456789CN", True),),
