@@ -184,6 +184,8 @@ class Settings:
     agy_proxy_url: str = DEFAULT_AGY_PROXY_URL
     seventeen_track_key: str | None = None
     seventeen_fallback: bool = True
+    aftership_key: str | None = None
+    aftership_fallback: bool = True
     maps_enabled: bool = True
 
     @classmethod
@@ -254,6 +256,9 @@ class Settings:
         fallback_raw = (_get(env, "SEVENTEEN_FALLBACK") or "true").lower()
         if fallback_raw not in _SWITCH_ON + _SWITCH_OFF:
             errors.append("SEVENTEEN_FALLBACK must be true or false")
+        aftership_raw = (_get(env, "AFTERSHIP_FALLBACK") or "true").lower()
+        if aftership_raw not in _SWITCH_ON + _SWITCH_OFF:
+            errors.append("AFTERSHIP_FALLBACK must be true or false")
         maps_raw = (_get(env, "MAPS_ENABLED") or "true").lower()
         if maps_raw not in _SWITCH_ON + _SWITCH_OFF:
             errors.append("MAPS_ENABLED must be true or false")
@@ -287,6 +292,8 @@ class Settings:
             agy_proxy_url=agy_proxy_url,
             seventeen_track_key=_get(env, "SEVENTEEN_TRACK_KEY"),
             seventeen_fallback=fallback_raw in _SWITCH_ON,
+            aftership_key=_get(env, "AFTERSHIP_API_KEY"),
+            aftership_fallback=aftership_raw in _SWITCH_ON,
             maps_enabled=maps_raw in _SWITCH_ON,
         )
 

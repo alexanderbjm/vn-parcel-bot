@@ -330,3 +330,21 @@ async def test_17track_events_are_identified_by_the_carriers_own_wording():
     assert "快件" not in event.description, "what we show is still Vietnamese"
     reworded = replace(event, description="một cách nói khác", location="Khác")
     assert reworded.key == event.key, "rewording the translation is not a new event"
+
+
+async def test_no_aftership_key_means_no_change_in_behaviour(env):
+    """The bot must behave exactly as today until a key exists."""
+    from vn_parcel_bot.services.poller import build_aggregators
+
+    settings = env[3]
+    assert [a.name for a in build_aggregators(settings)] == ["17track"]
+
+
+async def test_both_aggregators_are_offered_when_both_have_keys(env):
+    from dataclasses import replace as dc_replace
+
+    from vn_parcel_bot.services.poller import build_aggregators
+
+    settings = env[3]
+    keyed = dc_replace(settings, aftership_key="k", aftership_fallback=True)
+    assert [a.name for a in build_aggregators(keyed)] == ["17track", "aftership"]

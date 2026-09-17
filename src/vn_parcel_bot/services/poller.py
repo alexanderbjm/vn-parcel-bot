@@ -5,10 +5,11 @@ import random
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
+from vn_parcel_bot.carriers.aftership import AfterShipCarrier
 from vn_parcel_bot.carriers.models import (
     CarrierCode,
     CarrierError,
@@ -725,3 +726,27 @@ def build_seventeen(settings: Settings) -> SeventeenTrackCarrier | None:
         seventeen_carrier_id=None,
         api_key=key,
     )
+
+
+@dataclass(frozen=True)
+class Aggregator:
+    """A tracking source of last resort, named so its quota marker can be told apart."""
+
+    name: str
+    client: Any
+
+
+def build_aggregators(settings: Settings) -> list[Aggregator]:
+    """Every configured aggregator, in the order they are tried.
+
+    An aggregator with no key is simply absent, so the bot behaves exactly as it did before
+    that key existed.
+    """
+    found: list[Aggregator] = []
+    seventeen = build_seventeen(settings)
+    if seventeen is not None:
+        found.append(Aggregator("17track", seventeen))
+    key = (settings.aftership_key or "").strip()
+    if key and settings.aftership_fallback:
+        found.append(Aggregator("aftership", AfterShipCarrier(api_key=key)))
+    return found
