@@ -40,7 +40,10 @@ HELP = (
     "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
     "• /location – lưu khu vực của bạn (làm tròn ~1 km) để xem khoảng cách; /location off để xóa\n"
     "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
-    "• /cancel – hủy thao tác đang chờ"
+    "• /cancel – hủy thao tác đang chờ\n"
+    "\n"
+    "Menu chỉ hiện /start, /help, /list, /location cho gọn. "
+    "Các lệnh còn lại vẫn dùng được khi bạn gõ, hoặc bấm nút ngay trên đơn."
 )
 NOT_ALLOWED = (
     "🔒 Bạn chưa có quyền dùng bot này.\nHãy gửi ID sau cho người quản lý: <code>{user_id}</code>"

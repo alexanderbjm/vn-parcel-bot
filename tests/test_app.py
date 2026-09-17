@@ -25,6 +25,17 @@ ALL_COMMANDS = {
     "hozk",
 }
 
+# Still registered, deliberately kept off the menu: every one of them is a button now.
+HIDDEN_COMMANDS = {
+    "track",
+    "status",
+    "label",
+    "remove",
+    "phone",
+    "check",
+    "cancel",
+}
+
 
 def test_build_application_registers_handlers(settings):
     app = build_application(settings)
@@ -49,15 +60,8 @@ def test_bot_commands_match_spec():
     assert [name for name, _ in BOT_COMMANDS] == [
         "start",
         "help",
-        "track",
         "list",
-        "status",
-        "label",
-        "remove",
-        "phone",
         "location",
-        "check",
-        "cancel",
     ]
     assert [name for name, _ in ADMIN_COMMANDS] == [
         "hozk",
@@ -69,7 +73,17 @@ def test_bot_commands_match_spec():
     ]
     every = BOT_COMMANDS + ADMIN_COMMANDS
     assert all(0 < len(description) <= 256 for _, description in every)
-    assert {name for name, _ in every} == ALL_COMMANDS
+    listed = {name for name, _ in every}
+    assert listed <= ALL_COMMANDS, "every menu entry is a real handler"
+    assert listed == ALL_COMMANDS - HIDDEN_COMMANDS, "the menu hides exactly these"
+
+
+def test_hidden_commands_still_work_when_typed(settings):
+    """Hidden means unadvertised, not removed: old habits and saved messages keep working."""
+    app = build_application(settings)
+    group = app.handlers[0]
+    registered = set().union(*(h.commands for h in group if isinstance(h, CommandHandler)))
+    assert registered >= HIDDEN_COMMANDS
 
 
 def test_location_messages_have_a_handler(settings):

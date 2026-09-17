@@ -93,6 +93,7 @@ The task starts `pythonw.exe -m vn_parcel_bot` at logon, restarts it every minut
 | send a photo/screenshot | Claude Vision extracts tracking code, carrier & phone digits and tracks it |
 | `/track <mã> [4 số] [hãng]` | Track with phone digits and/or a forced carrier (`spx`, `jt`, `cainiao`, `4px`, `ninjavan`, `ghn`) |
 | `/list` | Your parcels |
+| | *The command menu shows only `/start`, `/help`, `/list` and `/location`. Every other command below still works when typed — each one is also a button on a parcel's card or under `/list`.* |
 | `/status <mã hoặc số>` | Full history, newest first |
 | `/label <mã hoặc số> [tên]` · reply `/label [tên]` | Name a parcel. Reply to a bot message to name the parcel in it; with no name the bot asks for one, with buttons to clear the name or cancel. If the replied message holds several parcels, buttons let you pick one. The label is shown with the tracking code blurred next to it, and your `/label` message is deleted |
 | `/remove <số> [số…]` | Stop tracking one or more parcels (e.g. `/remove 1 2 3`, numbers from `/list`, or codes). The bot lists them and asks with ✅ Xóa / ↩ Hủy buttons. On `/list`, **🗑 Xóa nhiều** lets you tick parcels and remove them together |

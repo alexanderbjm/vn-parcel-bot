@@ -1,15 +1,11 @@
+# Everything else a parcel needs is a button on its card or under /list, so the menu keeps
+# only what you cannot reach by tapping. /track /status /label /remove /phone /check /cancel
+# are still registered and still work when typed; /help lists them.
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("start", "Bắt đầu"),
     ("help", "Hướng dẫn"),
-    ("track", "Theo dõi đơn: /track <mã> [4 số cuối SĐT]"),
     ("list", "Danh sách đơn"),
-    ("status", "Hành trình đơn"),
-    ("label", "Đặt tên cho đơn"),
-    ("remove", "Ngừng theo dõi"),
-    ("phone", "4 số cuối SĐT cho đơn J&T, GHN"),
     ("location", "Vị trí của bạn cho bản đồ"),
-    ("check", "Kiểm tra ngay và nhận diện lại hãng"),
-    ("cancel", "Hủy thao tác"),
 ]
 
 # Shown only in the admin's command menu, after BOT_COMMANDS.
