@@ -18,6 +18,10 @@ PROVINCES: dict[str, tuple[str, float, float]] = {
     "BTE": ("Bến Tre", 10.2415, 106.3759),
     "BDH": ("Bình Định", 13.7820, 109.2197),
     "BDG": ("Bình Dương", 10.9805, 106.6519),
+    # Shopee Xpress names its hubs with a short province code: "BD B Mega SOC" is Bình Dương.
+    # Added by hand like `BN`, because without it "BD" survives clean_place() as a district name
+    # and gets looked up as if it were a place, which matched something 8000 km away.
+    "BD": ("Bình Dương", 10.9805, 106.6519),
     "BPC": ("Bình Phước", 11.5333, 106.8833),
     "BTN": ("Bình Thuận", 10.9273, 108.1021),
     "CMU": ("Cà Mau", 9.1769, 105.1524),

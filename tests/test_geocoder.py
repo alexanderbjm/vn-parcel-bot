@@ -98,6 +98,41 @@ async def test_province_only_hub_needs_no_request(env):
 
 
 @respx.mock
+async def test_a_bd_hub_is_binh_duong_and_needs_no_request(env):
+    # "BD" only reads as a place name if the province table misses it, and then the lookup
+    # matches something on the far side of the world. It is a Shopee Xpress province code.
+    geocoder, repo, _, _ = env
+    route = respx.get(PHOTON_URL)
+    _, lat, lon = PROVINCES["BD"]
+    assert await geocoder.coordinates("BD B Mega SOC") == (lat, lon)
+    assert not route.called
+    assert (await repo.get_place("BD|")).source == "province"
+
+
+@respx.mock
+async def test_a_worldwide_match_off_the_route_is_rejected(env):
+    geocoder, repo, _, _ = env
+    # The Vietnam pass misses, then the unbounded pass offers München for a Vietnamese hub.
+    respx.get(PHOTON_URL).mock(
+        side_effect=[httpx.Response(200, json=MISS), hit(48.1, 11.5, countrycode="DE")]
+    )
+    assert await geocoder.coordinates("Bưu cục Bảo Lộc") is None
+    assert (await repo.get_place("|Bảo Lộc")).source == "none"
+
+
+@respx.mock
+async def test_an_implausible_cached_hub_is_resolved_again(env):
+    geocoder, repo, _, _ = env
+    await repo.save_place("|Bảo Lộc", 48.1, 11.5, "osm", T0)
+    respx.get(PHOTON_URL).mock(return_value=httpx.Response(200, json=MISS))
+
+    assert await geocoder.coordinates("Bưu cục Bảo Lộc") is None
+
+    cached = await repo.get_place("|Bảo Lộc")
+    assert cached.source == "none", "the far-away row is replaced, not handed back"
+
+
+@respx.mock
 async def test_misses_are_cached_for_30_days(env):
     geocoder, _, clock, _ = env
     route = respx.get(PHOTON_URL).mock(return_value=httpx.Response(200, json=MISS))

@@ -11,6 +11,7 @@ from vn_parcel_bot.services.geo_provinces import PROVINCES
         ("21-HNI Thanh Tri 2 Hub", "HNI", "Thanh Tri"),
         ("24-HPG Hai An 3 Hub", "HPG", "Hai An"),
         ("BN B Mega SOC", "BN", None),
+        ("BD B Mega SOC", "BD", None),
         ("11-TQG Son Duong Hub", "TQG", "Son Duong"),
         ("Bưu cục Quận 7", None, "Quận 7"),
         ("  Kho   HCM  ", None, "Kho HCM"),
@@ -24,6 +25,7 @@ def test_place_key_and_display():
     assert clean_place("21-HNI Thanh Tri 2 Hub").key == "HNI|Thanh Tri"
     assert clean_place("21-HNI Thanh Tri 2 Hub").display == "Kho Thanh Tri"
     assert clean_place("BN B Mega SOC").display == f"Kho {PROVINCES['BN'][0]}"
+    assert clean_place("BD B Mega SOC").display == f"Kho {PROVINCES['BD'][0]}"
     assert clean_place("Bưu cục Quận 7").display == "Quận 7"
     assert clean_place("   ") == PlaceParts(None, None)
 
@@ -38,7 +40,7 @@ def test_haversine_and_distance_text():
 
 
 def test_province_table_is_inside_vietnam():
-    for required in ("HNI", "HCM", "HPG", "BN", "TQG", "VPC", "DNG"):
+    for required in ("HNI", "HCM", "HPG", "BN", "BD", "TQG", "VPC", "DNG"):
         assert required in PROVINCES
     for name, lat, lon in PROVINCES.values():
         assert name

@@ -25,6 +25,11 @@ EARTH_RADIUS_KM = 6371.0
 PHOTON_URL = "https://photon.komoot.io/api/"
 USER_AGENT = "vn-parcel-bot/0.1 (personal Telegram parcel tracker)"
 VIETNAM_BBOX = "102.1,8.1,109.5,23.4"
+# A hub on a parcel route to Vietnam sits in Vietnam or just over the border (a Chinese city).
+# A short or ambiguous name ("BD") matched against the whole world lands anywhere at all — which
+# is how a hub ended up 8358 km away — so a worldwide match beyond this counts as no match.
+VIETNAM_CENTRE = (16.0, 106.0)
+MAX_HUB_KM = 4000.0
 # A hub abroad often shares its name with somewhere in Vietnam (Dongguan reads as the
 # commune Đông Quan), so these are asked for by their own name and never matched at home.
 FOREIGN_PLACES = {
@@ -104,6 +109,11 @@ def format_distance(km: float) -> str:
     return f"~{round(km)} km"
 
 
+def plausible_hub(point: tuple[float, float]) -> bool:
+    """True when a hub could plausibly sit on a parcel route into Vietnam."""
+    return haversine_km(VIETNAM_CENTRE, point) <= MAX_HUB_KM
+
+
 class AreaLookupFailed(Exception):
     """A written area could not be looked up (network or service error)."""
 
@@ -159,8 +169,12 @@ class Geocoder:
         cached = await self._repo.get_place(parts.key)
         if cached is not None:
             if cached.lat is not None and cached.lon is not None:
-                return cached.lat, cached.lon
-            if now - cached.looked_up_at < MISS_RETRY_AFTER:
+                if plausible_hub((cached.lat, cached.lon)):
+                    return cached.lat, cached.lon
+                # A row an earlier release wrote from an unbounded match: resolve it again rather
+                # than keep drawing the hub on the far side of the world.
+                log.info("implausible cached hub key=%s", parts.key)
+            elif now - cached.looked_up_at < MISS_RETRY_AFTER:
                 return None
         province = PROVINCES.get(parts.code) if parts.code is not None else None
         centre = (province[1], province[2]) if province is not None else None
@@ -201,8 +215,10 @@ class Geocoder:
         found = await self._lookup(query)
         if found is None:
             # A hub on a cross-border parcel sits outside Vietnam (a Chinese city, say), so a
-            # second pass drops the bounding box and takes the best match anywhere.
-            found = await self._lookup(query, worldwide=True)
+            # second pass drops the bounding box — but only a match near enough to be on the
+            # route counts, so an unbounded hit on a short name cannot become a hub.
+            worldwide = await self._lookup(query, worldwide=True)
+            found = worldwide if worldwide is not None and plausible_hub(worldwide[0]) else None
         return found[0] if found is not None else None
 
     async def _lookup(
