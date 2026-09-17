@@ -70,9 +70,20 @@ async def test_province_centre_when_the_district_is_unknown(env):
 
 
 @respx.mock
-async def test_a_hit_outside_vietnam_counts_as_a_miss(env):
+async def test_a_hub_abroad_is_found_on_the_second_worldwide_pass(env):
     geocoder, repo, _, _ = env
-    respx.get(PHOTON_URL).mock(return_value=hit(48.1, 11.5, countrycode="DE"))
+    route = respx.get(PHOTON_URL).mock(return_value=hit(23.02, 113.75, countrycode="CN"))
+    assert await geocoder.coordinates("Đông Quản") == (23.02, 113.75)
+    assert route.call_count == 2, "Vietnam first, then worldwide"
+    assert "bbox" in route.calls[0].request.url.params
+    assert "bbox" not in route.calls[1].request.url.params
+    assert (await repo.get_place("|Đông Quản")).source == "osm"
+
+
+@respx.mock
+async def test_a_place_nobody_knows_is_still_a_miss(env):
+    geocoder, repo, _, _ = env
+    respx.get(PHOTON_URL).mock(return_value=httpx.Response(200, json=MISS))
     assert await geocoder.coordinates("Bưu cục Somewhere") is None
     assert (await repo.get_place("|Somewhere")).source == "none"
 
@@ -92,10 +103,10 @@ async def test_misses_are_cached_for_30_days(env):
     route = respx.get(PHOTON_URL).mock(return_value=httpx.Response(200, json=MISS))
     assert await geocoder.coordinates("Bưu cục Không Có") is None
     assert await geocoder.coordinates("Bưu cục Không Có") is None
-    assert route.call_count == 1
+    assert route.call_count == 2, "Vietnam pass, then worldwide"
     clock.advance(timedelta(days=31))
     assert await geocoder.coordinates("Bưu cục Không Có") is None
-    assert route.call_count == 2
+    assert route.call_count == 4
 
 
 @pytest.mark.parametrize(

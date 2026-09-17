@@ -86,14 +86,16 @@ class AreaLookupFailed(Exception):
     """A written area could not be looked up (network or service error)."""
 
 
-def _first_vietnam_feature(data: object) -> tuple[tuple[float, float], dict] | None:
+def _first_vietnam_feature(
+    data: object, vietnam_only: bool = True
+) -> tuple[tuple[float, float], dict] | None:
     features = data.get("features") if isinstance(data, dict) else None
     if not isinstance(features, list) or not features or not isinstance(features[0], dict):
         return None
     feature = features[0]
     properties = feature.get("properties")
     props = properties if isinstance(properties, dict) else {}
-    if props.get("countrycode") not in (None, "VN"):
+    if vietnam_only and props.get("countrycode") not in (None, "VN"):
         return None
     try:
         lon, lat = feature["geometry"]["coordinates"][:2]
@@ -171,9 +173,15 @@ class Geocoder:
 
     async def _search(self, query: str) -> tuple[float, float] | None:
         found = await self._lookup(query)
+        if found is None:
+            # A hub on a cross-border parcel sits outside Vietnam (a Chinese city, say), so a
+            # second pass drops the bounding box and takes the best match anywhere.
+            found = await self._lookup(query, worldwide=True)
         return found[0] if found is not None else None
 
-    async def _lookup(self, query: str) -> tuple[tuple[float, float], dict] | None:
+    async def _lookup(
+        self, query: str, worldwide: bool = False
+    ) -> tuple[tuple[float, float], dict] | None:
         async with self._lock:
             if self._last_request is not None:
                 wait = MIN_REQUEST_GAP_SECONDS - (self._monotonic() - self._last_request)
@@ -182,11 +190,15 @@ class Geocoder:
             try:
                 response = await self._http.get(
                     PHOTON_URL,
-                    params={"q": query, "limit": 1, "bbox": VIETNAM_BBOX},
+                    params=(
+                        {"q": query, "limit": 1}
+                        if worldwide
+                        else {"q": query, "limit": 1, "bbox": VIETNAM_BBOX}
+                    ),
                     headers={"User-Agent": USER_AGENT},
                     timeout=LOOKUP_TIMEOUT_SECONDS,
                 )
             finally:
                 self._last_request = self._monotonic()
         response.raise_for_status()
-        return _first_vietnam_feature(response.json())
+        return _first_vietnam_feature(response.json(), vietnam_only=not worldwide)
