@@ -189,3 +189,63 @@ async def test_a_quota_error_leaves_the_parcel_for_another_day(env):
     assert await repo.get_meta(f"17track-tried:{parcel.id}") is None
     await poller.run_cycle(only_user_id=USER, wait=True)
     assert len(seventeen.calls) == 2, "a parcel is not written off because quota ran out"
+
+
+def delivered_payload(description: str, location: str, sub_status: str = "") -> dict:
+    return {
+        "code": 0,
+        "data": {
+            "accepted": [
+                {
+                    "number": CODE,
+                    "carrier": 190324,
+                    "latest_status": {"status": "Delivered", "sub_status": sub_status},
+                    "track_info": {
+                        "tracking": {
+                            "providers": [
+                                {
+                                    "events": [
+                                        {
+                                            "time_utc": "2026-09-16T01:26:08Z",
+                                            "description": description,
+                                            "location": location,
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                }
+            ],
+            "rejected": [],
+        },
+    }
+
+
+async def fetch_payload(payload: dict):
+    respx.post(GET_TRACK_INFO_URL).mock(return_value=httpx.Response(200, json=payload))
+    carrier = SeventeenTrackCarrier(
+        carrier_code="cainiao", display_name="Cainiao", seventeen_carrier_id=None, api_key="k"
+    )
+    async with httpx.AsyncClient() as http:
+        return await carrier.fetch(http, CODE)
+
+
+@respx.mock
+async def test_a_chinese_warehouse_signature_is_not_delivery_to_the_buyer():
+    result = await fetch_payload(delivered_payload("您的快件已由【仓库】代收", "东莞市"))
+    assert result.found is True
+    assert result.delivered is False, "the origin leg ended, the buyer has nothing yet"
+
+
+@respx.mock
+async def test_a_locker_drop_is_not_delivery_to_the_buyer():
+    result = await fetch_payload(delivered_payload("Đã giao vào locker toà nhà", "Hà Nội"))
+    assert result.delivered is False
+
+
+@respx.mock
+async def test_delivery_to_the_buyer_still_counts():
+    result = await fetch_payload(delivered_payload("Giao hàng thành công", "Hà Nội"))
+    assert result.found is True
+    assert result.delivered is True

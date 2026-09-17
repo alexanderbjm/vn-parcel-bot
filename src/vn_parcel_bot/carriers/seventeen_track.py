@@ -5,7 +5,7 @@ import httpx
 
 from vn_parcel_bot.carriers.common import clean_text, json_body, request
 from vn_parcel_bot.carriers.models import CarrierCode, CarrierError, TrackingEvent, TrackingResult
-from vn_parcel_bot.carriers.translate_cn import translate_cn
+from vn_parcel_bot.carriers.translate_cn import has_chinese, translate_cn
 
 SEVENTEEN_TRACK_BASE = "https://api.17track.net/track/v2.4"
 REGISTER_URL = f"{SEVENTEEN_TRACK_BASE}/register"
@@ -19,6 +19,24 @@ ERR_QUOTA_EXCEEDED = -18019908
 DELIVERED_STATUSES = ("Delivered",)
 RETURNED_STATUSES = ("Returned", "ReturnToSender")
 RETURNED_SUB_STATUSES = ("Exception_Returning", "Exception_Returned")
+# Wording that means a warehouse, locker or agent took the parcel, not the buyer.
+THIRD_PARTY_MARKERS = ("代收", "仓库", "驿站", "快递柜", "自提", "menaruh", "locker")
+
+
+def _delivered_to_recipient(last_scan: dict[str, Any] | None) -> bool:
+    """True only when the last scan looks like delivery to the buyer.
+
+    17TRACK reports "Delivered" for the end of the origin leg as well: a Chinese warehouse
+    signing for a cross-border parcel closes that leg while the parcel is still in China. A
+    last scan written in Chinese, or signed by a warehouse, locker or agent, keeps the parcel
+    in transit so the bot does not announce it as delivered.
+    """
+    if last_scan is None:
+        return True
+    text = f"{last_scan.get('description') or ''} {last_scan.get('location') or ''}"
+    if has_chinese(text):
+        return False
+    return not any(marker in text.casefold() for marker in THIRD_PARTY_MARKERS)
 
 
 class SeventeenTrackCarrier:
@@ -172,6 +190,7 @@ class SeventeenTrackCarrier:
         providers = tracking.get("providers") or track_info.get("providers") or []
 
         events: list[TrackingEvent] = []
+        scans: list[tuple[datetime, dict[str, Any]]] = []
         raw_events: list[dict[str, Any]] = []
         for provider in providers:
             if isinstance(provider, dict):
@@ -204,9 +223,11 @@ class SeventeenTrackCarrier:
                     raw_status=str(stage) if stage else None,
                 )
             )
+            scans.append((dt, ev))
 
         found = status != "NotFound" or len(events) > 0
-        delivered = status in DELIVERED_STATUSES
+        last_scan = max(scans, key=lambda scan: scan[0])[1] if scans else None
+        delivered = status in DELIVERED_STATUSES and _delivered_to_recipient(last_scan)
         returned = (
             status in RETURNED_STATUSES
             or sub_status in RETURNED_SUB_STATUSES
