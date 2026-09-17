@@ -191,4 +191,6 @@ def test_latest_place_takes_the_newest_event_with_a_place(snapshot):
     post_office = event(0, "Đã đến", location=" Bưu cục  Quận 7 ")
     assert snapshot.latest_place("jt", [post_office]) == "Bưu cục Quận 7"
     assert snapshot.latest_place(None, [post_office]) is None
-    assert snapshot.latest_place("gone", [post_office]) is None
+    # 17TRACK can identify a carrier we carry no module for: the event's own place is used.
+    assert snapshot.latest_place("gone", [post_office]) == "Bưu cục Quận 7"
+    assert snapshot.latest_place("gone", [event(0, "Đang giao hàng", location=None)]) is None

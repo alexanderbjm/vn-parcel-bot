@@ -127,12 +127,17 @@ class CarrierSnapshot:
         return None if value is None else max(0, min(100, int(value)))
 
     def latest_place(self, carrier: str | None, events: Iterable[TrackingEvent]) -> str | None:
-        module = self.get(carrier) if carrier is not None else None
-        if module is None:
+        """The newest event's place.
+
+        A result can come from a source with no module of its own (17TRACK identifying a
+        carrier we do not carry), so without a module the event's own location is used.
+        """
+        if carrier is None:
             return None
+        module = self.get(carrier)
         for event in sorted(events, key=lambda item: item.time, reverse=True):
             try:
-                value = module.place(event)
+                value = module.place(event) if module is not None else event.location
             except Exception as exc:
                 log.warning("carrier place failed carrier=%s type=%s", carrier, type(exc).__name__)
                 return None
