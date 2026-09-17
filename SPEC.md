@@ -1269,6 +1269,25 @@ async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id:
 - On the first start after this shipped (meta `SEEDED_KEY` unset) a `sticker:<code>` for a carrier that has an icon is deleted once, so a sticker mapped before the icons existed gives way to the shipped one; `/sticker` afterwards is untouched.
 - `TelegramNotifier.upload_sticker` is the Telegram side: `send_sticker(chat_id, sticker=<bytes>, disable_notification=True)`, return `message.sticker.file_id`, delete the message, and return `None` on any `TelegramError`.
 
+### 9.14 `build_info.py`
+
+```python
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MAX_COMMITS = 50
+VI_NOTE = "vi:"
+
+
+def deployed_revision() -> str | None: ...        # "abc1234 · 17/09/2026", or None
+def deployed_revision_sha() -> str | None: ...    # "abc1234", for comparing one start to the last
+def revision_commits(since: str | None) -> list[str]: ...   # one note per commit, newest first
+```
+
+- Git is read with `git -C REPO_ROOT log …`, `subprocess.run(..., encoding="utf-8", errors="replace")`. The console codepage on the bot's PC is cp1252, so a `Vi:` note with Vietnamese diacritics raises inside the reader thread and the call returns nothing at all — which would empty the notice's "Thay đổi" section without an error (§11).
+- `revision_commits` returns one line per commit after `since` up to `HEAD`, newest first, capped at `MAX_COMMITS`; an empty list when `since` is unset, no longer resolvable (a rewritten branch) or git cannot answer.
+- **The notice line is a commit's own wording.** A commit says what changed in plain Vietnamese on a line beginning `Vi:` in its body, and that line — not the English subject — is what the admin reads (e.g. `Vi: Bưu cục ghi trong ngoặc như (HNI) Nguyễn Văn Giáp giờ hiện đúng khoảng cách`). The subject is written for the repository and is usually too technical to send to a person, so it is only a fallback: a commit without a `Vi:` line keeps its subject rather than vanishing from the notice.
+- Write the `Vi:` line for the admin, not for a developer: short, concrete, describing what they will see differently in Telegram. Avoid jargon ("cache", "parse", "pipeline") and commit-speak ("refactor").
+- The async wrappers (`deployed_revision_async`, `deployed_revision_sha_async`, `revision_commits_async`) run these calls off the event loop: the lookup shells out to git and would otherwise block every handler, the poll cycle and the digests for up to the 10 s timeout.
+
 ## 10. Configuration
 
 ### 10.1 `.env`
