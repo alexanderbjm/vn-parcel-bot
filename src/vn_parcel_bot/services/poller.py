@@ -33,12 +33,13 @@ from vn_parcel_bot.constants import (
     STALE_AFTER,
 )
 from vn_parcel_bot.db.repo import Parcel, Repository, User
-from vn_parcel_bot.keyboards import card_keyboard
+from vn_parcel_bot.keyboards import list_keyboard
 from vn_parcel_bot.services.formatting import (
+    Moved,
     format_carrier_alert,
-    format_event_update,
     format_expired,
     format_stale,
+    format_updates,
     truncate_message,
 )
 from vn_parcel_bot.services.maps import MapError
@@ -273,16 +274,20 @@ class Poller:
 
         alerts: dict[CarrierCode, tuple[int, str]] = {}
         processed: list[int] = []
+        updates: dict[int, list[Moved]] = {}
         for parcel in parcels:
             keys = keys_by_parcel[parcel.id]
             if not keys:
                 continue
             processed.append(parcel.id)
             try:
-                await self._process(parcel, keys, outcomes, now, report, alerts, rebuild=rebuild)
+                await self._process(
+                    parcel, keys, outcomes, now, report, alerts, updates, rebuild=rebuild
+                )
             except Exception:
                 log.exception("processing failed code=%s", mask_code(parcel.tracking_number))
 
+        await self._send_updates(updates, report)
         await self._check_stale(processed, now, report)
         self._add_all_failed_alerts(by_carrier, outcomes, alerts)
         await self._send_alerts(alerts, now, report)
@@ -349,6 +354,7 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        updates: dict[int, list[Moved]],
         *,
         rebuild: bool = False,
     ) -> None:
@@ -364,9 +370,11 @@ class Poller:
             if finished and (isinstance(outcome, CarrierError) or not outcome.found):
                 return
             if isinstance(outcome, CarrierError):
-                await self._handle_failure(parcel, outcome, now, report, alerts)
+                await self._handle_failure(parcel, outcome, now, report, alerts, updates)
             else:
-                await self._handle_result(parcel, outcome, now, report, alerts, rebuild=rebuild)
+                await self._handle_result(
+                    parcel, outcome, now, report, alerts, updates, rebuild=rebuild
+                )
             return
 
         results = [(key, outcomes[key]) for key in keys]
@@ -387,6 +395,7 @@ class Poller:
                     now,
                     report,
                     alerts,
+                    updates,
                     resolved_carrier=key.carrier,
                     rebuild=rebuild,
                 )
@@ -395,11 +404,11 @@ class Poller:
             return
         errors = [outcome for _, outcome in results if isinstance(outcome, CarrierError)]
         if errors:
-            await self._handle_failure(parcel, errors[0], now, report, alerts)
+            await self._handle_failure(parcel, errors[0], now, report, alerts, updates)
             return
         first = results[0][1]
         assert isinstance(first, TrackingResult)
-        await self._handle_result(parcel, first, now, report, alerts)
+        await self._handle_result(parcel, first, now, report, alerts, updates)
 
     async def _handle_result(
         self,
@@ -408,6 +417,7 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        updates: dict[int, list[Moved]],
         *,
         resolved_carrier: CarrierCode | None = None,
         rebuild: bool = False,
@@ -443,37 +453,31 @@ class Poller:
             if new or newly_delivered or newly_returned:
                 current = await self._repo.get_parcel(parcel.id)
                 user = await self._repo.get_user(parcel.user_id)
-                place_line = (
-                    await self._maps.place_line(current, user)
-                    if self._maps is not None and current is not None and user is not None
-                    else None
-                )
-                text = format_event_update(
-                    parcel,
-                    new,
-                    self._settings.tz,
-                    delivered=newly_delivered,
-                    returned=newly_returned,
-                    resolved_carrier=resolved_carrier,
-                    progress=shown,
-                    place_line=place_line,
-                )
                 reached = (
                     progress is not None
                     and progress >= OUT_FOR_DELIVERY_PROGRESS
                     and (parcel.progress or 0) < OUT_FOR_DELIVERY_PROGRESS
                 )
                 big_moment = newly_delivered or newly_returned or reached
-                await self._send_sticker(parcel.user_id, result.carrier)
-                await self._notify(
-                    parcel.user_id,
-                    text,
-                    report,
-                    silent=None if big_moment else True,
-                    reply_markup=(
-                        card_keyboard(current, maps=self._maps_on) if current is not None else None
-                    ),
+                place_line = (
+                    await self._maps.place_line(current, user)
+                    if self._maps is not None and current is not None and user is not None
+                    else None
                 )
+                newest = max(new, key=lambda event: event.time) if new else result.latest
+                if newest is not None:
+                    await self._send_sticker(parcel.user_id, result.carrier)
+                    updates.setdefault(parcel.user_id, []).append(
+                        Moved(
+                            current or parcel,
+                            newest,
+                            big_moment,
+                            resolved_carrier=resolved_carrier,
+                            delivered=newly_delivered,
+                            returned=newly_returned,
+                            place_line=place_line,
+                        )
+                    )
                 if moved and current is not None and user is not None:
                     await self._send_map(current, user)
             return
@@ -481,9 +485,9 @@ class Poller:
         if parcel.carrier is not None and await self._repo.count_events(parcel.id) > 0:
             report.failures[parcel.carrier] = report.failures.get(parcel.carrier, 0) + 1
             error = CarrierError(parcel.carrier, "parse", "events disappeared")
-            await self._handle_failure(parcel, error, now, report, alerts)
+            await self._handle_failure(parcel, error, now, report, alerts, updates)
             return
-        if await self._aggregator_fallback(parcel, now, report, alerts):
+        if await self._aggregator_fallback(parcel, now, report, alerts, updates):
             return
         if now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)
@@ -503,6 +507,7 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        updates: dict[int, list[Moved]],
         *,
         register: bool = True,
     ) -> bool:
@@ -525,7 +530,9 @@ class Poller:
             return False
         masked = mask_code(parcel.tracking_number)
         for source in self._aggregators:
-            if await self._ask_aggregator(source, parcel, now, report, alerts, register, masked):
+            if await self._ask_aggregator(
+                source, parcel, now, report, alerts, updates, register, masked
+            ):
                 return True
         return False
 
@@ -536,6 +543,7 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        updates: dict[int, list[Moved]],
         register: bool,
         masked: str,
     ) -> bool:
@@ -581,7 +589,7 @@ class Poller:
         log.info(
             "%s fallback found data code=%s events=%s", source.name, masked, len(result.events)
         )
-        await self._handle_result(parcel, result, now, report, alerts)
+        await self._handle_result(parcel, result, now, report, alerts, updates)
         return True
 
     async def _registrations_paused(self, now: datetime, name: str) -> bool:
@@ -656,10 +664,11 @@ class Poller:
         now: datetime,
         report: PollReport,
         alerts: dict[CarrierCode, tuple[int, str]],
+        updates: dict[int, list[Moved]],
     ) -> None:
         # The parcel's own carrier is failing, so 17TRACK answers instead when it already
         # tracks this parcel. Without this a carrier that keeps erroring freezes the parcel.
-        if await self._aggregator_fallback(parcel, now, report, alerts, register=False):
+        if await self._aggregator_fallback(parcel, now, report, alerts, updates, register=False):
             return
         if parcel.state == "pending" and now - parcel.created_at > PENDING_EXPIRY:
             await self._expire(parcel, now, report)
@@ -731,6 +740,26 @@ class Poller:
         if not ok:
             self._broken_stickers.add(carrier)
             log.warning("carrier sticker failed carrier=%s", carrier)
+
+    async def _send_updates(self, updates: dict[int, list[Moved]], report: PollReport) -> None:
+        """One message per owner: every parcel of theirs that moved, newest scan only.
+
+        Grouping is per person, never per check: one allowed user must never see another's
+        parcels. A delivery anywhere in the message gives the whole message its sound.
+        """
+        for user_id, items in updates.items():
+            if not items:
+                continue
+            text = format_updates(items, self._settings.tz)
+            numbered = list(enumerate((item.parcel for item in items), start=1))
+            big = any(item.big_moment for item in items)
+            await self._notify(
+                user_id,
+                text,
+                report,
+                silent=None if big else True,
+                reply_markup=list_keyboard(numbered, page=1, pages=1),
+            )
 
     async def _notify(
         self,

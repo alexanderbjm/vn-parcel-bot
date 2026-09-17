@@ -198,6 +198,9 @@ UPDATE_RESOLVED = "🔎 Đã xác định hãng vận chuyển: <b>{carrier}</b>
 UPDATE_LINE = "• {time} — {description}"
 UPDATE_LOCATION = " ({location})"
 UPDATE_MORE = "… và {count} cập nhật trước đó"
+UPDATES_HEADER = "📦 <b>Các đơn được cập nhật</b>"
+UPDATES_ITEM = "{emoji} <b>{title}</b> · {carrier}"
+UPDATES_LINE = "    {time} — {description}"
 UPDATE_DELIVERED = "✅ <b>Đã giao thành công!</b>"
 UPDATE_RETURNED = "↩️ <b>Đơn đang được hoàn về người gửi.</b>"
 

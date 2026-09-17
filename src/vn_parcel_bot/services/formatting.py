@@ -3,6 +3,7 @@ import math
 import re
 import urllib.parse
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -389,6 +390,66 @@ def format_digest(
         footer += texts.DIGEST_FOOTER_FINISHED.format(finished=finished)
     header = texts.DIGEST_HEADER.format(time=at.astimezone(tz).strftime("%H:%M"))
     return truncate_message(header + "\n\n" + "\n".join(items) + "\n\n" + footer)
+
+
+@dataclass(frozen=True)
+class Moved:
+    """One parcel that moved during a check, and what is worth saying about it."""
+
+    parcel: Parcel
+    event: TrackingEvent
+    big_moment: bool = False
+    resolved_carrier: CarrierCode | None = None
+    delivered: bool = False
+    returned: bool = False
+    # Where the parcel is and how far that is: one hub per parcel, not per message.
+    place_line: str | None = None
+
+
+def format_updates(items: Sequence[Moved], tz: ZoneInfo) -> str:
+    """One message for everything that moved in a check, a single line per parcel.
+
+    A carrier often writes several scans at once; repeating them all buried the one thing
+    worth reading. Only the newest is shown, and the card behind each parcel still has the
+    full history.
+    """
+    blocks: list[str] = []
+    for item in items:
+        parcel, event = item.parcel, item.event
+        progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
+        lines = [
+            texts.UPDATES_ITEM.format(
+                emoji=texts.STATE_EMOJI[parcel.state],
+                title=parcel_title(parcel),
+                carrier=parcel_carrier_label(parcel) + progress_suffix,
+            )
+        ]
+        if bar:
+            lines.append("    " + bar)
+        if item.resolved_carrier is not None:
+            lines.append(
+                "    " + texts.UPDATE_RESOLVED.format(carrier=carrier_name(item.resolved_carrier))
+            )
+        lines.append(
+            texts.UPDATES_LINE.format(
+                time=format_time(event.time, tz), description=_event_text(event)
+            )
+        )
+        if item.place_line:
+            lines.append("    " + item.place_line)
+        blocks.append("\n".join(lines))
+    text = texts.UPDATES_HEADER + "\n\n" + "\n\n".join(blocks)
+    # The footer closes the message, so a delivery reads as an ending rather than a line.
+    if any(item.delivered for item in items):
+        text += "\n\n" + texts.UPDATE_DELIVERED
+    elif any(item.returned for item in items):
+        text += "\n\n" + texts.UPDATE_RETURNED
+    return truncate_message(text)
+
+
+def _event_text(event: TrackingEvent) -> str:
+    said = _escape(event.description)
+    return f"{said} ({_escape(event.location)})" if event.location else said
 
 
 def format_history(parcel: Parcel, events: Sequence[TrackingEvent], tz: ZoneInfo) -> str:

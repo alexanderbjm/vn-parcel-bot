@@ -92,7 +92,10 @@ async def test_new_hub_sends_the_update_then_the_map(env):
     text = notifier.sent[-1][1]
     assert text.endswith(texts.PLACE_LINE.format(place="Kho Thanh Tri", distance="~10 km"))
     markup = notifier.markups[-1]
-    assert f"p:{parcel.id}:map" in [b.callback_data for row in markup.inline_keyboard for b in row]
+    # The grouped message carries numbered buttons; the map button lives on the card behind them.
+    assert f"p:{parcel.id}:card:1" in [
+        b.callback_data for row in markup.inline_keyboard for b in row
+    ]
     assert len(notifier.photos) == 1
     chat_id, png, caption, silent = notifier.photos[0]
     assert (chat_id, silent) == (1, True)

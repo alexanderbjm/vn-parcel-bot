@@ -158,8 +158,8 @@ async def test_new_events_notify_once(poller, repo, fakes, notifier, clock):
     report = await poller.run_cycle()
     sent = messages_to(notifier, USER)
     assert len(sent) == 1
-    assert "Alpha" in sent[0]
-    assert "Beta" in sent[0]
+    assert "Beta" in sent[0], "the newest scan"
+    assert "Alpha" not in sent[0], "older scans stay in the history, not the message"
     assert (await repo.get_parcel(parcel.id)).state == "in_transit"
     assert (report.parcels_checked, report.fetches, report.new_events, report.messages_sent) == (
         1,
@@ -423,7 +423,7 @@ async def test_notifier_failure_does_not_stop_cycle(repo, fakes, settings, clock
     assert await repo.count_events(first.id) == 1
     assert await repo.count_events(second.id) == 1
     assert report.messages_sent == 0
-    assert len(failing.sent) == 2
+    assert len(failing.sent) == 1, "both parcels share one grouped message"
 
 
 async def test_purges_old_terminal(poller, repo):
@@ -593,7 +593,7 @@ async def test_found_result_stores_progress_and_update_shows_bar(poller, repo, f
     await poller.run_cycle()
     assert (await repo.get_parcel(parcel.id)).progress == 95
     text = notifier.sent[0][1]
-    assert text.split("\n")[0].endswith(" · 95%")
+    assert " · 95%" in text.split("\n")[2], "the parcel line carries its progress"
     assert "🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥" in text
 
 
@@ -602,7 +602,9 @@ async def test_update_message_has_card_buttons_and_is_silent(poller, repo, fakes
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
     await poller.run_cycle()
     assert notifier.sent[0][2] is True
-    assert notifier.markups[0].inline_keyboard[0][0].callback_data == f"p:{parcel.id}:ren"
+    assert notifier.markups[0].inline_keyboard[0][0].callback_data == f"p:{parcel.id}:card:1", (
+        "one grouped message carries numbered buttons, not one parcel's card"
+    )
 
 
 async def test_out_for_delivery_and_delivered_ring(poller, repo, fakes, notifier, clock):
@@ -771,3 +773,62 @@ async def test_a_failing_order_is_tried_again_within_the_ceiling(poller, repo, f
     stored = await repo.get_parcel(parcel.id)
     assert stored.consecutive_failures == 8, "every cycle failed"
     assert stored.next_check_at - now <= MAX_CHECK_GAP
+
+
+async def test_two_parcels_moving_together_arrive_as_one_message(poller, repo, fakes, notifier):
+    """A carrier writing several scans at once should not mean several notifications."""
+    await add(repo, SPX, "spx")
+    await add(repo, "SPXVN000000000002", "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    fakes["spx"].results[("SPXVN000000000002", None)] = found(
+        "spx", "SPXVN000000000002", ev(5, "Đã đến kho")
+    )
+    report = await poller.run_cycle()
+    sent = messages_to(notifier, USER)
+    assert len(sent) == 1, "one message for the whole check"
+    assert report.messages_sent == 1
+    assert texts.UPDATES_HEADER in sent[0]
+    assert "Đang giao hàng" in sent[0]
+    assert "Đã đến kho" in sent[0]
+
+
+async def test_each_owner_gets_their_own_message(poller, repo, fakes, notifier):
+    """Grouping is per person: one family member never sees another's parcels."""
+    await add(repo, SPX, "spx", user_id=USER)
+    await add(repo, "SPXVN000000000002", "spx", user_id=ADMIN)
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Của bạn"))
+    fakes["spx"].results[("SPXVN000000000002", None)] = found(
+        "spx", "SPXVN000000000002", ev(5, "Của người khác")
+    )
+    await poller.run_cycle()
+    mine = messages_to(notifier, USER)
+    theirs = messages_to(notifier, ADMIN)
+    assert len(mine) == 1 and len(theirs) == 1
+    assert "Của bạn" in mine[0] and "Của người khác" not in mine[0]
+    assert "Của người khác" in theirs[0] and "Của bạn" not in theirs[0]
+
+
+async def test_a_delivery_in_the_group_still_arrives_with_sound(poller, repo, fakes, notifier):
+    """Ordinary movement stays quiet; a delivery in the same message still pings."""
+    await add(repo, SPX, "spx")
+    await add(repo, "SPXVN000000000002", "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đang giao hàng"))
+    fakes["spx"].results[("SPXVN000000000002", None)] = found(
+        "spx", "SPXVN000000000002", ev(5, "Giao hàng thành công"), delivered=True
+    )
+    await poller.run_cycle()
+    silent_flags = [silent for chat, _, silent in notifier.sent if chat == USER]
+    assert silent_flags == [False], "the message carries sound because one parcel was delivered"
+
+
+async def test_only_the_newest_scan_of_each_parcel_is_shown(poller, repo, fakes, notifier):
+    """The wall of history is what made these unreadable."""
+    await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found(
+        "spx", SPX, ev(0, "Cũ nhất"), ev(10, "Ở giữa"), ev(20, "Mới nhất")
+    )
+    await poller.run_cycle()
+    sent = messages_to(notifier, USER)[0]
+    assert "Mới nhất" in sent
+    assert "Cũ nhất" not in sent
+    assert "Ở giữa" not in sent

@@ -6,6 +6,7 @@ from vn_parcel_bot import texts
 from vn_parcel_bot.carriers.models import CarrierError, TrackingResult
 from vn_parcel_bot.db.repo import Parcel, User
 from vn_parcel_bot.services.formatting import (
+    Moved,
     carrier_name,
     carrier_names,
     format_add_outcome,
@@ -24,6 +25,7 @@ from vn_parcel_bot.services.formatting import (
     format_parcel_list,
     format_stale,
     format_time,
+    format_updates,
     format_users,
     list_pages,
     parcel_carrier_label,
@@ -620,3 +622,34 @@ def test_the_other_sorts_keep_the_two_part_split():
     text = format_parcel_list([moving, done], TZ)
     assert texts.LIST_SECTION_ACTIVE in text
     assert texts.LIST_STAGE_MOVING not in text
+
+
+def test_grouped_updates_list_each_parcel_with_one_line():
+    """One message, one update per parcel: no history dump, no per-parcel notification."""
+    first = make_parcel(id=1, label="Áo", progress=95)
+    second = make_parcel(id=2, label="Quần", carrier="ghn", candidates=("ghn",))
+    text = format_updates(
+        [
+            Moved(first, ev(0, "Đang giao hàng", "Hà Nội")),
+            Moved(second, ev(5, "Đã đến kho")),
+        ],
+        TZ,
+    )
+    assert text.startswith(texts.UPDATES_HEADER)
+    assert "Đang giao hàng" in text
+    assert "Đã đến kho" in text
+    assert text.count("—") == 2, "exactly one update line per parcel"
+    assert "Áo" in text and "Quần" in text
+
+
+def test_grouped_updates_show_the_newest_event_only():
+    parcel = make_parcel(id=1, label="Áo")
+    text = format_updates([Moved(parcel, ev(30, "Mới nhất"))], TZ)
+    assert "Mới nhất" in text
+    assert texts.UPDATE_MORE.split("{")[0] not in text, "no 'and N earlier updates' tail"
+
+
+def test_grouped_updates_carry_the_location_when_there_is_one():
+    parcel = make_parcel(id=1, label="Áo")
+    text = format_updates([Moved(parcel, ev(0, "Đã đến kho", "Đông Quản"))], TZ)
+    assert "Đông Quản" in text
