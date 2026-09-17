@@ -16,6 +16,7 @@ from vn_parcel_bot.services.geo_provinces import PROVINCES
 log = logging.getLogger(__name__)
 
 _LEADING_NUMBER = re.compile(r"^\d{1,3}-")
+_LEADING_CODE = re.compile(r"^\(([A-Za-z0-9]{2,4})\)\s*")
 _POST_OFFICE = re.compile(r"^bưu cục\s+", re.IGNORECASE)
 _HUB_WORDS = frozenset({"hub", "soc", "mega", "lm", "kho", "bc"})
 EARTH_RADIUS_KM = 6371.0
@@ -79,10 +80,23 @@ def _is_hub_suffix(token: str) -> bool:
 
 
 def clean_place(raw: str) -> PlaceParts:
-    """Split hub text like "21-HNI Thanh Tri 2 Hub" into a province code and a district."""
-    text = _POST_OFFICE.sub("", _LEADING_NUMBER.sub("", " ".join(raw.split())))
+    """Split hub text like "21-HNI Thanh Tri 2 Hub" into a province code and a district.
+
+    Two shapes carry the code: a numeric prefix ("21-HNI …") and a bracketed one ("(HNI) Nguyễn
+    Văn Giáp", how J&T names a post office). The bracketed form has to be taken as the code —
+    left in place it is part of the district, and "Nguyễn Văn Giáp" on its own resolves to the
+    Hồ Chí Minh City street of that name rather than the Hà Nội one, 1146 km away.
+    """
+    text = " ".join(raw.split())
+    code = None
+    bracketed = _LEADING_CODE.match(text)
+    if bracketed is not None and bracketed.group(1).upper() in PROVINCES:
+        code = bracketed.group(1).upper()
+        text = text[bracketed.end() :]
+    text = _POST_OFFICE.sub("", _LEADING_NUMBER.sub("", text))
     tokens = text.split(" ") if text else []
-    code = tokens.pop(0) if tokens and tokens[0] in PROVINCES else None
+    if code is None and tokens and tokens[0] in PROVINCES:
+        code = tokens.pop(0)
     dropped = False
     while tokens and tokens[-1].casefold() in _HUB_WORDS:
         tokens.pop()

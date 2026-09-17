@@ -149,9 +149,7 @@ async def test_list_places_gives_a_line_and_a_distance_for_each_parcel(env):
     await repo.save_place("HNI|Thanh Tri", 20.94, 105.84, "osm", T0)
     maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
     lines, distances = await maps.list_places([parcel], await repo.get_user(1))
-    assert lines[parcel.id] == texts.LIST_PLACE_LINE.format(
-        place="Kho Thanh Tri", distance="~10 km"
-    )
+    assert lines[parcel.id] == texts.PLACE_LINE.format(place="Kho Thanh Tri", distance="~10 km")
     assert 9 < distances[parcel.id] < 11
 
 
@@ -167,9 +165,30 @@ async def test_list_places_leaves_out_a_parcel_with_no_hub(env):
     assert distances == {}
 
 
+async def test_ensure_prepared_looks_up_a_key_with_no_row_yet(env):
+    repo, settings, _ = env
+    geocoder = FakeGeocoder()
+    maps = ParcelMaps(repo, geocoder, tiles, settings)
+
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+
+    assert geocoder.calls == ["21-HNI Thanh Tri 2 Hub"]
+
+
+async def test_ensure_prepared_leaves_a_looked_up_hub_alone(env):
+    repo, settings, _ = env
+    await repo.save_place("HNI|Thanh Tri", 20.94, 105.84, "osm", T0)
+    geocoder = FakeGeocoder()
+    maps = ParcelMaps(repo, geocoder, tiles, settings)
+
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+
+    assert geocoder.calls == [], "a hub that has coordinates is never asked for twice"
+
+
 async def test_list_places_shows_the_hub_alone_when_the_distance_is_unknown(env):
     repo, settings, parcel = env
     maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
     lines, distances = await maps.list_places([parcel], await repo.get_user(1))
-    assert lines[parcel.id] == texts.LIST_PLACE_ONLY.format(place="Kho Thanh Tri")
+    assert lines[parcel.id] == texts.PLACE_ONLY_LINE.format(place="Kho Thanh Tri")
     assert distances == {}

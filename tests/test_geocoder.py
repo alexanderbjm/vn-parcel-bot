@@ -110,6 +110,19 @@ async def test_a_bd_hub_is_binh_duong_and_needs_no_request(env):
 
 
 @respx.mock
+async def test_a_bracketed_post_office_is_asked_for_with_its_province(env):
+    # Taken whole, "Nguyễn Văn Giáp" is also a street in Hồ Chí Minh City, 1146 km from Hà Nội.
+    geocoder, repo, _, _ = env
+    route = respx.get(PHOTON_URL).mock(return_value=hit(21.03, 105.79))
+    assert await geocoder.coordinates("(HNI) Nguyễn Văn Giáp") == (21.03, 105.79)
+    assert route.call_count == 1, "the province is in the query, so no worldwide pass is needed"
+    request = route.calls.last.request
+    assert request.url.params["q"] == f"Nguyễn Văn Giáp, {PROVINCES['HNI'][0]}"
+    assert request.url.params["bbox"] == VIETNAM_BBOX
+    assert (await repo.get_place("HNI|Nguyễn Văn Giáp")).source == "osm"
+
+
+@respx.mock
 async def test_a_worldwide_match_off_the_route_is_rejected(env):
     geocoder, repo, _, _ = env
     # The Vietnam pass misses, then the unbounded pass offers München for a Vietnamese hub.

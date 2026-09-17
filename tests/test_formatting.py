@@ -187,9 +187,11 @@ def test_parcel_list_items():
     ]
     text = format_parcel_list(parcels, TZ, sort="n")
     assert text.startswith(texts.LIST_HEADER + "\n\n")
-    assert f"1. <b>Áo</b> · SPX\n├ {blurred(SPX)}\n├ Đang giao\n└ 🕒 01/09 08:30" in text
+    assert f"1. <b>Áo</b> · SPX · 0%\n├ {blurred(SPX)}\n├ Đang giao\n└ 🕒 01/09 08:30" in text, (
+        "a parcel whose progress nobody worked out reads 0%, not blank"
+    )
     assert (
-        f"2. <b>{blurred('GA0000000001')}</b> · Đang xác định hãng\n"
+        f"2. <b>{blurred('GA0000000001')}</b> · Đang xác định hãng · 0%\n"
         "└ Chưa có thông tin vận chuyển" in text
     )
 
@@ -452,10 +454,10 @@ def test_list_row_hangs_its_details_off_branches_without_a_bar():
     assert "🟩" not in text and "🟥" not in text
 
 
-def test_list_item_hides_progress_for_returned_and_unknown():
+def test_list_item_shows_a_percentage_even_when_none_is_known():
     returned = make_parcel(label="Áo", state="returned", progress=80)
-    assert "80%" not in format_parcel_list([returned], TZ)
-    assert "%" not in format_parcel_list([make_parcel(label="Áo")], TZ)
+    assert "· 80%" in format_parcel_list([returned], TZ)
+    assert "· 0%" in format_parcel_list([make_parcel(label="Áo")], TZ)
 
 
 def test_digest_puts_new_mark_after_progress():
@@ -497,7 +499,7 @@ def test_parcel_card_shows_title_progress_bar_and_status():
         "🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥\nĐã đến kho · 🕒 01/09 08:30"
     )
     pending = format_parcel_card(unresolved(), TZ)
-    assert pending.startswith(f"⏳ <b>{blurred('GA0000000001')}</b> · GHN / Ninja Van\n")
+    assert pending.startswith(f"⏳ <b>{blurred('GA0000000001')}</b> · GHN / Ninja Van · 0%\n")
 
 
 def test_parcel_link_prefers_module_link():
@@ -542,6 +544,25 @@ def test_check_done_mentions_rebuilt_parcels_and_new_scripts():
     )
 
 
+def test_every_parcel_row_carries_a_percentage():
+    parcels = [
+        make_parcel(id=1, label="Đã giao", state="delivered"),
+        make_parcel(id=2, label="Đang đi", progress=50),
+        make_parcel(id=3, label="Chưa rõ", state="pending"),
+        make_parcel(id=4, label="Im lặng", state="stale"),
+    ]
+    text = format_parcel_list(parcels, TZ, sort="n")
+    assert "· 100%" in text
+    assert "· 50%" in text
+    assert text.count("· 0%") == 2, "a parcel nothing is known about is 0%, not blank"
+
+
+def test_a_parcel_with_no_progress_gets_no_bar():
+    card = format_parcel_card(make_parcel(id=1, label="Chưa rõ", state="pending"), TZ)
+    assert "· 0%" in card
+    assert "🟩" not in card and "🟥" not in card, "an empty bar says nothing"
+
+
 def test_place_texts_do_not_say_straight_line():
     assert "chim bay" not in texts.PLACE_LINE
     assert "chim bay" not in texts.MAP_CAPTION
@@ -549,9 +570,9 @@ def test_place_texts_do_not_say_straight_line():
 
 def test_list_row_shows_where_the_parcel_is_and_how_far():
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0)
-    line = texts.LIST_PLACE_LINE.format(place="Quảng Đông", distance="~1960 km")
+    line = texts.PLACE_LINE.format(place="Quảng Đông", distance="~1960 km")
     text = format_parcel_list([parcel], TZ, places={1: line})
-    assert "📦 Kiện hàng đã tới Quảng Đông · cách bạn ~1960 km" in text
+    assert "📍 Quảng Đông · cách bạn ~1960 km" in text
     assert "Đã đến kho" not in text, "the hub line takes the place of the older status text"
     assert "🕒 01/09 08:30" in text, "the time of that last move stays"
 

@@ -72,13 +72,23 @@ def progress_bar(percent: int, width: int = 10) -> str:
     return "🟩" * filled + "🟥" * (width - filled)
 
 
-def _progress_parts(progress: int | None, state: str) -> tuple[str, str]:
-    # A delivered parcel keeps "100%" but loses the bar: a full green row is just noise.
+def _progress_parts(progress: int | None, state: str, *, always: bool = False) -> tuple[str, str]:
+    """The " · N%" suffix, and the bar while a parcel is known to be moving.
+
+    `always` is for the parcel views — the list row and the card — which carry a percentage on
+    every one so the column reads the same all the way down: a parcel nothing is known about yet
+    is 0%, not blank. An update message is about an event rather than a snapshot, so it keeps the
+    old behaviour and claims nothing when the progress is unknown. A delivered parcel keeps
+    "100%" but loses the bar — a full green row is just noise — and so does one whose progress
+    nobody has worked out, because an empty bar says nothing either.
+    """
     if state == "delivered":
         return texts.PROGRESS_SUFFIX.format(percent=100), ""
-    if progress is None or state != "in_transit":
+    moving = state == "in_transit" and progress is not None
+    if not moving and not always:
         return "", ""
-    return texts.PROGRESS_SUFFIX.format(percent=progress), progress_bar(progress)
+    percent = progress if progress is not None else 0
+    return texts.PROGRESS_SUFFIX.format(percent=percent), (progress_bar(percent) if moving else "")
 
 
 def _link_item(url: str, name: str) -> str:
@@ -183,7 +193,7 @@ def _list_item(
     )
     # The percent on the title line already says how far along the parcel is; a row of ten
     # emoji would say it again, twice as wide, on every row at once. The card keeps the bar.
-    progress_suffix, _ = _progress_parts(parcel.progress, parcel.state)
+    progress_suffix, _ = _progress_parts(parcel.progress, parcel.state, always=True)
     # Where the parcel is says more than the carrier's own wording, so it takes that line.
     # A row that would only repeat its own section heading says nothing, so it stays empty.
     body = place or ("" if status == texts.STATE_TEXT[parcel.state] and heading else status)
@@ -203,7 +213,7 @@ def _list_item(
 
 
 def format_parcel_card(parcel: Parcel, tz: ZoneInfo, place_line: str | None = None) -> str:
-    progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
+    progress_suffix, bar = _progress_parts(parcel.progress, parcel.state, always=True)
     status = (
         _escape(parcel.last_status_text)
         if parcel.last_status_text

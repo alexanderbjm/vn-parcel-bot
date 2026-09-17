@@ -39,6 +39,20 @@ class ParcelMaps:
         if self._settings.maps_enabled:
             await self._geocoder.coordinates(place)
 
+    async def ensure_prepared(self, place: str) -> None:
+        """Look the hub up when the cache has no row for how it parses *now*.
+
+        Not only when the hub text changes: the parse decides the cache key, so a hub can keep
+        its text while its key changes — a province code that was not recognised before, say —
+        and then have no coordinates under the new key. Only a missing row reaches the network,
+        so a hub that has been looked up is never asked for again.
+        """
+        if not self._settings.maps_enabled:
+            return
+        if await self._repo.get_place(clean_place(place).key) is not None:
+            return
+        await self._geocoder.coordinates(place)
+
     async def find_area(self, text: str) -> tuple[tuple[float, float], str] | None:
         """Look a written area up; None when maps are off or nothing was found."""
         if not self._settings.maps_enabled:
@@ -65,6 +79,7 @@ class ParcelMaps:
 
         Cached coordinates only, so drawing a list never waits on the network. A hub nobody
         has looked up yet shows its name without a distance rather than holding the list up.
+        The same line a card shows, so the list and the card agree.
         """
         lines: dict[int, str] = {}
         distances: dict[int, float] = {}
@@ -76,13 +91,11 @@ class ParcelMaps:
             key, name = shown
             cached = await self._repo.get_place(key) if home is not None else None
             if home is None or cached is None or cached.lat is None or cached.lon is None:
-                lines[parcel.id] = texts.LIST_PLACE_ONLY.format(place=name)
+                lines[parcel.id] = texts.PLACE_ONLY_LINE.format(place=name)
                 continue
             km = haversine_km(home, (cached.lat, cached.lon))
             distances[parcel.id] = km
-            lines[parcel.id] = texts.LIST_PLACE_LINE.format(
-                place=name, distance=format_distance(km)
-            )
+            lines[parcel.id] = texts.PLACE_LINE.format(place=name, distance=format_distance(km))
         return lines, distances
 
     async def photo(self, parcel: Parcel, user: User) -> tuple[bytes, str] | None:

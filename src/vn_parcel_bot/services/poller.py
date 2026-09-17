@@ -643,13 +643,23 @@ class Poller:
             await self._repo.set_place(parcel.id, None)
             return False
         if place is None or place == parcel.place:
+            if place is not None:
+                # Same hub text, but its cache key may have moved under it (see ensure_prepared),
+                # and without coordinates the row shows the hub with no distance.
+                await self._prepare(place, ensure=True)
             return False
         await self._repo.set_place(parcel.id, place)
+        await self._prepare(place)
+        return True
+
+    async def _prepare(self, place: str, *, ensure: bool = False) -> None:
         try:
-            await self._maps.prepare(place)
+            if ensure:
+                await self._maps.ensure_prepared(place)
+            else:
+                await self._maps.prepare(place)
         except Exception as exc:
             log.warning("place lookup failed type=%s", type(exc).__name__)
-        return True
 
     async def _send_map(self, parcel: Parcel, user: User) -> None:
         if self._maps is None:

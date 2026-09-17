@@ -12,6 +12,9 @@ from vn_parcel_bot.services.geo_provinces import PROVINCES
         ("24-HPG Hai An 3 Hub", "HPG", "Hai An"),
         ("BN B Mega SOC", "BN", None),
         ("BD B Mega SOC", "BD", None),
+        ("(HNI) Nguyễn Văn Giáp", "HNI", "Nguyễn Văn Giáp"),
+        ("(HNI) Bưu Cục Mẫu", "HNI", "Mẫu"),
+        ("(XYZ) Somewhere", None, "(XYZ) Somewhere"),
         ("11-TQG Son Duong Hub", "TQG", "Son Duong"),
         ("Bưu cục Quận 7", None, "Quận 7"),
         ("  Kho   HCM  ", None, "Kho HCM"),
@@ -26,6 +29,8 @@ def test_place_key_and_display():
     assert clean_place("21-HNI Thanh Tri 2 Hub").display == "Kho Thanh Tri"
     assert clean_place("BN B Mega SOC").display == f"Kho {PROVINCES['BN'][0]}"
     assert clean_place("BD B Mega SOC").display == f"Kho {PROVINCES['BD'][0]}"
+    assert clean_place("(HNI) Nguyễn Văn Giáp").display == "Kho Nguyễn Văn Giáp"
+    assert clean_place("(HNI) Nguyễn Văn Giáp").key == "HNI|Nguyễn Văn Giáp"
     assert clean_place("Bưu cục Quận 7").display == "Quận 7"
     assert clean_place("   ") == PlaceParts(None, None)
 

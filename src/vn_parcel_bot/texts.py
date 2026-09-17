@@ -92,8 +92,6 @@ LIST_BRANCH = "\n├ {line}"
 LIST_BRANCH_LAST = "\n└ {line}"
 LIST_TIME_SUFFIX = " · 🕒 {time}"
 LIST_TIME_LINE = "🕒 {time}"
-LIST_PLACE_LINE = "📦 Kiện hàng đã tới {place} · cách bạn {distance}"
-LIST_PLACE_ONLY = "📦 Kiện hàng đã tới {place}"
 LIST_SECTION_ACTIVE = "🚚 <b>Đang vận chuyển</b>"
 LIST_SECTION_DONE = "✅ <b>Đã xong</b>"
 # The rungs of the status order. "Đang trên đường" is deliberately not the same wording
