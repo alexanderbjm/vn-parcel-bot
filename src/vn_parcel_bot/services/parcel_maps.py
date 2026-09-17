@@ -5,9 +5,15 @@ from html import escape
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.config import Settings
-from vn_parcel_bot.db.repo import Parcel, Repository, User
+from vn_parcel_bot.db.repo import Parcel, PlaceRow, Repository, User
 from vn_parcel_bot.services.formatting import parcel_title
-from vn_parcel_bot.services.geo import Geocoder, clean_place, format_distance, haversine_km
+from vn_parcel_bot.services.geo import (
+    Geocoder,
+    clean_place,
+    format_distance,
+    haversine_km,
+    plausible_hub,
+)
 from vn_parcel_bot.services.maps import TileSource, render_map
 
 
@@ -15,6 +21,34 @@ def _home(user: User) -> tuple[float, float] | None:
     if user.home_lat is None or user.home_lon is None:
         return None
     return user.home_lat, user.home_lon
+
+
+def _cached_point(cached: PlaceRow | None) -> tuple[float, float] | None:
+    """The cached coordinates of a hub, or None when there is no usable row.
+
+    A miss has no coordinates at all, and a row an earlier release wrote from an unbounded
+    match points at the far side of the world. Drawing that distance is worse than drawing
+    the hub alone, so both leave the line without a distance — and the geocoder re-resolves
+    the implausible one, so the distance comes back once it is right.
+    """
+    if cached is None or cached.lat is None or cached.lon is None:
+        return None
+    point = (cached.lat, cached.lon)
+    return point if plausible_hub(point) else None
+
+
+def _repairable(cached: PlaceRow | None) -> bool:
+    """True for a row that has coordinates nobody may draw, so the hub is worth asking again.
+
+    A cached miss has no coordinates and is deliberately not repairable: asking again would
+    re-query a hub that is not on the map on every single poll. The geocoder always writes the
+    row it was asked about — a point, or a miss — so one repair is all any key ever needs.
+    """
+    return (
+        cached is not None
+        and (cached.lat is not None or cached.lon is not None)
+        and _cached_point(cached) is None
+    )
 
 
 class ParcelMaps:
@@ -40,18 +74,19 @@ class ParcelMaps:
             await self._geocoder.coordinates(place)
 
     async def ensure_prepared(self, place: str) -> None:
-        """Look the hub up when the cache has no row for how it parses *now*.
+        """Look the hub up when the cache has no usable row for how it parses *now*.
 
         Not only when the hub text changes: the parse decides the cache key, so a hub can keep
         its text while its key changes — a province code that was not recognised before, say —
-        and then have no coordinates under the new key. Only a missing row reaches the network,
-        so a hub that has been looked up is never asked for again.
+        and then have no coordinates under the new key. A cached miss is left alone, so a hub
+        that is not on the map is not asked for on every poll, but a row that names somewhere
+        off the parcel's route is resolved again rather than used.
         """
         if not self._settings.maps_enabled:
             return
-        if await self._repo.get_place(clean_place(place).key) is not None:
-            return
-        await self._geocoder.coordinates(place)
+        cached = await self._repo.get_place(clean_place(place).key)
+        if cached is None or _repairable(cached):
+            await self._geocoder.coordinates(place)
 
     async def find_area(self, text: str) -> tuple[tuple[float, float], str] | None:
         """Look a written area up; None when maps are off or nothing was found."""
@@ -67,9 +102,10 @@ class ParcelMaps:
         key, name = shown
         home = _home(user)
         cached = await self._repo.get_place(key) if home is not None else None
-        if home is None or cached is None or cached.lat is None or cached.lon is None:
+        point = _cached_point(cached)
+        if home is None or point is None:
             return texts.PLACE_ONLY_LINE.format(place=name)
-        km = haversine_km(home, (cached.lat, cached.lon))
+        km = haversine_km(home, point)
         return texts.PLACE_LINE.format(place=name, distance=format_distance(km))
 
     async def list_places(
@@ -90,10 +126,11 @@ class ParcelMaps:
                 continue
             key, name = shown
             cached = await self._repo.get_place(key) if home is not None else None
-            if home is None or cached is None or cached.lat is None or cached.lon is None:
+            point = _cached_point(cached)
+            if home is None or point is None:
                 lines[parcel.id] = texts.PLACE_ONLY_LINE.format(place=name)
                 continue
-            km = haversine_km(home, (cached.lat, cached.lon))
+            km = haversine_km(home, point)
             distances[parcel.id] = km
             lines[parcel.id] = texts.PLACE_LINE.format(place=name, distance=format_distance(km))
         return lines, distances

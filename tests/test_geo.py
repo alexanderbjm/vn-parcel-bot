@@ -18,6 +18,17 @@ from vn_parcel_bot.services.geo_provinces import PROVINCES
         ("11-TQG Son Duong Hub", "TQG", "Son Duong"),
         ("Bưu cục Quận 7", None, "Quận 7"),
         ("  Kho   HCM  ", None, "Kho HCM"),
+        # A bare code the province table does not know is the carrier's, not the district's.
+        ("ĐGP Long Biên NC", None, "Long Biên NC"),
+        ("ĐGP Hub", None, "ĐGP"),
+        ("ĐGP", None, "ĐGP"),
+        # A longer vowel-less run names a facility, so it stays: "TTKT" is Trung Tâm Khai Thác.
+        ("TTKT HÀ NỘI", None, "TTKT HÀ NỘI"),
+        # So do the facility and administrative prefixes, which say *which* place it is.
+        ("TX Sơn Tây", None, "TX Sơn Tây"),
+        ("KCN Quang Minh", None, "KCN Quang Minh"),
+        # A province code stands wherever it is found, in any casing.
+        ("hni Thanh Tri", None, "hni Thanh Tri"),
     ],
 )
 def test_clean_place(raw, code, district):

@@ -192,3 +192,74 @@ async def test_list_places_shows_the_hub_alone_when_the_distance_is_unknown(env)
     lines, distances = await maps.list_places([parcel], await repo.get_user(1))
     assert lines[parcel.id] == texts.PLACE_ONLY_LINE.format(place="Kho Thanh Tri")
     assert distances == {}
+
+
+async def test_place_line_ignores_a_hub_cached_off_the_route(env):
+    # An earlier release cached this hub from an unbounded match, so the row reads München.
+    repo, settings, parcel = env
+    await repo.set_home(1, *HOME)
+    await repo.save_place("HNI|Thanh Tri", 48.1, 11.5, "osm", T0)
+    maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
+
+    line = await maps.place_line(parcel, await repo.get_user(1))
+
+    assert line == texts.PLACE_ONLY_LINE.format(place="Kho Thanh Tri"), "no distance, not 8800 km"
+
+
+async def test_list_places_ignores_a_hub_cached_off_the_route(env):
+    repo, settings, parcel = env
+    await repo.set_home(1, *HOME)
+    await repo.save_place("HNI|Thanh Tri", 48.1, 11.5, "osm", T0)
+    maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
+
+    lines, distances = await maps.list_places([parcel], await repo.get_user(1))
+
+    assert lines[parcel.id] == texts.PLACE_ONLY_LINE.format(place="Kho Thanh Tri")
+    assert distances == {}, "a far-away row is not a distance anyone can be sorted by"
+
+
+async def test_ensure_prepared_resolves_an_implausible_row_again(env):
+    repo, settings, _ = env
+    await repo.save_place("HNI|Thanh Tri", 48.1, 11.5, "osm", T0)
+    geocoder = FakeGeocoder()
+    maps = ParcelMaps(repo, geocoder, tiles, settings)
+
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+
+    assert geocoder.calls == ["21-HNI Thanh Tri 2 Hub"], "the bad row is replaced, not kept"
+
+
+async def test_ensure_prepared_leaves_a_cached_miss_alone(env):
+    repo, settings, _ = env
+    await repo.save_place("HNI|Thanh Tri", None, None, "none", T0)
+    geocoder = FakeGeocoder()
+    maps = ParcelMaps(repo, geocoder, tiles, settings)
+
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+
+    assert geocoder.calls == [], "a hub that is not on the map is not asked for on every poll"
+
+
+async def test_ensure_prepared_repairs_a_row_that_cannot_be_drawn_once(env):
+    # The dangerous shape: if a repair could be attempted twice, every poll would re-query it.
+    repo, settings, _ = env
+    await repo.save_place("HNI|Thanh Tri", 48.1, 11.5, "osm", T0)
+    geocoder = FakeGeocoder(point=(20.94, 105.84))
+    maps = ParcelMaps(repo, geocoder, tiles, settings)
+
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+    await repo.save_place("HNI|Thanh Tri", 20.94, 105.84, "osm", T0)
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+
+    assert geocoder.calls == ["21-HNI Thanh Tri 2 Hub"], "asked once, then the row is usable"
+
+
+async def test_ensure_prepared_repairs_a_row_with_only_half_a_point(env):
+    repo, settings, _ = env
+    await repo.save_place("HNI|Thanh Tri", 20.94, None, "osm", T0)
+    geocoder = FakeGeocoder()
+    maps = ParcelMaps(repo, geocoder, tiles, settings)
+
+    await maps.ensure_prepared("21-HNI Thanh Tri 2 Hub")
+
+    assert geocoder.calls == ["21-HNI Thanh Tri 2 Hub"]

@@ -3,6 +3,7 @@ import logging
 import math
 import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -19,6 +20,11 @@ _LEADING_NUMBER = re.compile(r"^\d{1,3}-")
 _LEADING_CODE = re.compile(r"^\(([A-Za-z0-9]{2,4})\)\s*")
 _POST_OFFICE = re.compile(r"^bưu cục\s+", re.IGNORECASE)
 _HUB_WORDS = frozenset({"hub", "soc", "mega", "lm", "kho", "bc"})
+# Vietnamese facility and administrative prefixes a hub may lead with. They carry no vowel, so
+# the code test would otherwise eat them — and dropping one loses which place it is, since
+# "TX Sơn Tây" is a different town from the Sơn Tây of Quảng Ngãi.
+_NOT_A_CODE = frozenset({"tt", "tx", "tp", "kcn", "ccn", "kdc", "kđt", "kdl", "bx", "kp", "ấp"})
+_VOWELS = frozenset("aeiouy")
 EARTH_RADIUS_KM = 6371.0
 
 # openstreetmap.org is blocked from the bot's PC (2026-09-15), so places are looked up on Photon,
@@ -79,13 +85,38 @@ def _is_hub_suffix(token: str) -> bool:
     return token.isdigit() or (len(token) == 1 and token.isalpha())
 
 
+def _looks_like_a_hub_code(token: str) -> bool:
+    """True for a bare carrier code such as "ĐGP": a short, vowel-less run of letters.
+
+    Carriers put their own code in front of the hub name — "ĐGP Long Biên NC", how J&T names a
+    hub in Long Biên. The province table holds the codes that name a province, but not the
+    rest, and left in place that code is part of the district: "ĐGP Long Biên NC" matches
+    nothing in Vietnam and, worldwide, a place in Togo, so the hub keeps no distance at all. A
+    Vietnamese place name always carries a vowel, so a short vowel-less token is the carrier's
+    code rather than part of the place.
+
+    Three letters is the width these codes run to, the same as the province table's own
+    ("HNI", "TQG"). A longer vowel-less run is a facility type rather than a code — "TTKT HÀ
+    NỘI" is a transit centre in Hà Nội, and cutting "TTKT" off would leave a bare "HÀ NỘI" —
+    and a province code in any casing stays put, so the code it names is never thrown away.
+    """
+    if not 2 <= len(token) <= 3 or not token.isalpha():
+        return False
+    if token.upper() in PROVINCES or token.casefold() in _NOT_A_CODE:
+        return False
+    plain = unicodedata.normalize("NFD", token.casefold())
+    return not any(char in _VOWELS for char in plain)
+
+
 def clean_place(raw: str) -> PlaceParts:
     """Split hub text like "21-HNI Thanh Tri 2 Hub" into a province code and a district.
 
     Two shapes carry the code: a numeric prefix ("21-HNI …") and a bracketed one ("(HNI) Nguyễn
     Văn Giáp", how J&T names a post office). The bracketed form has to be taken as the code —
     left in place it is part of the district, and "Nguyễn Văn Giáp" on its own resolves to the
-    Hồ Chí Minh City street of that name rather than the Hà Nội one, 1146 km away.
+    Hồ Chí Minh City street of that name rather than the Hà Nội one, 1146 km away. A third
+    shape is a bare code the province table does not know ("ĐGP Long Biên NC"), which is
+    dropped without being taken as a province.
     """
     text = " ".join(raw.split())
     code = None
@@ -103,6 +134,10 @@ def clean_place(raw: str) -> PlaceParts:
         dropped = True
     while dropped and tokens and _is_hub_suffix(tokens[-1]):
         tokens.pop()
+    # Only when a name is left behind, and only once the hub words are gone: a hub named by its
+    # code alone — "ĐGP Hub" — still needs a label, so the code has to survive there.
+    if code is None and len(tokens) > 1 and _looks_like_a_hub_code(tokens[0]):
+        tokens.pop(0)
     return PlaceParts(code, " ".join(tokens) or None)
 
 
