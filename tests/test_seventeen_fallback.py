@@ -319,3 +319,14 @@ async def test_a_carrier_error_never_spends_registration_quota(env):
     await poller.run_cycle(only_user_id=USER, wait=True)
     assert seventeen.calls == [], "an unregistered parcel waits for the not-found path"
     assert await repo.get_meta(f"17track-tried:{parcel.id}") is None
+
+
+@respx.mock
+async def test_17track_events_are_identified_by_the_carriers_own_wording():
+    result = await fetch_payload(delivered_payload("您的快件已由【仓库】代收", "东莞市"))
+    event = result.latest
+    assert event.identity is not None
+    assert "快件" in event.identity and "东莞市" in event.identity, "untranslated, as received"
+    assert "快件" not in event.description, "what we show is still Vietnamese"
+    reworded = replace(event, description="một cách nói khác", location="Khác")
+    assert reworded.key == event.key, "rewording the translation is not a new event"

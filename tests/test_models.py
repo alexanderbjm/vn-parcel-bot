@@ -65,3 +65,20 @@ def test_carrier_error_str_and_attrs():
     err = CarrierError("spx", "network", "timeout")
     assert str(err) == "spx:network: timeout"
     assert (err.carrier, err.reason, err.detail) == ("spx", "network", "timeout")
+
+
+def test_event_identity_survives_a_reworded_translation():
+    """The bug this guards: retranslating locations re-created every event and replayed a
+    parcel's whole history as new."""
+    said = "【东莞市】快件已到达|东莞市"
+    first = TrackingEvent(time=T, description="Đã đến Đông Quản", location="东莞市", identity=said)
+    later = TrackingEvent(
+        time=T, description="Kiện hàng đã tới Đông Quản", location="Đông Quản", identity=said
+    )
+    assert first.key == later.key, "same scan, only rendered differently"
+
+
+def test_event_identity_still_separates_different_scans():
+    a = TrackingEvent(time=T, description="giống nhau", identity="已揽收|上海市")
+    b = TrackingEvent(time=T, description="giống nhau", identity="已签收|上海市")
+    assert a.key != b.key

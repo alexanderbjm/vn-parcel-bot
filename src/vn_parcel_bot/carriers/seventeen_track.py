@@ -209,11 +209,13 @@ class SeventeenTrackCarrier:
             except ValueError:
                 continue
 
-            desc = translate_cn(clean_text(ev.get("description") or ""))
+            raw_desc = clean_text(ev.get("description") or "")
+            desc = translate_cn(raw_desc)
             if not desc:
                 continue
 
-            loc = translate_cn(clean_text(ev.get("location") or "")) or None
+            raw_loc = clean_text(ev.get("location") or "")
+            loc = translate_cn(raw_loc) or None
             stage = ev.get("stage")
             events.append(
                 TrackingEvent(
@@ -221,6 +223,8 @@ class SeventeenTrackCarrier:
                     description=desc,
                     location=loc,
                     raw_status=str(stage) if stage else None,
+                    # 17TRACK's own wording, so a better translation never re-creates events.
+                    identity=f"{raw_desc}|{raw_loc}",
                 )
             )
             scans.append((dt, ev))

@@ -19,6 +19,10 @@ class TrackingEvent:
     description: str
     location: str | None = None
     raw_status: str | None = None
+    # The carrier's own wording for this scan, before any translation or tidying. A carrier
+    # that translates sets it so that improving the translation cannot make old scans look
+    # new; carriers that show what they receive leave it unset.
+    identity: str | None = None
 
     def __post_init__(self) -> None:
         if self.time.tzinfo is None or self.time.utcoffset() is None:
@@ -26,8 +30,17 @@ class TrackingEvent:
 
     @property
     def key(self) -> str:
+        """What makes this scan the same scan as one already stored.
+
+        Presentation must not decide identity: keying on the translated text meant that
+        rewording a translation re-created every event and replayed a parcel's whole
+        history as new. `identity` pins it to what the carrier actually said.
+        """
         utc = self.time.astimezone(UTC).replace(microsecond=0).isoformat()
-        raw = f"{utc}|{_norm(self.description)}|{_norm(self.location or '')}"
+        if self.identity is not None:
+            raw = f"{utc}|{_norm(self.identity)}"
+        else:
+            raw = f"{utc}|{_norm(self.description)}|{_norm(self.location or '')}"
         return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
