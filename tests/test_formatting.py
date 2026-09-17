@@ -292,7 +292,7 @@ def test_add_outcome_pending_variants():
     plain = outcome_text(
         AddOutcome("added", code=SPX, parcel=make_parcel(state="pending"), result=not_found)
     )
-    assert "mình sẽ kiểm tra lại định kỳ" in plain
+    assert "Hiện chưa có thông tin vận chuyển." in plain
     assert "4 số cuối SĐT" not in plain
 
     jt_parcel = make_parcel(
@@ -319,7 +319,7 @@ def test_add_outcome_pending_variants():
             result=TrackingResult("ninjavan", "GA0000000001", False),
         )
     )
-    assert "Mình sẽ tự kiểm tra mã này ở GHN / Ninja Van" in auto
+    assert "Chưa có thông tin vận chuyển tại GHN / Ninja Van." in auto
     assert "kiểm tra lại 4 số cuối SĐT" in auto
 
 
@@ -348,7 +348,7 @@ def test_add_outcome_seller_fleet():
     text = outcome_text(AddOutcome("seller_fleet", code="84000000000001"))
     assert blurred("84000000000001") in text
     assert "người bán tự giao" in text
-    assert "TikTok Shop" in text
+    assert "không có trang tra cứu công khai" in text
     assert 'href="https://t.17track.net/vi#nums=84000000000001"' in text
     assert "J&amp;T" not in text
 

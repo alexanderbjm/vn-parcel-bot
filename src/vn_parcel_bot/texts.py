@@ -22,28 +22,17 @@ STATE_TEXT = {
 
 WELCOME = (
     "Xin chào {name}! 👋\n"
-    "Mình sẽ nhắn cho bạn mỗi khi đơn hàng có cập nhật mới.\n"
-    "Gửi mã vận đơn để bắt đầu, mình sẽ tự nhận diện hãng vận chuyển."
+    "Gửi mã vận đơn hoặc ảnh chụp để bắt đầu, mình sẽ theo dõi và báo khi có cập nhật."
 )
 HELP = (
     "<b>📦 Hướng dẫn</b>\n"
-    "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
-    "• Gửi ảnh chụp đơn hàng – mình tự đọc mã vận đơn và tên sản phẩm\n"
+    "• Gửi mã vận đơn hoặc ảnh chụp để theo dõi, mình tự nhận diện hãng\n"
     "• Tự động theo dõi: {tracked}\n"
     "• Gửi link tra cứu: {link_only}\n"
-    "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
-    "• /list – các đơn đang theo dõi\n"
-    "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
-    "• /label &lt;mã hoặc số thứ tự&gt; [tên] – đặt tên cho đơn "
-    "(hoặc trả lời tin nhắn của đơn bằng /label)\n"
-    "• /remove &lt;số thứ tự hoặc mã&gt; … – ngừng theo dõi (nhiều đơn: /remove 1 2 3)\n"
-    "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
-    "• /location – lưu khu vực của bạn (làm tròn ~1 km) để xem khoảng cách; /location off để xóa\n"
-    "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
-    "• /cancel – hủy thao tác đang chờ\n"
+    "• /track &lt;mã&gt; [4 số cuối SĐT] – thêm đơn kèm 4 số cuối SĐT\n"
+    "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho J&amp;T, GHN, BEST (/phone clear để xóa)\n"
     "\n"
-    "Menu chỉ hiện /start, /help, /list, /location cho gọn. "
-    "Các lệnh còn lại vẫn dùng được khi bạn gõ, hoặc bấm nút ngay trên đơn."
+    "Mọi thứ khác nằm ở nút trên từng đơn và trong /list."
 )
 NOT_ALLOWED = (
     "🔒 Bạn chưa có quyền dùng bot này.\nHãy gửi ID sau cho người quản lý: <code>{user_id}</code>"
@@ -55,9 +44,8 @@ ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
 USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
 SELLER_FLEET = (
-    "🛵 {code} có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
-    "không có trang tra cứu công khai.\n"
-    "Hãy xem hành trình trong app nơi bạn đặt hàng. Hoặc thử tra cứu tại:\n{links}"
+    "🛵 {code} có vẻ là đơn <b>người bán tự giao</b>, không có trang tra cứu công khai.\n"
+    "Xem hành trình trong app bạn đặt hàng. Hoặc thử:\n{links}"
 )
 UNKNOWN_CARRIER = (
     "🔍 Mình chưa nhận ra hãng vận chuyển của mã {code}.\nBạn có thể tra cứu tại:\n{links}"
@@ -77,14 +65,8 @@ NEEDS_PHONE_MULTI = (
 
 ADDED_FOUND = "✅ Đã theo dõi <b>{title}</b> · {carrier}\nTrạng thái hiện tại: {status}\n🕒 {time}"
 ADDED_DELIVERED = "✅ Đã thêm <b>{title}</b> · {carrier} — đơn này đã giao thành công.\n🕒 {time}"
-ADDED_PENDING = (
-    "✅ Đã thêm <b>{title}</b> · {carrier}\n"
-    "Hiện chưa có thông tin vận chuyển, mình sẽ kiểm tra lại định kỳ."
-)
-ADDED_PENDING_AUTO = (
-    "✅ Đã thêm <b>{title}</b>\n"
-    "Hiện chưa có thông tin vận chuyển. Mình sẽ tự kiểm tra mã này ở {carriers}."
-)
+ADDED_PENDING = "✅ Đã thêm <b>{title}</b> · {carrier}\nHiện chưa có thông tin vận chuyển."
+ADDED_PENDING_AUTO = "✅ Đã thêm <b>{title}</b>\nChưa có thông tin vận chuyển tại {carriers}."
 ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
 ADDED_ERROR = (
     "⚠️ Đã thêm <b>{title}</b> · {carrier}\n"
@@ -148,10 +130,9 @@ PHONE_CLEARED = "📱 Đã xóa 4 số cuối mặc định."
 
 CANCELLED = "Đã hủy."
 LOCATION_ASK = (
-    "📍 Trên điện thoại, bấm nút <b>Gửi vị trí</b> bên dưới. "
-    "Mình chỉ lưu khu vực làm tròn ~1 km để tính khoảng cách tới đơn hàng.\n"
-    "💻 Trên máy tính, dán tọa độ (ví dụ <code>21.03, 105.85</code>) hoặc link Google Maps.\n"
-    "✍️ Hoặc gõ khu vực của bạn, ví dụ <code>Cầu Giấy, Hà Nội</code>."
+    "📍 Bấm <b>Gửi vị trí</b> bên dưới (chỉ lưu khu vực làm tròn ~1 km).\n"
+    "💻 Hoặc dán tọa độ <code>21.03, 105.85</code>, link Google Maps, hay gõ tên khu vực "
+    "(<code>Cầu Giấy, Hà Nội</code>)."
 )
 LOCATION_STATUS = (
     "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
@@ -161,11 +142,10 @@ LOCATION_SAVED = "📍 Đã lưu khu vực của bạn (làm tròn ~1 km)."
 LOCATION_CLEARED = "📍 Đã xóa khu vực của bạn."
 LOCATION_NONE = "Bạn chưa lưu khu vực nào. Gửi /location để lưu."
 LOCATION_TYPE_HINT = (
-    "💻 Ứng dụng Telegram này không gửi được vị trí. Hãy dán tọa độ khu vực của bạn, "
-    "ví dụ <code>21.03, 105.85</code> (trên Google Maps: bấm chuột phải vào bản đồ rồi bấm "
-    "dòng tọa độ để sao chép), hoặc link Google Maps có tọa độ. Link rút gọn "
-    "<code>maps.app.goo.gl</code> không dùng được. Bạn cũng có thể gõ khu vực, "
-    "ví dụ <code>Cầu Giấy, Hà Nội</code>. Bấm ↩ Hủy để thôi."
+    "💻 Telegram trên máy tính không gửi được vị trí. Dán tọa độ "
+    "(ví dụ <code>21.03, 105.85</code>), link Google Maps có tọa độ, hoặc gõ tên khu vực "
+    "(ví dụ <code>Cầu Giấy, Hà Nội</code>). Link rút gọn <code>maps.app.goo.gl</code> "
+    "không dùng được. Bấm ↩ Hủy để thôi."
 )
 LOCATION_AREA_SAVED = (
     "📍 Đã lưu khu vực: <b>{area}</b> (làm tròn ~1 km). "
@@ -210,12 +190,9 @@ UPDATE_RETURNED = "↩️ <b>Đơn đang được hoàn về người gửi.</b>
 
 EXPIRED = (
     "⌛ Sau 7 ngày vẫn chưa có dữ liệu cho {code}, mình đã ngừng theo dõi.\n"
-    "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T hoặc GHN)."
+    "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T, GHN hoặc BEST)."
 )
-STALE = (
-    "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày. "
-    "Mình vẫn âm thầm kiểm tra, chỉ là sẽ không nhắc nữa trừ khi có gì mới."
-)
+STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật trong 30 ngày (vẫn theo dõi ngầm)."
 
 ADMIN_HELP = (
     "<b>🛠 Lệnh quản lý</b>\n"
@@ -268,10 +245,8 @@ VISION_PRODUCT = "• Sản phẩm: <b>{name}</b>"
 VISION_DETECTED_ITEM = "• Mã vận đơn: {code}{carrier_suffix}"
 VISION_DETECTED_PHONE = "• SĐT người nhận: <code>***{phone}</code>"
 VISION_ORDER_ONLY = (
-    "🧾 Tìm thấy mã đơn hàng: {order_id}\n"
-    "Đây là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
-    "Trong app (Shopee, Lazada, TikTok Shop…) mở đơn → <b>Thông tin vận chuyển</b> "
-    "rồi gửi ảnh chụp hoặc mã vận đơn cho mình nhé! Hoặc thử tra cứu tại:\n{links}"
+    "🧾 Đây là <b>mã đơn hàng</b> ({order_id}), không phải mã vận đơn.\n"
+    "Trong app, mở đơn → <b>Thông tin vận chuyển</b> rồi gửi lại nhé. Hoặc tra cứu tại:\n{links}"
 )
 VISION_ERROR = (
     "⚠️ Không phân tích được hình ảnh lúc này. Bạn thử lại sau hoặc gửi mã vận đơn trực tiếp nhé."

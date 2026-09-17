@@ -64,7 +64,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
-Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): start, help, track, list, status, label, remove, phone, check, cancel. The admin's private chat also gets `ADMIN_COMMANDS` (hozk, users, allow, revoke, health, sticker) through `BotCommandScopeChat`; a Telegram error there is logged and ignored.
+Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): only the four you cannot reach by tapping — start, help, list, location. The rest (track, status, label, remove, phone, check, cancel) stay registered and still work when typed. `/help` follows the same rule and documents only the two with no button equivalent anywhere (`/track`, `/phone`) plus what a pasted code or photo does; everything else is reachable from a card, `/list` or a prompt. The admin's private chat also gets `ADMIN_COMMANDS` (hozk, users, allow, revoke, health, sticker) through `BotCommandScopeChat`; a Telegram error there is logged and ignored.
 
 ### 4.2 Plain-text routing
 
@@ -1407,24 +1407,18 @@ STATE_TEXT = {
 
 WELCOME = (
     "Xin chào {name}! 👋\n"
-    "Mình sẽ nhắn cho bạn mỗi khi đơn hàng có cập nhật mới.\n"
-    "Gửi mã vận đơn để bắt đầu, mình sẽ tự nhận diện hãng vận chuyển."
+    "Gửi mã vận đơn hoặc ảnh chụp để bắt đầu, mình sẽ theo dõi và báo khi có cập nhật."
 )
 HELP = (
     "<b>📦 Hướng dẫn</b>\n"
-    "• Gửi mã vận đơn để theo dõi, mình tự nhận diện hãng\n"
-    "• Gửi ảnh chụp đơn hàng – mình tự đọc mã vận đơn và tên sản phẩm\n"
+    "• Gửi mã vận đơn hoặc ảnh chụp để theo dõi, mình tự nhận diện hãng\n"
     "• Tự động theo dõi: SPX, J&amp;T, Cainiao, 4PX, Ninja Van, GHN\n"
     "• Gửi link tra cứu: BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN, "
     "SF Express\n"
-    "• /track &lt;mã&gt; [4 số cuối SĐT] – theo dõi đơn\n"
-    "• /list – các đơn đang theo dõi\n"
-    "• /status &lt;mã hoặc số thứ tự&gt; – xem hành trình\n"
-    "• /label &lt;mã hoặc số thứ tự&gt; &lt;tên&gt; – đặt tên cho đơn\n"
-    "• /remove &lt;mã hoặc số thứ tự&gt; – ngừng theo dõi\n"
-    "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho đơn J&amp;T, GHN (/phone clear để xóa)\n"
-    "• /check – kiểm tra ngay tất cả đơn và nhận diện lại hãng\n"
-    "• /cancel – hủy thao tác đang chờ"
+    "• /track &lt;mã&gt; [4 số cuối SĐT] – thêm đơn kèm 4 số cuối SĐT\n"
+    "• /phone &lt;4 số&gt; – lưu 4 số cuối SĐT cho J&amp;T, GHN, BEST (/phone clear để xóa)\n"
+    "\n"
+    "Mọi thứ khác nằm ở nút trên từng đơn và trong /list."
 )
 NOT_ALLOWED = (
     "🔒 Bạn chưa có quyền dùng bot này.\nHãy gửi ID sau cho người quản lý: <code>{user_id}</code>"
@@ -1436,9 +1430,9 @@ ERROR_GENERIC = "😵 Có lỗi xảy ra, bạn thử lại sau nhé."
 
 USAGE_TRACK = "Cách dùng: /track &lt;mã&gt; [4 số cuối SĐT]"
 SELLER_FLEET = (
-    "🛵 <code>{code}</code> có vẻ là mã đơn <b>người bán tự giao</b> (TikTok Shop…), "
+    "🛵 <code>{code}</code> có vẻ là đơn <b>người bán tự giao</b>, "
     "không có trang tra cứu công khai.\n"
-    "Hãy xem hành trình trong app nơi bạn đặt hàng. Hoặc thử tra cứu tại:\n{links}"
+    "Xem hành trình trong app bạn đặt hàng. Hoặc thử:\n{links}"
 )
 ORDER_NUMBER = (
     "🧾 <code>{code}</code> có vẻ là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
@@ -1464,14 +1458,8 @@ NEEDS_PHONE_MULTI = (
 
 ADDED_FOUND = "✅ Đã theo dõi <b>{title}</b> · {carrier}\nTrạng thái hiện tại: {status}\n🕒 {time}"
 ADDED_DELIVERED = "✅ Đã thêm <b>{title}</b> · {carrier} — đơn này đã giao thành công.\n🕒 {time}"
-ADDED_PENDING = (
-    "✅ Đã thêm <b>{title}</b> · {carrier}\n"
-    "Hiện chưa có thông tin vận chuyển, mình sẽ kiểm tra lại định kỳ."
-)
-ADDED_PENDING_AUTO = (
-    "✅ Đã thêm <b>{title}</b>\n"
-    "Hiện chưa có thông tin vận chuyển. Mình sẽ tự kiểm tra mã này ở {carriers}."
-)
+ADDED_PENDING = "✅ Đã thêm <b>{title}</b> · {carrier}\nHiện chưa có thông tin vận chuyển."
+ADDED_PENDING_AUTO = "✅ Đã thêm <b>{title}</b>\nChưa có thông tin vận chuyển tại {carriers}."
 ADDED_PENDING_PHONE_HINT = "\nNếu vài giờ nữa vẫn chưa có dữ liệu, hãy kiểm tra lại 4 số cuối SĐT."
 JT_CROSS_BORDER_HINT = (
     "\n🌏 Đây là đơn quốc tế của J&amp;T: J&amp;T VN chỉ có dữ liệu sau khi hàng "
@@ -1518,9 +1506,9 @@ CANCELLED = "Đã hủy."
 NOTHING_TO_CANCEL = "Không có thao tác nào đang chờ."
 
 LOCATION_ASK = (
-    "📍 Trên điện thoại, bấm nút <b>Gửi vị trí</b> bên dưới. "
-    "Mình chỉ lưu khu vực làm tròn ~1 km để tính khoảng cách tới đơn hàng.\n"
-    "💻 Trên máy tính, dán tọa độ (ví dụ <code>21.03, 105.85</code>) hoặc link Google Maps."
+    "📍 Bấm <b>Gửi vị trí</b> bên dưới (chỉ lưu khu vực làm tròn ~1 km).\n"
+    "💻 Hoặc dán tọa độ <code>21.03, 105.85</code>, link Google Maps, hay gõ tên khu vực "
+    "(<code>Cầu Giấy, Hà Nội</code>)."
 )
 LOCATION_STATUS = (
     "📍 Đã lưu khu vực của bạn (~1 km). Bấm <b>Gửi vị trí</b> để cập nhật, "
@@ -1530,10 +1518,10 @@ LOCATION_SAVED = "📍 Đã lưu khu vực của bạn (làm tròn ~1 km)."
 LOCATION_CLEARED = "📍 Đã xóa khu vực của bạn."
 LOCATION_NONE = "Bạn chưa lưu khu vực nào. Gửi /location để lưu."
 LOCATION_TYPE_HINT = (
-    "💻 Ứng dụng Telegram này không gửi được vị trí. Hãy dán tọa độ khu vực của bạn, "
-    "ví dụ <code>21.03, 105.85</code> (trên Google Maps: bấm chuột phải vào bản đồ rồi bấm "
-    "dòng tọa độ để sao chép), hoặc link Google Maps có tọa độ. Link rút gọn "
-    "<code>maps.app.goo.gl</code> không dùng được. Bấm ↩ Hủy để thôi."
+    "💻 Telegram trên máy tính không gửi được vị trí. Dán tọa độ "
+    "(ví dụ <code>21.03, 105.85</code>), link Google Maps có tọa độ, hoặc gõ tên khu vực "
+    "(ví dụ <code>Cầu Giấy, Hà Nội</code>). Link rút gọn <code>maps.app.goo.gl</code> "
+    "không dùng được. Bấm ↩ Hủy để thôi."
 )
 
 BTN_SEND_LOCATION = "📍 Gửi vị trí"
@@ -1576,9 +1564,9 @@ UPDATE_RETURNED = "↩️ <b>Đơn đang được hoàn về người gửi.</b>
 
 EXPIRED = (
     "⌛ Sau 7 ngày vẫn chưa có dữ liệu cho <code>{code}</code>, mình đã ngừng theo dõi.\n"
-    "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T hoặc GHN)."
+    "Hãy kiểm tra lại mã vận đơn (và 4 số cuối SĐT nếu là đơn J&amp;T, GHN hoặc BEST)."
 )
-STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật nào trong 30 ngày, mình đã ngừng theo dõi."
+STALE = "⚠️ Đơn <b>{title}</b> không có cập nhật trong 30 ngày (vẫn theo dõi ngầm)."
 
 USAGE_ALLOW = "Cách dùng: /allow &lt;telegram_id&gt; [tên]"
 USAGE_REVOKE = "Cách dùng: /revoke &lt;telegram_id&gt;"
@@ -1619,10 +1607,8 @@ VISION_PRODUCT = "• Sản phẩm: <b>{name}</b>"
 VISION_DETECTED_ITEM = "• Mã vận đơn: <code>{code}</code>{carrier_suffix}"
 VISION_DETECTED_PHONE = "• SĐT người nhận: <code>***{phone}</code>"
 VISION_ORDER_ONLY = (
-    "🧾 Tìm thấy mã đơn hàng: <code>{order_id}</code>\n"
-    "Đây là <b>mã đơn hàng</b>, không phải mã vận đơn.\n"
-    "Trong app (Shopee, Lazada, TikTok Shop…) mở đơn → <b>Thông tin vận chuyển</b> "
-    "rồi gửi ảnh chụp hoặc mã vận đơn cho mình nhé! Hoặc thử tra cứu tại:\n{links}"
+    "🧾 Đây là <b>mã đơn hàng</b> (<code>{order_id}</code>), không phải mã vận đơn.\n"
+    "Trong app, mở đơn → <b>Thông tin vận chuyển</b> rồi gửi lại nhé. Hoặc tra cứu tại:\n{links}"
 )
 VISION_ERROR = (
     "⚠️ Không phân tích được hình ảnh lúc này. Bạn thử lại sau hoặc gửi mã vận đơn trực tiếp nhé."

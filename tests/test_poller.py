@@ -391,7 +391,6 @@ async def test_stale_revives_with_new_events(poller, repo, fakes, notifier):
     assert len(notifier.sent) == 1
 
 
-
 async def test_quiet_hours_silent_flag(repo, fakes, notifier, settings, clock, sleeps):
     await add(repo, SPX, "spx")
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0))
