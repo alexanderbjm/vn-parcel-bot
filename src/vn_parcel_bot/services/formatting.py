@@ -155,6 +155,14 @@ def format_event_update(
     return truncate_message("\n".join(lines))
 
 
+def _branches(lines: Sequence[str]) -> str:
+    """Hang a row's details under it: every line branches off, the last one closes the row."""
+    return "".join(
+        (texts.LIST_BRANCH_LAST if position == len(lines) else texts.LIST_BRANCH).format(line=line)
+        for position, line in enumerate(lines, start=1)
+    )
+
+
 def _list_item(
     index: int,
     parcel: Parcel,
@@ -169,28 +177,27 @@ def _list_item(
         if parcel.last_status_text
         else texts.STATE_TEXT[parcel.state]
     )
-    suffix = (
-        texts.LIST_TIME_LINE.format(time=format_time(parcel.last_event_at, tz))
-        if parcel.last_event_at
-        else ""
-    )
     carrier = (
         carrier_name(parcel.carrier) if parcel.carrier is not None else texts.CARRIER_UNRESOLVED
     )
-    progress_suffix, bar = _progress_parts(parcel.progress, parcel.state)
+    # The percent on the title line already says how far along the parcel is; a row of ten
+    # emoji would say it again, twice as wide, on every row at once. The card keeps the bar.
+    progress_suffix, _ = _progress_parts(parcel.progress, parcel.state)
     # Where the parcel is says more than the carrier's own wording, so it takes that line.
     # A row that would only repeat its own section heading says nothing, so it stays empty.
     body = place or ("" if status == texts.STATE_TEXT[parcel.state] and heading else status)
+    details = []
+    if parcel.label:
+        details.append(spoiler(parcel.tracking_number))
+    if body:
+        details.append(body)
+        if parcel.last_event_at:
+            details.append(texts.LIST_TIME_LINE.format(time=format_time(parcel.last_event_at, tz)))
     return texts.LIST_ITEM.format(
         index=index,
         title=_escape(parcel.label) if parcel.label else spoiler(parcel.tracking_number),
         carrier=carrier + progress_suffix + mark,
-        code=texts.LIST_CODE_LINE.format(code=spoiler(parcel.tracking_number))
-        if parcel.label
-        else "",
-        body=texts.LIST_BODY_LINE.format(body=body) if body else "",
-        time_suffix=suffix if body else "",
-        bar=texts.PROGRESS_BAR_LINE.format(bar=bar) if bar else "",
+        meta=_branches(details),
     )
 
 

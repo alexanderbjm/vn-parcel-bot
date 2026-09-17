@@ -187,10 +187,10 @@ def test_parcel_list_items():
     ]
     text = format_parcel_list(parcels, TZ)
     assert text.startswith(texts.LIST_HEADER + "\n\n")
-    assert f"1. <b>Áo</b> · SPX\n    {blurred(SPX)}\n    Đang giao\n    🕒 01/09 08:30" in text
+    assert f"1. <b>Áo</b> · SPX\n├ {blurred(SPX)}\n├ Đang giao\n└ 🕒 01/09 08:30" in text
     assert (
         f"2. <b>{blurred('GA0000000001')}</b> · Đang xác định hãng\n"
-        "    Chưa có thông tin vận chuyển" in text
+        "└ Chưa có thông tin vận chuyển" in text
     )
 
 
@@ -442,14 +442,14 @@ def test_ref_text_blurs_codes_but_not_list_numbers():
     assert ref_text("<x>") == blurred("&lt;x&gt;")
 
 
-def test_list_item_shows_progress_and_bar():
+def test_list_row_hangs_its_details_off_branches_without_a_bar():
+    """The percent carries the progress; ten emoji a row would only shout it."""
     parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0, progress=80)
     text = format_parcel_list([parcel], TZ)
     assert (
-        "1. <b>Áo</b> · SPX · 80%\n"
-        "    " + blurred(SPX) + "\n    Đã đến kho\n    🕒 01/09 08:30"
-        "\n    🟩🟩🟩🟩🟩🟩🟩🟩🟥🟥" in text
+        "1. <b>Áo</b> · SPX · 80%\n├ " + blurred(SPX) + "\n├ Đã đến kho\n└ 🕒 01/09 08:30" in text
     )
+    assert "🟩" not in text and "🟥" not in text
 
 
 def test_list_item_hides_progress_for_returned_and_unknown():
