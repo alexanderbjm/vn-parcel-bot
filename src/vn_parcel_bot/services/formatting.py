@@ -173,8 +173,8 @@ def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "", place: 
         emoji=texts.STATE_EMOJI[parcel.state],
         title=parcel_title(parcel),
         carrier=carrier + progress_suffix + mark,
-        place=place,
-        status=status,
+        # Where the parcel is says more than the carrier's own wording, so it takes that line.
+        body=place or status,
         time_suffix=suffix,
         bar=texts.PROGRESS_BAR_LINE.format(bar=bar) if bar else "",
     )

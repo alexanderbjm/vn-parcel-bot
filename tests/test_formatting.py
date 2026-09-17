@@ -549,7 +549,8 @@ def test_list_row_shows_where_the_parcel_is_and_how_far():
     line = texts.LIST_PLACE_LINE.format(place="Quảng Đông", distance="~1960 km")
     text = format_parcel_list([parcel], TZ, places={1: line})
     assert "📦 Kiện hàng đã tới Quảng Đông · cách bạn ~1960 km" in text
-    assert text.index("Quảng Đông") < text.index("Đã đến kho"), "location sits above the status"
+    assert "Đã đến kho" not in text, "the hub line takes the place of the older status text"
+    assert "🕒 01/09 08:30" in text, "the time of that last move stays"
 
 
 def test_list_sections_split_finished_orders_from_the_rest():

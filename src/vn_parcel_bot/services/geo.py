@@ -25,6 +25,28 @@ EARTH_RADIUS_KM = 6371.0
 PHOTON_URL = "https://photon.komoot.io/api/"
 USER_AGENT = "vn-parcel-bot/0.1 (personal Telegram parcel tracker)"
 VIETNAM_BBOX = "102.1,8.1,109.5,23.4"
+# A hub abroad often shares its name with somewhere in Vietnam (Dongguan reads as the
+# commune Đông Quan), so these are asked for by their own name and never matched at home.
+FOREIGN_PLACES = {
+    "Thượng Hải": "Shanghai, China",
+    "Thâm Quyến": "Shenzhen, China",
+    "Đông Quản": "Dongguan, China",
+    "Quảng Châu": "Guangzhou, China",
+    "Bắc Kinh": "Beijing, China",
+    "Nam Ninh": "Nanning, China",
+    "Côn Minh": "Kunming, China",
+    "Nghĩa Ô": "Yiwu, China",
+    "Hàng Châu": "Hangzhou, China",
+    "Tuyền Châu": "Quanzhou, China",
+    "Quảng Đông": "Guangdong, China",
+    "Quảng Tây": "Guangxi, China",
+    "Phúc Kiến": "Fujian, China",
+    "Chiết Giang": "Zhejiang, China",
+    "Vân Nam": "Yunnan, China",
+    "Bằng Tường": "Pingxiang, Guangxi, China",
+    "Hữu Nghị Quan": "Pingxiang, Guangxi, China",
+    "Hồng Kông": "Hong Kong",
+}
 MISS_RETRY_AFTER = timedelta(days=30)
 MIN_REQUEST_GAP_SECONDS = 1.1
 AREA_NAME_KEYS = ("name", "district", "city", "county", "state")
@@ -172,6 +194,10 @@ class Geocoder:
         return point, _area_name(props, query)
 
     async def _search(self, query: str) -> tuple[float, float] | None:
+        abroad = FOREIGN_PLACES.get(query)
+        if abroad is not None:
+            found = await self._lookup(abroad, worldwide=True)
+            return found[0] if found is not None else None
         found = await self._lookup(query)
         if found is None:
             # A hub on a cross-border parcel sits outside Vietnam (a Chinese city, say), so a

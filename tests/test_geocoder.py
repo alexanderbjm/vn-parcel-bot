@@ -73,11 +73,11 @@ async def test_province_centre_when_the_district_is_unknown(env):
 async def test_a_hub_abroad_is_found_on_the_second_worldwide_pass(env):
     geocoder, repo, _, _ = env
     route = respx.get(PHOTON_URL).mock(return_value=hit(23.02, 113.75, countrycode="CN"))
-    assert await geocoder.coordinates("Đông Quản") == (23.02, 113.75)
+    assert await geocoder.coordinates("Nam Xương") == (23.02, 113.75)
     assert route.call_count == 2, "Vietnam first, then worldwide"
     assert "bbox" in route.calls[0].request.url.params
     assert "bbox" not in route.calls[1].request.url.params
-    assert (await repo.get_place("|Đông Quản")).source == "osm"
+    assert (await repo.get_place("|Nam Xương")).source == "osm"
 
 
 @respx.mock
@@ -188,3 +188,13 @@ async def test_written_area_errors_raise_without_logging_the_text(env, caplog):
         await geocoder.search_area("Cầu Giấy")
     assert "area lookup failed type=ConnectError" in caplog.text
     assert "Cầu Giấy" not in caplog.text
+
+
+@respx.mock
+async def test_a_hub_abroad_is_asked_for_by_its_own_name(env):
+    geocoder = env[0]
+    route = respx.get(PHOTON_URL).mock(return_value=hit(23.02, 113.75, countrycode="CN"))
+    assert await geocoder.coordinates("Đông Quản") == (23.02, 113.75)
+    assert route.call_count == 1, "a Vietnam pass would match the commune Đông Quan instead"
+    assert route.calls[0].request.url.params["q"] == "Dongguan, China"
+    assert "bbox" not in route.calls[0].request.url.params
