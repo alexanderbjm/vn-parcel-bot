@@ -100,8 +100,12 @@ LINK_17TRACK_NAME = "17TRACK"
 
 LIST_HEADER = "<b>📋 Đơn của bạn</b>"
 LIST_EMPTY = "Bạn chưa theo dõi đơn nào. Gửi mã vận đơn để bắt đầu."
-LIST_ITEM = "{index}. {emoji} <b>{title}</b> · {carrier}\n    {status}{time_suffix}{bar}"
+LIST_ITEM = "{index}. {emoji} <b>{title}</b> · {carrier}{place}\n    {status}{time_suffix}{bar}"
 LIST_TIME_SUFFIX = " · 🕒 {time}"
+LIST_PLACE_LINE = "\n    📦 Kiện hàng đã tới {place} · cách bạn {distance}"
+LIST_PLACE_ONLY = "\n    📦 Kiện hàng đã tới {place}"
+LIST_SECTION_ACTIVE = "🚚 <b>Đang vận chuyển</b>"
+LIST_SECTION_DONE = "✅ <b>Đã xong</b>"
 PROGRESS_SUFFIX = " · {percent}%"
 PROGRESS_BAR_LINE = "\n    {bar}"
 
@@ -280,6 +284,14 @@ BTN_SKIP = "↩ Bỏ qua"
 BTN_PREV = "⬅️"
 BTN_NEXT = "➡️"
 BTN_RECHECK = "🔄 Kiểm tra tất cả"
+BTN_SORT_NEAR = "📍 Gần bạn nhất"
+BTN_SORT_CARRIER = "🚚 Theo hãng"
+BTN_SORT_NAME = "🔤 Theo tên"
+SORT_LABELS = {
+    "n": BTN_SORT_NEAR,
+    "c": BTN_SORT_CARRIER,
+    "a": BTN_SORT_NAME,
+}
 BTN_SELECT_REMOVE = "🗑 Xóa nhiều"
 BTN_REMOVE_SELECTED = "✅ Xóa đã chọn ({count})"
 BTN_CONFIRM_REMOVE_MANY = "✅ Xóa {count} đơn"

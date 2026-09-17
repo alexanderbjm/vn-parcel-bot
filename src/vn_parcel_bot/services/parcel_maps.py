@@ -1,5 +1,6 @@
 """Place lines, distances and map pictures for parcel messages."""
 
+from collections.abc import Sequence
 from html import escape
 
 from vn_parcel_bot import texts
@@ -56,6 +57,33 @@ class ParcelMaps:
             return texts.PLACE_ONLY_LINE.format(place=name)
         km = haversine_km(home, (cached.lat, cached.lon))
         return texts.PLACE_LINE.format(place=name, distance=format_distance(km))
+
+    async def list_places(
+        self, parcels: Sequence[Parcel], user: User
+    ) -> tuple[dict[int, str], dict[int, float]]:
+        """Hub lines and distances for every parcel in the list, by parcel id.
+
+        Cached coordinates only, so drawing a list never waits on the network. A hub nobody
+        has looked up yet shows its name without a distance rather than holding the list up.
+        """
+        lines: dict[int, str] = {}
+        distances: dict[int, float] = {}
+        home = _home(user)
+        for parcel in parcels:
+            shown = self._shown_place(parcel)
+            if shown is None:
+                continue
+            key, name = shown
+            cached = await self._repo.get_place(key) if home is not None else None
+            if home is None or cached is None or cached.lat is None or cached.lon is None:
+                lines[parcel.id] = texts.LIST_PLACE_ONLY.format(place=name)
+                continue
+            km = haversine_km(home, (cached.lat, cached.lon))
+            distances[parcel.id] = km
+            lines[parcel.id] = texts.LIST_PLACE_LINE.format(
+                place=name, distance=format_distance(km)
+            )
+        return lines, distances
 
     async def photo(self, parcel: Parcel, user: User) -> tuple[bytes, str] | None:
         """The map picture and its caption; may look the hub up. Drawing failures raise MapError."""

@@ -10,7 +10,7 @@ from telegram.constants import KeyboardButtonStyle
 
 from vn_parcel_bot import texts
 from vn_parcel_bot.db.repo import Parcel
-from vn_parcel_bot.services.formatting import parcel_link
+from vn_parcel_bot.services.formatting import DEFAULT_SORT, next_sort, parcel_link
 from vn_parcel_bot.tracking_codes import mask_code
 
 NUMBERS_PER_ROW = 5
@@ -26,6 +26,18 @@ def _page(page: int | None) -> str:
 
 def _rows(buttons: list[InlineKeyboardButton]) -> list[list[InlineKeyboardButton]]:
     return [buttons[i : i + NUMBERS_PER_ROW] for i in range(0, len(buttons), NUMBERS_PER_ROW)]
+
+
+def _list_data(page: int, sort: str) -> str:
+    """List callback data; the default order stays plain `l:<page>` for older buttons."""
+    return f"l:{page}" if sort == DEFAULT_SORT else f"l:{page}:{sort}"
+
+
+def _sort_row(sort: str, page: int) -> list[InlineKeyboardButton]:
+    """One button showing the order in force; tapping it moves to the next one."""
+    following = next_sort(sort)
+    label = texts.SORT_LABELS.get(sort, texts.SORT_LABELS[DEFAULT_SORT])
+    return [_button(label, f"so:{following}:{page}", style=KeyboardButtonStyle.PRIMARY)]
 
 
 def _nav_row(data: Callable[[int], str], page: int, pages: int) -> list[InlineKeyboardButton]:
@@ -103,7 +115,12 @@ def list_back_keyboard(page: int) -> InlineKeyboardMarkup:
 
 
 def list_keyboard(
-    numbered: Sequence[tuple[int, Parcel]], page: int, pages: int, *, recheck: bool = False
+    numbered: Sequence[tuple[int, Parcel]],
+    page: int,
+    pages: int,
+    *,
+    recheck: bool = False,
+    sort: str = DEFAULT_SORT,
 ) -> InlineKeyboardMarkup | None:
     if not numbered:
         return None
@@ -111,14 +128,16 @@ def list_keyboard(
         [_button(str(number), f"p:{parcel.id}:card:{page}") for number, parcel in numbered]
     )
     if pages > 1:
-        rows.append(_nav_row(lambda target: f"l:{target}", page, pages))
+        rows.append(_nav_row(lambda target: _list_data(target, sort), page, pages))
     if recheck:
+        recheck_data = f"r:{page}" if sort == DEFAULT_SORT else f"r:{page}:{sort}"
         rows.append(
             [
-                _button(texts.BTN_RECHECK, f"r:{page}", style=KeyboardButtonStyle.SUCCESS),
+                _button(texts.BTN_RECHECK, recheck_data, style=KeyboardButtonStyle.SUCCESS),
                 _button(texts.BTN_SELECT_REMOVE, f"m:on:{page}", style=KeyboardButtonStyle.DANGER),
             ]
         )
+        rows.append(_sort_row(sort, page))
     return InlineKeyboardMarkup(rows)
 
 

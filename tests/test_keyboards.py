@@ -81,8 +81,25 @@ def test_list_keyboard_numbers_and_navigation():
 
 def test_list_keyboard_recheck_row():
     markup = list_keyboard([(1, make_parcel(id=1))], page=3, pages=4, recheck=True)
-    assert [b.callback_data for b in markup.inline_keyboard[-1]] == ["r:3", "m:on:3"]
+    assert [b.callback_data for b in markup.inline_keyboard[-2]] == ["r:3", "m:on:3"]
     assert list_keyboard([], page=1, pages=1, recheck=True) is None
+
+
+def test_list_keyboard_sort_button_cycles_through_the_modes():
+    for sort, label, following in (
+        ("n", texts.BTN_SORT_NEAR, "c"),
+        ("c", texts.BTN_SORT_CARRIER, "a"),
+        ("a", texts.BTN_SORT_NAME, "n"),
+    ):
+        markup = list_keyboard([(1, make_parcel(id=1))], page=2, pages=1, recheck=True, sort=sort)
+        assert labels(markup)[-1] == [label]
+        assert cells(markup)[-1] == [f"so:{following}:2"]
+
+
+def test_list_navigation_and_recheck_keep_the_chosen_sort():
+    markup = list_keyboard([(1, make_parcel(id=1))], page=1, pages=2, recheck=True, sort="a")
+    assert cells(markup)[1] == ["l:2:a", "l:1:a", "l:2:a"]
+    assert cells(markup)[2][0] == "r:1:a"
 
 
 def test_card_keyboard_with_maps_moves_the_link_to_its_own_row():

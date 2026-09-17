@@ -147,6 +147,10 @@ def first_data(markup):
     return markup.inline_keyboard[0][0].callback_data
 
 
+def recheck_row_data(markup):
+    return [button.callback_data for button in markup.inline_keyboard[-2]]
+
+
 def last_row_data(markup):
     return [button.callback_data for button in markup.inline_keyboard[-1]]
 
@@ -226,8 +230,9 @@ async def test_list_page_navigation(env):
     assert "6. " in text
     assert "Trang 2/2" in text
     assert markup.inline_keyboard[0][0].text == "6"
-    assert [b.callback_data for b in markup.inline_keyboard[-2]] == ["l:1", "l:2", "l:1"]
-    assert last_row_data(markup) == ["r:2", "m:on:2"]
+    assert [b.callback_data for b in markup.inline_keyboard[-3]] == ["l:1", "l:2", "l:1"]
+    assert [b.callback_data for b in markup.inline_keyboard[-2]] == ["r:2", "m:on:2"]
+    assert last_row_data(markup) == ["so:c:2"]
 
 
 async def test_not_modified_edit_is_ignored(env):
@@ -245,7 +250,8 @@ async def test_list_command_and_add_reply_carry_buttons(env):
     listed = []
     await list_cmd(user_update(Msg(61, "/list", listed)), env.context)
     assert first_data(listed[-1][1]) == f"p:{parcel.id}:card:1"
-    assert last_row_data(listed[-1][1]) == ["r:1", "m:on:1"]
+    assert recheck_row_data(listed[-1][1]) == ["r:1", "m:on:1"]
+    assert last_row_data(listed[-1][1]) == ["so:c:1"]
 
 
 def other_update(message):
@@ -316,7 +322,8 @@ async def test_recheck_button_checks_all_and_redraws_the_list(env):
     assert text.startswith(format_check_done(1, 1, 0, rebuilt=1) + "\n\n")
     assert "📋" in text
     assert first_data(markup) == f"p:{parcel.id}:card:1"
-    assert last_row_data(markup) == ["r:1", "m:on:1"]
+    assert recheck_row_data(markup) == ["r:1", "m:on:1"]
+    assert last_row_data(markup) == ["so:c:1"]
     again = await tap(env, "r:1")
     assert again.answers == [texts.CHECK_TOO_SOON.format(minutes=2)]
     assert again.edits == []
@@ -400,3 +407,11 @@ async def test_adm_action_health_users_and_non_admin(env):
     admin_hozk = await tap(env, "adm:hozk", user_id=ADMIN)
     assert admin_hozk.answers == [None]
     assert texts.ADMIN_HELP in admin_hozk.edits[0][0]
+
+
+async def test_sort_button_reorders_the_list_and_offers_the_next_order(env):
+    await add_spx(env)
+    query = await tap(env, "so:a:1")
+    _, markup = query.edits[0]
+    assert last_row_data(markup) == ["so:n:1"], "tapping again moves on to nearest-first"
+    assert recheck_row_data(markup) == ["r:1:a", "m:on:1"], "the order sticks to the buttons"

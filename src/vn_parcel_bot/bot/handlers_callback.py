@@ -26,6 +26,7 @@ from vn_parcel_bot.bot.handlers_user import (
     current_user,
     delete_messages,
     drop_pending,
+    list_view,
     maps_on,
     recheck_all,
     send_parcel_map,
@@ -49,15 +50,15 @@ from vn_parcel_bot.keyboards import (
     select_keyboard,
 )
 from vn_parcel_bot.services.formatting import (
+    DEFAULT_SORT,
+    SORT_MODES,
     format_add_outcome,
     format_health,
     format_help,
     format_history,
-    format_parcel_list,
     format_remove_confirm,
     format_removed,
     format_users,
-    list_page_items,
     parcel_title,
     spoiler,
 )
@@ -104,6 +105,8 @@ async def callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _parcel_action(context, query, parts)
     elif kind == "l":
         await _list_page(context, query, parts)
+    elif kind == "so":
+        await _sort_list(context, query, parts)
     elif kind == "r":
         await _recheck(context, query, parts)
     elif kind == "s":
@@ -256,22 +259,38 @@ async def _ask_rename(
     }
 
 
-async def _show_list(context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, page: int) -> None:
+async def _show_list(
+    context: ContextTypes.DEFAULT_TYPE,
+    query: CallbackQuery,
+    page: int,
+    sort: str = DEFAULT_SORT,
+) -> None:
     deps = get_deps(context)
-    parcels = await deps.parcels.list_for(query.from_user.id)
-    page, pages, numbered = list_page_items(parcels, page)
-    await _edit(
-        query,
-        format_parcel_list(parcels, deps.settings.tz, page=page),
-        list_keyboard(numbered, page, pages, recheck=True),
-    )
+    text, page, pages, numbered = await list_view(deps, query.from_user.id, page, sort)
+    await _edit(query, text, list_keyboard(numbered, page, pages, recheck=True, sort=sort))
+
+
+def _sort_of(parts: list[str], index: int) -> str:
+    """The order carried in callback data; anything unknown falls back to the default."""
+    if len(parts) > index and parts[index] in SORT_MODES:
+        return parts[index]
+    return DEFAULT_SORT
 
 
 async def _list_page(
     context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
 ) -> None:
     await query.answer()
-    await _show_list(context, query, (_page(parts[0]) if parts else None) or 1)
+    page = (_page(parts[0]) if parts else None) or 1
+    await _show_list(context, query, page, _sort_of(parts, 1))
+
+
+async def _sort_list(
+    context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, parts: list[str]
+) -> None:
+    await query.answer()
+    page = (_page(parts[1]) if len(parts) > 1 else None) or 1
+    await _show_list(context, query, page, _sort_of(parts, 0))
 
 
 async def _recheck(
@@ -285,13 +304,13 @@ async def _recheck(
     await query.answer(texts.CHECK_STARTED)
     deps = get_deps(context)
     summary = await recheck_all(deps, user_id)
-    parcels = await deps.parcels.list_for(user_id)
     requested = (_page(parts[0]) if parts else None) or 1
-    page, pages, numbered = list_page_items(parcels, requested)
+    sort = _sort_of(parts, 1)
+    text, page, pages, numbered = await list_view(deps, user_id, requested, sort)
     await _edit(
         query,
-        summary + "\n\n" + format_parcel_list(parcels, deps.settings.tz, page=page),
-        list_keyboard(numbered, page, pages, recheck=True),
+        summary + "\n\n" + text,
+        list_keyboard(numbered, page, pages, recheck=True, sort=sort),
     )
 
 
@@ -406,13 +425,12 @@ async def _show_selection(
     context: ContextTypes.DEFAULT_TYPE, query: CallbackQuery, page: int
 ) -> None:
     deps = get_deps(context)
-    parcels = await deps.parcels.list_for(query.from_user.id)
-    page, pages, numbered = list_page_items(parcels, page)
+    text, page, pages, numbered = await list_view(deps, query.from_user.id, page)
     selected = set(user_data(context)[SELECTION]["ids"])
     header = texts.SELECT_HEADER.format(count=len(selected))
     await _edit(
         query,
-        header + "\n\n" + format_parcel_list(parcels, deps.settings.tz, page=page),
+        header + "\n\n" + text,
         select_keyboard(numbered, page, pages, selected),
     )
 

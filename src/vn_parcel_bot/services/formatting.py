@@ -153,7 +153,7 @@ def format_event_update(
     return truncate_message("\n".join(lines))
 
 
-def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "") -> str:
+def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "", place: str = "") -> str:
     status = (
         _escape(parcel.last_status_text)
         if parcel.last_status_text
@@ -173,6 +173,7 @@ def _list_item(index: int, parcel: Parcel, tz: ZoneInfo, mark: str = "") -> str:
         emoji=texts.STATE_EMOJI[parcel.state],
         title=parcel_title(parcel),
         carrier=carrier + progress_suffix + mark,
+        place=place,
         status=status,
         time_suffix=suffix,
         bar=texts.PROGRESS_BAR_LINE.format(bar=bar) if bar else "",
@@ -229,12 +230,69 @@ def list_page_items(
     return page, pages, numbered
 
 
-def format_parcel_list(parcels: Sequence[Parcel], tz: ZoneInfo, *, page: int = 1) -> str:
+SORT_MODES = ("n", "c", "a")
+DEFAULT_SORT = SORT_MODES[0]
+
+
+def next_sort(sort: str) -> str:
+    """The mode the sort button moves on to: nearest, then carrier, then A-Z."""
+    if sort not in SORT_MODES:
+        return SORT_MODES[0]
+    return SORT_MODES[(SORT_MODES.index(sort) + 1) % len(SORT_MODES)]
+
+
+def _sort_name(parcel: Parcel) -> str:
+    return (parcel.label or parcel.tracking_number).casefold()
+
+
+def sort_parcels(
+    parcels: Sequence[Parcel], sort: str = "n", distances: Mapping[int, float] | None = None
+) -> list[Parcel]:
+    """Order the list: orders still travelling first, then the chosen order within each part.
+
+    A parcel whose hub is unknown has no distance, so nearest-first leaves it at the end
+    rather than pretending it is next door. `position` keeps the original order stable.
+    """
+    known = distances or {}
+
+    def key(item: tuple[int, Parcel]) -> tuple:
+        position, parcel = item
+        done = not parcel.is_active
+        if sort == "a":
+            return (done, _sort_name(parcel), position)
+        if sort == "c":
+            carrier = (
+                carrier_name(parcel.carrier)
+                if parcel.carrier is not None
+                else texts.CARRIER_UNRESOLVED
+            )
+            return (done, carrier.casefold(), _sort_name(parcel), position)
+        km = known.get(parcel.id)
+        return (done, km is None, km if km is not None else 0.0, position)
+
+    return [parcel for _, parcel in sorted(enumerate(parcels), key=key)]
+
+
+def format_parcel_list(
+    parcels: Sequence[Parcel],
+    tz: ZoneInfo,
+    *,
+    page: int = 1,
+    places: Mapping[int, str] | None = None,
+) -> str:
     if not parcels:
         return texts.LIST_EMPTY
     page, pages, numbered = list_page_items(parcels, page)
-    items = [_list_item(index, parcel, tz) for index, parcel in numbered]
-    text = texts.LIST_HEADER + "\n\n" + "\n".join(items)
+    lines: list[str] = []
+    # Headers only earn their space when the list actually holds both kinds of order.
+    mixed = len({parcel.is_active for parcel in parcels}) > 1
+    section: bool | None = None
+    for index, parcel in numbered:
+        if mixed and parcel.is_active != section:
+            section = parcel.is_active
+            lines.append(texts.LIST_SECTION_ACTIVE if section else texts.LIST_SECTION_DONE)
+        lines.append(_list_item(index, parcel, tz, place=(places or {}).get(parcel.id, "")))
+    text = texts.LIST_HEADER + "\n\n" + "\n".join(lines)
     if pages > 1:
         text += "\n\n" + texts.LIST_PAGE.format(page=page, pages=pages)
     return truncate_message(text)

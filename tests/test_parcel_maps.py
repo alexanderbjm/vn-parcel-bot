@@ -141,3 +141,35 @@ async def test_find_area_asks_the_geocoder_only_when_maps_are_on(env):
     maps = ParcelMaps(repo, switched_off, tiles, replace(settings, maps_enabled=False))
     assert await maps.find_area("Hà Nội") is None
     assert switched_off.calls == []
+
+
+async def test_list_places_gives_a_line_and_a_distance_for_each_parcel(env):
+    repo, settings, parcel = env
+    await repo.set_home(1, *HOME)
+    await repo.save_place("HNI|Thanh Tri", 20.94, 105.84, "osm", T0)
+    maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
+    lines, distances = await maps.list_places([parcel], await repo.get_user(1))
+    assert lines[parcel.id] == texts.LIST_PLACE_LINE.format(
+        place="Kho Thanh Tri", distance="~10 km"
+    )
+    assert 9 < distances[parcel.id] < 11
+
+
+async def test_list_places_leaves_out_a_parcel_with_no_hub(env):
+    import dataclasses
+
+    repo, settings, parcel = env
+    maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
+    lines, distances = await maps.list_places(
+        [dataclasses.replace(parcel, place=None)], await repo.get_user(1)
+    )
+    assert lines == {}
+    assert distances == {}
+
+
+async def test_list_places_shows_the_hub_alone_when_the_distance_is_unknown(env):
+    repo, settings, parcel = env
+    maps = ParcelMaps(repo, FakeGeocoder(), tiles, settings)
+    lines, distances = await maps.list_places([parcel], await repo.get_user(1))
+    assert lines[parcel.id] == texts.LIST_PLACE_ONLY.format(place="Kho Thanh Tri")
+    assert distances == {}

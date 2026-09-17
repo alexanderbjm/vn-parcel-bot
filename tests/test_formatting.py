@@ -31,6 +31,7 @@ from vn_parcel_bot.services.formatting import (
     parcel_title,
     ref_text,
     seventeen_track_url,
+    sort_parcels,
     spoiler,
     truncate_message,
 )
@@ -541,3 +542,42 @@ def test_check_done_mentions_rebuilt_parcels_and_new_scripts():
 def test_place_texts_do_not_say_straight_line():
     assert "chim bay" not in texts.PLACE_LINE
     assert "chim bay" not in texts.MAP_CAPTION
+
+
+def test_list_row_shows_where_the_parcel_is_and_how_far():
+    parcel = make_parcel(label="Áo", last_status_text="Đã đến kho", last_event_at=T0)
+    line = texts.LIST_PLACE_LINE.format(place="Quảng Đông", distance="~1960 km")
+    text = format_parcel_list([parcel], TZ, places={1: line})
+    assert "📦 Kiện hàng đã tới Quảng Đông · cách bạn ~1960 km" in text
+    assert text.index("Quảng Đông") < text.index("Đã đến kho"), "location sits above the status"
+
+
+def test_list_sections_split_finished_orders_from_the_rest():
+    active = make_parcel(id=1, label="Áo")
+    done = make_parcel(id=2, label="Quần", state="delivered")
+    both = format_parcel_list([active, done], TZ)
+    assert texts.LIST_SECTION_ACTIVE in both
+    assert both.index(texts.LIST_SECTION_ACTIVE) < both.index(texts.LIST_SECTION_DONE)
+    assert texts.LIST_SECTION_ACTIVE not in format_parcel_list([active], TZ), "one kind, no headers"
+
+
+def test_sorting_keeps_finished_orders_last_in_every_mode():
+    active = make_parcel(id=1, label="Zulu")
+    done = make_parcel(id=2, label="Alpha", state="delivered")
+    for mode in ("n", "c", "a"):
+        assert sort_parcels([done, active], mode, {}) == [active, done]
+
+
+def test_nearest_first_puts_unknown_distances_at_the_end():
+    near = make_parcel(id=1, label="Gần")
+    far = make_parcel(id=2, label="Xa")
+    unknown = make_parcel(id=3, label="Không rõ")
+    ordered = sort_parcels([far, unknown, near], "n", {1: 12.0, 2: 900.0})
+    assert [parcel.id for parcel in ordered] == [1, 2, 3]
+
+
+def test_alphabetical_and_carrier_sorts():
+    spx = make_parcel(id=1, label="Zulu")
+    ghn = make_parcel(id=2, label="Alpha", carrier="ghn", candidates=("ghn",))
+    assert [p.id for p in sort_parcels([spx, ghn], "a", {})] == [2, 1]
+    assert [p.id for p in sort_parcels([spx, ghn], "c", {})] == [2, 1], "GHN before SPX"

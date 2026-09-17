@@ -45,6 +45,7 @@ from vn_parcel_bot.keyboards import (
     start_keyboard,
 )
 from vn_parcel_bot.services.formatting import (
+    DEFAULT_SORT,
     format_add_outcome,
     format_check_done,
     format_help,
@@ -58,6 +59,7 @@ from vn_parcel_bot.services.formatting import (
     parcel_carrier_label,
     parcel_title,
     ref_text,
+    sort_parcels,
     spoiler,
     truncate_message,
 )
@@ -359,16 +361,33 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply(update, texts.UNKNOWN_CODE)
 
 
+async def list_view(
+    deps: Deps, user_id: int, requested: int = 1, sort: str = DEFAULT_SORT
+) -> tuple[str, int, int, list[tuple[int, Parcel]]]:
+    """The list text plus the page it settled on and that page's numbered parcels.
+
+    Each row can say where the parcel is and how far that is from the user, and the whole
+    list is ordered by the mode asked for, with orders that are over kept to the end.
+    """
+    parcels = await deps.parcels.list_for(user_id)
+    places: dict[int, str] = {}
+    distances: dict[int, float] = {}
+    maps = deps.maps if maps_on(deps) else None
+    if maps is not None:
+        user = await deps.repo.get_user(user_id)
+        if user is not None:
+            places, distances = await maps.list_places(parcels, user)
+    ordered = sort_parcels(parcels, sort, distances)
+    page, pages, numbered = list_page_items(ordered, requested)
+    text = format_parcel_list(ordered, deps.settings.tz, page=page, places=places)
+    return text, page, pages, numbered
+
+
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
-    parcels = await deps.parcels.list_for(user.telegram_id)
-    page, pages, numbered = list_page_items(parcels, 1)
-    await reply(
-        update,
-        format_parcel_list(parcels, deps.settings.tz, page=page),
-        reply_markup=list_keyboard(numbered, page, pages, recheck=True),
-    )
+    text, page, pages, numbered = await list_view(deps, user.telegram_id)
+    await reply(update, text, reply_markup=list_keyboard(numbered, page, pages, recheck=True))
 
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

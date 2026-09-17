@@ -295,7 +295,8 @@ async def test_phone_prompt_has_a_cancel_button(env):
 async def test_list_multi_select_removes_the_chosen_parcels(env):
     parcels = await add_all(env, 3)
     listed = await command(env, list_cmd, 60, "/list", [])
-    assert buttons(listed.markup)[-1] == ["r:1", "m:on:1"]
+    assert buttons(listed.markup)[-2] == ["r:1", "m:on:1"]
+    assert buttons(listed.markup)[-1] == ["so:c:1"]
     started = await tap(env, "m:on:1", listed.id)
     text, markup = started.edits[0]
     assert text.startswith(texts.SELECT_HEADER.format(count=0))
@@ -323,7 +324,7 @@ async def test_multi_select_needs_a_choice_and_can_be_left(env):
     assert empty.answers == [texts.SELECT_NONE]
     left = await tap(env, "m:off:1", listed.id)
     assert left.edits[0][0].startswith(texts.LIST_HEADER)
-    assert buttons(left.edits[0][1])[-1] == ["r:1", "m:on:1"]
+    assert buttons(left.edits[0][1])[-2] == ["r:1", "m:on:1"]
     assert await codes_left(env) == CODES[:2]
 
 
