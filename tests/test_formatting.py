@@ -585,14 +585,14 @@ def test_alphabetical_and_carrier_sorts():
 
 
 def test_status_sort_follows_the_stage_ladder():
-    """Still being identified, then moving, then nearly there, then quiet, then finished."""
+    """Moving, then nearly there, then still being identified, then quiet, then finished."""
     new = unresolved(id=1, label="Mã mới")
     moving = make_parcel(id=2, label="Sạc", progress=50)
     near = make_parcel(id=3, label="Áo", progress=95)
     quiet = make_parcel(id=4, label="Cũ", state="stale")
     done = make_parcel(id=5, label="Xong", state="delivered")
     ordered = sort_parcels([done, quiet, near, moving, new], "s", {})
-    assert [parcel.id for parcel in ordered] == [1, 2, 3, 4, 5]
+    assert [parcel.id for parcel in ordered] == [2, 3, 1, 4, 5]
 
 
 def test_status_sort_puts_the_newest_movement_first_inside_a_stage():

@@ -248,29 +248,30 @@ def _sort_name(parcel: Parcel) -> str:
 
 # One heading per rung of the ladder below.
 STAGE_HEADINGS = (
-    texts.LIST_STAGE_PENDING,
     texts.LIST_STAGE_MOVING,
     texts.LIST_STAGE_NEAR,
+    texts.LIST_STAGE_PENDING,
     texts.LIST_STAGE_QUIET,
     texts.LIST_SECTION_DONE,
 )
 
 
 def _stage(parcel: Parcel) -> int:
-    """How far the parcel has come: 0 still being identified, 4 finished.
+    """How far the parcel has come: 0 on the move, 4 finished.
 
-    A quiet parcel sits on its own rung rather than among the finished ones: nothing says it
-    has arrived, only that nobody has heard from it for a month.
+    A parcel actually travelling outranks one we cannot identify yet, which has told us
+    nothing at all. A quiet parcel sits on its own rung rather than among the finished ones:
+    nothing says it has arrived, only that nobody has heard from it for a month.
     """
     if parcel.state == "pending":
-        return 0
+        return 2
     if parcel.state == "stale":
         return 3
     if not parcel.is_active:
         return 4
     if parcel.progress is not None and parcel.progress >= NEAR_DELIVERY_PROGRESS:
-        return 2
-    return 1
+        return 1
+    return 0
 
 
 def _list_heading(parcel: Parcel, *, stages: bool) -> str:
