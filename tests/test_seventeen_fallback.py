@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -8,10 +9,13 @@ import respx
 from tests.fakes import FakeCarrier, FakeClock, FakeNotifier, fake_registry
 from tests.test_poller import T0, USER, add
 from vn_parcel_bot.carriers.seventeen_track import GET_TRACK_INFO_URL, SeventeenTrackCarrier
+from vn_parcel_bot.constants import QUOTA_COOLDOWN
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.poller import Poller
 
 CODE = "773400000000001"
+OTHER = "773400000000002"
+QUOTA_KEY = "17track-quota-until"
 
 
 def track_info(number: str, description: str) -> dict:
@@ -74,14 +78,14 @@ async def env(tmp_path, settings):
         await repo.close()
 
 
-def build(repo, carrier, notifier, settings, no_sleep, seventeen):
+def build(repo, carrier, notifier, settings, no_sleep, seventeen, clock=None):
     return Poller(
         repo,
         fake_registry({"cainiao": carrier}),
         None,
         notifier,
         settings,
-        FakeClock(T0),
+        clock or FakeClock(T0),
         no_sleep,
         lambda: 0.0,
         seventeen=seventeen,
@@ -180,15 +184,49 @@ class BlockedSeventeen(FakeSeventeen):
         raise CarrierError("cainiao", "blocked", "17track quota exceeded")
 
 
-async def test_a_quota_error_leaves_the_parcel_for_another_day(env):
+async def test_one_quota_refusal_stops_the_others_asking_too(env):
+    """Out of quota is an account-wide answer, so the next parcel does not spend a call
+    rediscovering it. Without this, unregistered parcels pin the quota at zero forever."""
     repo, carrier, notifier, settings, no_sleep = env
     parcel = await add(repo, CODE, "cainiao")
+    await add(repo, OTHER, "cainiao")
     seventeen = BlockedSeventeen()
     poller = build(repo, carrier, notifier, settings, no_sleep, seventeen)
     await poller.run_cycle(only_user_id=USER, wait=True)
-    assert await repo.get_meta(f"17track-tried:{parcel.id}") is None
+    assert len(seventeen.calls) == 1, "the second parcel waits instead of asking as well"
+    assert await repo.get_meta(f"17track-tried:{parcel.id}") is None, "still not registered"
+    assert await repo.get_meta(QUOTA_KEY) is not None, "the gate is closed"
+
+
+async def test_a_registered_parcel_still_re_queries_while_the_gate_is_closed(env):
+    """The gate holds back registrations only: a parcel already on 17TRACK keeps its updates.
+
+    This is the parcel that went silent in the real database while J&T codes burned the quota.
+    """
+    from tests.fakes import ev, found
+
+    repo, carrier, notifier, settings, no_sleep = env
+    parcel = await add(repo, CODE, "cainiao")
+    await repo.set_meta(f"17track-tried:{parcel.id}", T0.isoformat())
+    await repo.set_meta(QUOTA_KEY, (T0 + timedelta(hours=5)).isoformat())
+    seventeen = FakeSeventeen(found("cainiao", CODE, ev(0, "Đã đến Thượng Hải")))
+    poller = build(repo, carrier, notifier, settings, no_sleep, seventeen)
     await poller.run_cycle(only_user_id=USER, wait=True)
-    assert len(seventeen.calls) == 2, "a parcel is not written off because quota ran out"
+    assert seventeen.calls == [(CODE, False)], "a free re-query costs no quota"
+    assert await repo.count_events(parcel.id) == 1
+
+
+async def test_the_gate_opens_again_after_the_cooldown(env):
+    repo, carrier, notifier, settings, no_sleep = env
+    await add(repo, CODE, "cainiao")
+    clock = FakeClock(T0)
+    seventeen = BlockedSeventeen()
+    poller = build(repo, carrier, notifier, settings, no_sleep, seventeen, clock=clock)
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert len(seventeen.calls) == 1
+    clock.advance(QUOTA_COOLDOWN + timedelta(minutes=1))
+    await poller.run_cycle(only_user_id=USER, wait=True)
+    assert len(seventeen.calls) == 2, "a parcel is not written off because quota ran out once"
 
 
 def delivered_payload(description: str, location: str, sub_status: str = "") -> dict:

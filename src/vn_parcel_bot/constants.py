@@ -4,6 +4,9 @@ PENDING_EXPIRY = timedelta(days=7)
 STALE_AFTER = timedelta(days=30)
 DELIVERED_VISIBLE_FOR = timedelta(days=3)
 PURGE_AFTER = timedelta(days=30)
+# 17TRACK refuses registrations once the account's quota is spent. That answer is the
+# same for every parcel, so one refusal pauses registrations for this long.
+QUOTA_COOLDOWN = timedelta(hours=6)
 # Whatever the state or the backoff works out to, no order is left unchecked for longer.
 MAX_CHECK_GAP = timedelta(hours=2)
 MAX_BACKOFF = MAX_CHECK_GAP

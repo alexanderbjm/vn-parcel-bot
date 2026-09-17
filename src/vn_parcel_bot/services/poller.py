@@ -28,6 +28,7 @@ from vn_parcel_bot.constants import (
     OUT_FOR_DELIVERY_PROGRESS,
     PENDING_EXPIRY,
     PURGE_AFTER,
+    QUOTA_COOLDOWN,
     STALE_AFTER,
 )
 from vn_parcel_bot.db.repo import Parcel, Repository, User
@@ -45,6 +46,9 @@ from vn_parcel_bot.services.scheduling import capped, check_interval
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
+
+# One shared marker: 17TRACK answers "out of quota" for the whole account.
+QUOTA_KEY = "17track-quota-until"
 
 Outcome = TrackingResult | CarrierError
 
@@ -495,13 +499,20 @@ class Poller:
 
         `register=False` re-queries a parcel that is already registered and does nothing
         otherwise, so a carrier having a bad day never costs a registration.
+
+        Running out of quota is an account-wide answer, so it pauses registrations for every
+        parcel until QUOTA_COOLDOWN passes. Re-queries for parcels already on 17TRACK cost
+        nothing and carry on, so a registration that cannot succeed never starves them.
         """
         if self._seventeen is None or not self._settings.seventeen_fallback:
             return False
         key = f"17track-tried:{parcel.id}"
         registered = await self._repo.get_meta(key) is not None
-        if not registered and not register:
-            return False
+        if not registered:
+            if not register:
+                return False
+            if await self._registrations_paused(now):
+                return False
         masked = mask_code(parcel.tracking_number)
         try:
             result = await self._seventeen.fetch(
@@ -512,8 +523,10 @@ class Poller:
             )
         except CarrierError as exc:
             if exc.reason == "blocked":
-                # Out of registration quota: leave the parcel unregistered and try another day.
-                log.warning("17track fallback out of quota code=%s", masked)
+                # Out of registration quota: leave the parcel unregistered, and hold every
+                # other parcel back too, so retries cannot keep the quota pinned at zero.
+                await self._repo.set_meta(QUOTA_KEY, (now + QUOTA_COOLDOWN).isoformat())
+                log.warning("17track out of quota, registrations paused code=%s", masked)
                 return False
             if not registered:
                 await self._repo.set_meta(key, now.isoformat())
@@ -532,6 +545,16 @@ class Poller:
         log.info("17track fallback found data code=%s events=%s", masked, len(result.events))
         await self._handle_result(parcel, result, now, report, alerts)
         return True
+
+    async def _registrations_paused(self, now: datetime) -> bool:
+        """True while a recent quota refusal still stands."""
+        until = await self._repo.get_meta(QUOTA_KEY)
+        if until is None:
+            return False
+        try:
+            return now < datetime.fromisoformat(until)
+        except ValueError:
+            return False
 
     @property
     def _maps_on(self) -> bool:
