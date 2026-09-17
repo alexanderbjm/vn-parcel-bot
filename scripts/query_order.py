@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root / "src"))
 
+from vn_parcel_bot.carriers.http import DEFAULT_HEADERS  # noqa: E402
 from vn_parcel_bot.carriers.models import TrackingResult  # noqa: E402
 from vn_parcel_bot.carriers.registry import CarrierRegistry  # noqa: E402
 from vn_parcel_bot.db.repo import Repository  # noqa: E402
@@ -83,7 +84,12 @@ async def query_tracking(
             log.debug("Local db lookup error: %s", exc)
 
     # 2. Query live via registered carrier clients
-    async with httpx.AsyncClient(timeout=15.0) as http:
+    # The same browser headers and redirect-following the bot itself uses: a bare httpx client
+    # announces python-httpx and stops at the first redirect, which is how a J&T lookup that
+    # works inside the bot came back as "jt:http_status: 302" through this bridge.
+    async with httpx.AsyncClient(
+        timeout=15.0, headers=DEFAULT_HEADERS, follow_redirects=True
+    ) as http:
         for carrier_code in candidates:
             client = snapshot.client(carrier_code)
             if not client:
