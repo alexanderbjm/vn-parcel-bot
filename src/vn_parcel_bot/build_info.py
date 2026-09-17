@@ -1,11 +1,18 @@
 import asyncio
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 MAX_COMMITS = 50
+
+# The bot's update notice is read by a person, so it must not print a commit subject: those are
+# written for the repository and for git — "Refuse a cached hub that sits off the route, and read
+# a bare hub code" says nothing to the admin in Telegram. A commit therefore says what changed in
+# Vietnamese on a line of its own in the body, and that line is what the notice shows.
+VI_NOTE = "vi:"
 
 _cache: tuple[str, str] | None = None
 
@@ -20,7 +27,11 @@ def _run(args: list[str]) -> str | None:
         result = subprocess.run(  # noqa: S603
             args,
             capture_output=True,
-            text=True,
+            # git writes UTF-8, while the console codepage here is cp1252: decoded as the
+            # console says, a "Vi:" note with Vietnamese diacritics raises inside the reader
+            # thread and the call yields nothing, which silently empties the update notice.
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             check=False,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
@@ -64,19 +75,40 @@ def deployed_revision_sha() -> str | None:
     return found[0] if found else None
 
 
+def _note(subject: str, body: Sequence[str]) -> str:
+    """The one line the notice shows for a commit: its Vietnamese note, or its subject.
+
+    A commit with no note still says something rather than dropping out of the notice, so a
+    change is never invisible just because its wording was forgotten.
+    """
+    for line in body:
+        stripped = line.strip()
+        if stripped.casefold().startswith(VI_NOTE):
+            note = stripped[len(VI_NOTE) :].strip()
+            if note:
+                return note
+    return subject
+
+
 def revision_commits(since: str | None) -> list[str]:
-    """Subject lines of the commits after `since` up to HEAD, newest first.
+    """What each commit after `since` changed, newest first, in the wording the notice shows.
 
     An empty list when there is nothing to compare against, when `since` is no longer a
     commit git can resolve (a rewritten branch), or when git cannot answer at all.
     """
-    args = _git("log", f"-{MAX_COMMITS}", "--format=%s")
+    args = _git("log", f"-{MAX_COMMITS}", "--format=%s%n%b%x00")
     if since:
         args.append(f"{since}..HEAD")
     stdout = _run(args)
     if stdout is None:
         return []
-    return [line.strip() for line in stdout.splitlines() if line.strip()]
+    notes = []
+    for record in stdout.split("\x00"):
+        lines = [line.strip() for line in record.strip().splitlines()]
+        if not lines or not lines[0]:
+            continue
+        notes.append(_note(lines[0], lines[1:]))
+    return notes
 
 
 async def deployed_revision_async() -> str | None:

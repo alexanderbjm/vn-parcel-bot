@@ -139,16 +139,45 @@ def test_the_sha_and_the_display_string_share_one_lookup(monkeypatch):
     assert len(calls) == 1
 
 
-def test_revision_commits_returns_subjects_and_bounds_the_range(monkeypatch):
+def test_revision_commits_returns_one_note_per_commit_and_bounds_the_range(monkeypatch):
     seen = {}
 
     def fake_run(args, **kwargs):
         seen["args"] = args
-        return completed("feat: one\n\nfix: two\n")
+        return completed("feat: one\n\x00fix: two\n\x00")
 
     monkeypatch.setattr(build_info.subprocess, "run", fake_run)
     assert build_info.revision_commits("abc1234") == ["feat: one", "fix: two"]
     assert seen["args"][-1] == "abc1234..HEAD"
+
+
+def test_a_vietnamese_note_is_what_the_notice_shows(monkeypatch):
+    # The subject is written for the repository; the admin reads the "Vi:" line instead.
+    body = (
+        "Refuse a cached hub that sits off the route\n\n"
+        "Why it was wrong.\n\n"
+        "Vi: Bỏ khoảng cách sai tới bưu cục\n"
+    )
+    monkeypatch.setattr(build_info.subprocess, "run", lambda *a, **k: completed(body + "\x00"))
+
+    assert build_info.revision_commits(None) == ["Bỏ khoảng cách sai tới bưu cục"]
+
+
+def test_a_commit_without_a_note_falls_back_to_its_subject(monkeypatch):
+    # An older commit, or one whose wording was forgotten, must not vanish from the notice.
+    monkeypatch.setattr(
+        build_info.subprocess, "run", lambda *a, **k: completed("feat: one\n\nbody\n\x00")
+    )
+
+    assert build_info.revision_commits(None) == ["feat: one"]
+
+
+def test_an_empty_note_falls_back_to_the_subject(monkeypatch):
+    monkeypatch.setattr(
+        build_info.subprocess, "run", lambda *a, **k: completed("feat: one\n\nvi:\n\x00")
+    )
+
+    assert build_info.revision_commits(None) == ["feat: one"]
 
 
 def test_revision_commits_without_a_base_lists_the_newest(monkeypatch):
@@ -156,11 +185,26 @@ def test_revision_commits_without_a_base_lists_the_newest(monkeypatch):
 
     def fake_run(args, **kwargs):
         seen["args"] = args
-        return completed("feat: one\n")
+        return completed("feat: one\n\x00")
 
     monkeypatch.setattr(build_info.subprocess, "run", fake_run)
     assert build_info.revision_commits(None) == ["feat: one"]
     assert not any("..HEAD" in arg for arg in seen["args"])
+
+
+def test_git_output_is_read_as_utf8(monkeypatch):
+    # The console codepage here is cp1252, so a Vietnamese note raises in the reader thread and
+    # the call yields nothing at all — the notice then loses its changes without saying so.
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen.update(kwargs)
+        return completed("feat: one\n\x00")
+
+    monkeypatch.setattr(build_info.subprocess, "run", fake_run)
+    build_info.revision_commits(None)
+
+    assert seen["encoding"] == "utf-8"
 
 
 def test_revision_commits_is_empty_when_git_refuses(monkeypatch):
