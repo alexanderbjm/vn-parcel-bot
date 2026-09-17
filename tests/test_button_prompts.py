@@ -296,7 +296,7 @@ async def test_list_multi_select_removes_the_chosen_parcels(env):
     parcels = await add_all(env, 3)
     listed = await command(env, list_cmd, 60, "/list", [])
     assert buttons(listed.markup)[-2] == ["r:1", "m:on:1"]
-    assert buttons(listed.markup)[-1] == ["so:c:1"]
+    assert buttons(listed.markup)[-1] == ["so:n:1"]
     started = await tap(env, "m:on:1", listed.id)
     text, markup = started.edits[0]
     assert text.startswith(texts.SELECT_HEADER.format(count=0))

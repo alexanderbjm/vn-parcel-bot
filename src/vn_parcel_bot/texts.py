@@ -232,6 +232,9 @@ ALERT_CARRIER = (
 ALERT_ERROR = "⚠️ Bot gặp lỗi: <code>{detail}</code>"
 MODULE_REJECTED = "⚠️ Module <code>{code}</code> lỗi, vẫn dùng bản cũ: {error}"
 BOT_UPDATED = "🔄 <b>Cập nhật bot</b>\nPhiên bản: <code>{revision}</code>"
+BOT_UPDATED_CHANGES = "\n\n<b>Thay đổi:</b>\n{changes}"
+BOT_UPDATED_ITEM = "• {subject}"
+BOT_UPDATED_MORE = "• … và {count} thay đổi trước đó"
 
 VISION_NOT_CONFIGURED = (
     "📷 Tính năng đọc ảnh chưa sẵn sàng trên máy chạy bot. Bạn gửi mã vận đơn trực tiếp nhé."

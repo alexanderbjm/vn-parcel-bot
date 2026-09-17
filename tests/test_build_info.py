@@ -124,3 +124,54 @@ async def test_async_wrapper_runs_off_the_event_loop(monkeypatch):
     monkeypatch.setattr(build_info.subprocess, "run", fake_run)
     await build_info.deployed_revision_async()
     assert seen["thread"] != threading.main_thread().name
+
+
+def test_the_sha_and_the_display_string_share_one_lookup(monkeypatch):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return completed("abc1234|01/01/2026\n")
+
+    monkeypatch.setattr(build_info.subprocess, "run", fake_run)
+    assert build_info.deployed_revision() == "abc1234 · 01/01/2026"
+    assert build_info.deployed_revision_sha() == "abc1234"
+    assert len(calls) == 1
+
+
+def test_revision_commits_returns_subjects_and_bounds_the_range(monkeypatch):
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        return completed("feat: one\n\nfix: two\n")
+
+    monkeypatch.setattr(build_info.subprocess, "run", fake_run)
+    assert build_info.revision_commits("abc1234") == ["feat: one", "fix: two"]
+    assert seen["args"][-1] == "abc1234..HEAD"
+
+
+def test_revision_commits_without_a_base_lists_the_newest(monkeypatch):
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        return completed("feat: one\n")
+
+    monkeypatch.setattr(build_info.subprocess, "run", fake_run)
+    assert build_info.revision_commits(None) == ["feat: one"]
+    assert not any("..HEAD" in arg for arg in seen["args"])
+
+
+def test_revision_commits_is_empty_when_git_refuses(monkeypatch):
+    # A rewritten branch leaves a recorded sha git can no longer resolve.
+    monkeypatch.setattr(build_info.subprocess, "run", lambda *a, **k: completed("", 128))
+    assert build_info.revision_commits("gone") == []
+
+
+def test_revision_commits_is_empty_when_git_is_missing(monkeypatch):
+    def boom(*a, **k):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(build_info.subprocess, "run", boom)
+    assert build_info.revision_commits(None) == []

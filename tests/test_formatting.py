@@ -185,7 +185,7 @@ def test_parcel_list_items():
         make_parcel(label="Áo", last_status_text="Đang giao", last_event_at=T0),
         unresolved(id=2),
     ]
-    text = format_parcel_list(parcels, TZ)
+    text = format_parcel_list(parcels, TZ, sort="n")
     assert text.startswith(texts.LIST_HEADER + "\n\n")
     assert f"1. <b>Áo</b> · SPX\n├ {blurred(SPX)}\n├ Đang giao\n└ 🕒 01/09 08:30" in text
     assert (
@@ -559,10 +559,12 @@ def test_list_row_shows_where_the_parcel_is_and_how_far():
 def test_list_sections_split_finished_orders_from_the_rest():
     active = make_parcel(id=1, label="Áo")
     done = make_parcel(id=2, label="Quần", state="delivered")
-    both = format_parcel_list([active, done], TZ)
+    both = format_parcel_list([active, done], TZ, sort="n")
     assert texts.LIST_SECTION_ACTIVE in both
     assert both.index(texts.LIST_SECTION_ACTIVE) < both.index(texts.LIST_SECTION_DONE)
-    assert texts.LIST_SECTION_ACTIVE not in format_parcel_list([active], TZ), "one kind, no headers"
+    assert texts.LIST_SECTION_ACTIVE not in format_parcel_list([active], TZ, sort="n"), (
+        "one kind, no headers"
+    )
 
 
 def test_sorting_keeps_finished_orders_last_in_every_mode():
@@ -620,9 +622,18 @@ def test_status_sort_heads_each_stage_that_has_parcels():
 def test_the_other_sorts_keep_the_two_part_split():
     moving = make_parcel(id=1, label="Sạc", progress=50)
     done = make_parcel(id=2, label="Xong", state="delivered")
+    for sort in ("n", "c", "a"):
+        text = format_parcel_list([moving, done], TZ, sort=sort)
+        assert texts.LIST_SECTION_ACTIVE in text
+        assert texts.LIST_STAGE_MOVING not in text
+
+
+def test_the_default_sort_is_the_status_one():
+    moving = make_parcel(id=1, label="Sạc", progress=50)
+    done = make_parcel(id=2, label="Xong", state="delivered")
     text = format_parcel_list([moving, done], TZ)
-    assert texts.LIST_SECTION_ACTIVE in text
-    assert texts.LIST_STAGE_MOVING not in text
+    assert texts.LIST_STAGE_MOVING in text
+    assert texts.LIST_SECTION_ACTIVE not in text, "stage headings replace the two-part split"
 
 
 def test_grouped_updates_list_each_parcel_with_one_line():

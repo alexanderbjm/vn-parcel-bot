@@ -14,6 +14,7 @@ from vn_parcel_bot.constants import (
     LIST_PAGE_SIZE,
     MAX_EVENTS_IN_HISTORY,
     MAX_EVENTS_IN_UPDATE,
+    MAX_UPDATE_NOTES,
     NEAR_DELIVERY_PROGRESS,
     TELEGRAM_TEXT_LIMIT,
 )
@@ -251,12 +252,14 @@ def list_page_items(
     return page, pages, numbered
 
 
-SORT_MODES = ("n", "c", "a", "s")
+# Status leads: /list opens grouped by the stage each parcel has reached, which answers "where
+# is my stuff" before "what is nearest". The button walks the rest in this order and wraps.
+SORT_MODES = ("s", "n", "c", "a")
 DEFAULT_SORT = SORT_MODES[0]
 
 
 def next_sort(sort: str) -> str:
-    """The mode the sort button moves on to: nearest, then carrier, then A-Z."""
+    """The mode the sort button moves on to: status, then nearest, then carrier, then A-Z."""
     if sort not in SORT_MODES:
         return SORT_MODES[0]
     return SORT_MODES[(SORT_MODES.index(sort) + 1) % len(SORT_MODES)]
@@ -301,7 +304,9 @@ def _list_heading(parcel: Parcel, *, stages: bool) -> str:
 
 
 def sort_parcels(
-    parcels: Sequence[Parcel], sort: str = "n", distances: Mapping[int, float] | None = None
+    parcels: Sequence[Parcel],
+    sort: str = DEFAULT_SORT,
+    distances: Mapping[int, float] | None = None,
 ) -> list[Parcel]:
     """Order the list: orders still travelling first, then the chosen order within each part.
 
@@ -625,6 +630,23 @@ def format_health(
     if revision:
         text += "\n" + texts.HEALTH_REVISION.format(revision=_escape(revision))
     return text
+
+
+def format_update_notice(revision: str, subjects: Sequence[str]) -> str:
+    """The "bot updated" DM: the new revision, then what changed in it.
+
+    `subjects` are commit summaries since the previously announced revision, newest first. Empty
+    when there is nothing to compare against (the first run) or when git could not answer, and the
+    notice then carries the revision alone rather than an empty heading.
+    """
+    text = texts.BOT_UPDATED.format(revision=_escape(revision))
+    if not subjects:
+        return text
+    shown = subjects[:MAX_UPDATE_NOTES]
+    lines = [texts.BOT_UPDATED_ITEM.format(subject=_escape(subject)) for subject in shown]
+    if len(subjects) > len(shown):
+        lines.append(texts.BOT_UPDATED_MORE.format(count=len(subjects) - len(shown)))
+    return text + texts.BOT_UPDATED_CHANGES.format(changes="\n".join(lines))
 
 
 def truncate_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> str:

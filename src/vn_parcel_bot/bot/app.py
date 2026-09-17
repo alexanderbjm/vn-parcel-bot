@@ -51,7 +51,11 @@ from vn_parcel_bot.bot.handlers_user import (
     unknown_command,
 )
 from vn_parcel_bot.bot.notifier import TelegramNotifier
-from vn_parcel_bot.build_info import deployed_revision_async
+from vn_parcel_bot.build_info import (
+    deployed_revision_async,
+    deployed_revision_sha_async,
+    revision_commits_async,
+)
 from vn_parcel_bot.carriers.http import make_http_client
 from vn_parcel_bot.carriers.registry import CarrierRegistry, set_registry
 from vn_parcel_bot.config import Settings
@@ -63,6 +67,7 @@ from vn_parcel_bot.constants import (
 )
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.digest import DigestService
+from vn_parcel_bot.services.formatting import format_update_notice
 from vn_parcel_bot.services.geo import Geocoder
 from vn_parcel_bot.services.maps import TileCache
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
@@ -126,28 +131,35 @@ def build_application(settings: Settings) -> Application:
 
 
 async def announce_update(deps: Deps) -> None:
-    """DM the admin once per deployed revision.
+    """DM the admin once per deployed revision, with what changed in it.
 
     The bot restarts at every logon as well as after every deploy, so the notice is keyed on the
     commit rather than on the start: the admin hears about it when the running code changes, not
-    on every reboot.
+    on every reboot. The body lists the commits since the revision it last reported.
     """
     revision = await deployed_revision_async()
-    if revision is None:
+    sha = await deployed_revision_sha_async()
+    if revision is None or sha is None:
         return
-    if await deps.repo.get_meta(UPDATE_META_KEY) == revision:
+    recorded = await deps.repo.get_meta(UPDATE_META_KEY)
+    # Earlier releases stored "sha · date"; only the sha is needed to bound the commit range.
+    previous = recorded.split()[0] if recorded else None
+    if previous == sha:
         return
+    # With no recorded sha (the first notice after this shipped) there is no range to bound, so
+    # the log falls back to the most recent commits rather than sending a brief with no content.
+    subjects = await revision_commits_async(previous)
     try:
         await deps.notifier.send(
             deps.settings.admin_telegram_id,
-            texts.BOT_UPDATED.format(revision=escape(revision)),
+            format_update_notice(revision, subjects),
             silent=False,
         )
     except Exception:
         # Leave the meta key unwritten so the next start tries again.
         log.warning("update notice failed revision=%s", revision, exc_info=True)
         return
-    await deps.repo.set_meta(UPDATE_META_KEY, revision)
+    await deps.repo.set_meta(UPDATE_META_KEY, sha)
 
 
 async def _post_init(app: Application) -> None:

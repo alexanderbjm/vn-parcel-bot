@@ -19,6 +19,8 @@ JITTER_SECONDS = 2.0
 FIRST_POLL_DELAY_SECONDS = 30
 MAX_LABEL_LENGTH = 40
 MAX_EVENTS_IN_UPDATE = 10
+# How many commit subjects the "bot updated" notice lists before it summarises the rest.
+MAX_UPDATE_NOTES = 8
 MAX_EVENTS_IN_HISTORY = 30
 TELEGRAM_TEXT_LIMIT = 4000
 VISION_MAX_IMAGE_BYTES = 5 * 1024 * 1024
