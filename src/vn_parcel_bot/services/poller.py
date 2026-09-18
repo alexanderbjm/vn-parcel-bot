@@ -33,7 +33,7 @@ from vn_parcel_bot.constants import (
     STALE_AFTER,
 )
 from vn_parcel_bot.db.repo import Parcel, Repository, User
-from vn_parcel_bot.keyboards import list_keyboard
+from vn_parcel_bot.keyboards import updates_keyboard
 from vn_parcel_bot.services.formatting import (
     Moved,
     format_carrier_alert,
@@ -771,14 +771,13 @@ class Poller:
             if not items:
                 continue
             text = format_updates(items, self._settings.tz)
-            numbered = list(enumerate((item.parcel for item in items), start=1))
             big = any(item.big_moment for item in items)
             await self._notify(
                 user_id,
                 text,
                 report,
                 silent=None if big else True,
-                reply_markup=list_keyboard(numbered, page=1, pages=1),
+                reply_markup=updates_keyboard([item.parcel for item in items]),
             )
 
     async def _notify(

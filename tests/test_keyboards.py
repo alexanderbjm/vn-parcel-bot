@@ -13,6 +13,7 @@ from vn_parcel_bot.keyboards import (
     list_keyboard,
     share_open_keyboard,
     start_keyboard,
+    updates_keyboard,
 )
 
 
@@ -184,3 +185,17 @@ def test_button_styles():
     confirm_kb = confirm_remove_keyboard(42)
     assert confirm_kb.inline_keyboard[0][0].style == "danger"
     assert confirm_kb.inline_keyboard[0][1].style == "primary"
+
+
+def test_updates_keyboard_names_a_parcel_only_when_several_moved():
+    one = updates_keyboard([make_parcel(id=7, label="Dầu gội")])
+    assert cells(one) == [["p:7:card:1"]]
+    assert labels(one) == [[texts.BTN_DETAIL]]
+
+    many = updates_keyboard(
+        [make_parcel(id=7, label="Dầu gội"), make_parcel(id=9, tracking_number="SPXVN067183649549")]
+    )
+    assert cells(many) == [["p:7:card:1"], ["p:9:card:1"]]
+    assert labels(many) == [["🔍 Dầu gội"], ["🔍 SPXVN…549"]]
+
+    assert updates_keyboard([]) is None

@@ -141,6 +141,34 @@ def list_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def updates_keyboard(parcels: Sequence[Parcel]) -> InlineKeyboardMarkup | None:
+    """Detail buttons under the update notice, which has no numbers to point a digit at.
+
+    The list keyboard labels a parcel with its row number, which only reads as a parcel
+    because the list is numbered. This message is not, so a lone "1" said nothing. One
+    parcel needs no name -- the message above it names it; several do, one button each.
+    """
+    if not parcels:
+        return None
+    single = len(parcels) == 1
+    return InlineKeyboardMarkup(
+        [
+            [
+                _button(
+                    texts.BTN_DETAIL
+                    if single
+                    else texts.BTN_DETAIL_NAMED.format(
+                        name=parcel.label or mask_code(parcel.tracking_number)
+                    ),
+                    f"p:{parcel.id}:card:1",
+                    style=KeyboardButtonStyle.PRIMARY if single else None,
+                )
+            ]
+            for parcel in parcels
+        ]
+    )
+
+
 def select_keyboard(
     numbered: Sequence[tuple[int, Parcel]], page: int, pages: int, selected: set[int]
 ) -> InlineKeyboardMarkup:

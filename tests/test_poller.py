@@ -639,9 +639,9 @@ async def test_update_message_has_card_buttons_and_is_silent(poller, repo, fakes
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
     await poller.run_cycle()
     assert notifier.sent[0][2] is True
-    assert notifier.markups[0].inline_keyboard[0][0].callback_data == f"p:{parcel.id}:card:1", (
-        "one grouped message carries numbered buttons, not one parcel's card"
-    )
+    button = notifier.markups[0].inline_keyboard[0][0]
+    assert button.callback_data == f"p:{parcel.id}:card:1"
+    assert button.text == texts.BTN_DETAIL, "the notice is not numbered, so nor is its button"
 
 
 async def test_out_for_delivery_and_delivered_ring(poller, repo, fakes, notifier, clock):

@@ -289,6 +289,8 @@ SORT_LABELS = {
     "a": BTN_SORT_NAME,
     "s": BTN_SORT_STATUS,
 }
+BTN_DETAIL = "🔍 Xem chi tiết"
+BTN_DETAIL_NAMED = "🔍 {name}"
 BTN_SELECT_REMOVE = "🗑 Xóa nhiều"
 BTN_REMOVE_SELECTED = "✅ Xóa đã chọn ({count})"
 BTN_CONFIRM_REMOVE_MANY = "✅ Xóa {count} đơn"
