@@ -153,6 +153,8 @@ MODULE = CarrierModule(
     examples=(("SPXVN05338454932C", True), ("SPEVN000000000001", False)),
     # Every real SPX code stored so far (2026-09-15) has 17 characters.
     code_lengths=(17,),
+    # 17TRACK cannot identify a domestic SPX code, so the link goes to spx.vn's own page.
+    link_template="https://spx.vn/track?spx_tn={code}",
     build_client=SpxCarrier,
     progress=spx_progress,
     place=spx_place,

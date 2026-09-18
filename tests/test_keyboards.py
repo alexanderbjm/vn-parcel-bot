@@ -32,13 +32,13 @@ def test_card_keyboard_buttons_and_data():
     assert labels(markup) == [
         ["✏️ Đổi tên", "📜 Hành trình"],
         ["🔄 Kiểm tra", "🗑 Xóa"],
-        ["📤 Chia sẻ", "🔗 Tra cứu 17TRACK ↗"],
+        ["📤 Chia sẻ", "🔗 Tra cứu 🧡 SPX ↗"],
     ]
     data = cells(markup)
     assert data[0] == ["p:42:ren", "p:42:his"]
     assert data[1] == ["p:42:chk", "p:42:del"]
     assert data[2][0] == "p:42:shr"
-    assert data[2][1].startswith("https://t.17track.net/vi#nums=")
+    assert data[2][1].startswith("https://spx.vn/track?spx_tn=")
     callbacks = [d for row in data for d in row if not d.startswith("https")]
     assert all(len(d.encode()) < 64 for d in callbacks)
 

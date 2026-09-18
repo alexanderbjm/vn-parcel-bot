@@ -111,10 +111,12 @@ def test_format_links_official_then_17track():
     assert lines[1] == '• <a href="https://t.17track.net/vi#nums=EB123456789VN">17TRACK</a>'
 
 
-def test_format_links_template_without_code_and_tracked_skipped():
+def test_format_links_template_without_code_and_tracked_carrier():
     viettel = format_links("841000072647", ["viettelpost"]).split("\n")
     assert 'href="https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/"' in viettel[0]
-    assert len(format_links(SPX, ["spx"]).split("\n")) == 1
+    spx = format_links(SPX, ["spx"]).split("\n")
+    assert len(spx) == 2, "a carrier the bot tracks still gets its own link, above 17TRACK"
+    assert f'href="https://spx.vn/track?spx_tn={SPX}"' in spx[0]
 
 
 def test_format_link_only():
@@ -506,7 +508,13 @@ def test_parcel_card_shows_title_progress_bar_and_status():
 
 
 def test_parcel_link_prefers_module_link():
-    assert parcel_link(make_parcel()) == ("17TRACK", f"https://t.17track.net/vi#nums={SPX}")
+    assert parcel_link(make_parcel()) == ("🧡 SPX", f"https://spx.vn/track?spx_tn={SPX}")
+    # J&T's own page asks for phone digits behind a modal, so the link goes to vntracuu.
+    jt = make_parcel(carrier="jt", candidates=("jt",), tracking_number="JNTXB1013176787")
+    assert parcel_link(jt) == (
+        "🔴 J&T",
+        "https://vntracuu.com/search-tracking?search=JNTXB1013176787&operator=jandt",
+    )
     vnpost = make_parcel(carrier="vnpost", candidates=("vnpost",), tracking_number="EB123456789VN")
     name, url = parcel_link(vnpost)
     assert name == "🏣 VNPost"

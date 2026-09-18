@@ -57,7 +57,14 @@ def test_links(snapshot):
     assert (
         snapshot.link("viettelpost", "123") == "https://viettelpost.com.vn/tra-cuu-hanh-trinh-don/"
     )
-    assert snapshot.link("spx", "SPXVN05338454932C") is None
+    assert (
+        snapshot.link("spx", "SPXVN05338454932C") == "https://spx.vn/track?spx_tn=SPXVN05338454932C"
+    )
+    assert snapshot.link("jt", "JNTXB1013176787") == (
+        "https://vntracuu.com/search-tracking?search=JNTXB1013176787&operator=jandt"
+    )
+    # A carrier the bot tracks but has no page of its own still falls back to 17TRACK.
+    assert snapshot.link("ninjavan", "SPEVN000000000001") is None
 
 
 @pytest.mark.parametrize(
