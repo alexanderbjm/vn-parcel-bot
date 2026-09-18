@@ -242,7 +242,7 @@ def format_parcel_card(parcel: Parcel, tz: ZoneInfo, place_line: str | None = No
 def parcel_link(parcel: Parcel) -> tuple[str, str]:
     if parcel.carrier is not None:
         snapshot = current_snapshot()
-        url = snapshot.link(parcel.carrier, parcel.tracking_number)
+        url = snapshot.link(parcel.carrier, parcel.tracking_number, parcel.phone_last4)
         if url:
             return snapshot.display_name(parcel.carrier), url
     return texts.LINK_17TRACK_NAME, seventeen_track_url(parcel.tracking_number)

@@ -107,11 +107,22 @@ class CarrierSnapshot:
         module = self.get(code)
         return code if module is None else module.display_name
 
-    def link(self, code: str, tracking_number: str) -> str | None:
+    def link(self, code: str, tracking_number: str, phone: str | None = None) -> str | None:
+        """The carrier's own lookup for this code, or None when there is no usable one.
+
+        A template may ask for `{phone}`: J&T shows a timeline only to someone who already
+        knows the recipient's last four digits. Without them that page has nothing to show,
+        so no link is better than one that lands on "không tìm thấy".
+        """
         module = self.get(code)
         if module is None or module.link_template is None:
             return None
-        return module.link_template.replace("{code}", urllib.parse.quote(tracking_number, safe=""))
+        template = module.link_template
+        if "{phone}" in template:
+            if not phone:
+                return None
+            template = template.replace("{phone}", urllib.parse.quote(phone, safe=""))
+        return template.replace("{code}", urllib.parse.quote(tracking_number, safe=""))
 
     def progress(self, carrier: str, result: TrackingResult) -> int | None:
         module = self.get(carrier)

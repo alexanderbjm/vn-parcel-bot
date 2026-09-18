@@ -323,10 +323,10 @@ MODULE = CarrierModule(
         ("841000072647", True),
         ("SPXVN05338454932C", False),
     ),
-    # jtexpress.vn pre-fills the code but then asks for the recipient's phone digits behind a
-    # modal, and 17TRACK cannot identify a domestic J&T code at all. vntracuu reads the same
-    # J&T VN data without the modal; `operator` is required, as the bare search 404s.
-    link_template="https://vntracuu.com/search-tracking?search={code}&operator=jandt",
+    # The same digits the client sends: jtexpress.vn renders the whole timeline when the code
+    # carries `cellphone`, and answers "không tìm thấy dữ liệu" without it (verified on a live
+    # code, 2026-09-18). {phone} is the parcel's own, never a number typed in here.
+    link_template="https://jtexpress.vn/vi/tracking?type=track&billcode={code}&cellphone={phone}",
     build_client=JtCarrier,
     pending_hint=cross_border_hint,
 )

@@ -60,11 +60,16 @@ def test_links(snapshot):
     assert (
         snapshot.link("spx", "SPXVN05338454932C") == "https://spx.vn/track?spx_tn=SPXVN05338454932C"
     )
-    assert snapshot.link("jt", "JNTXB1013176787") == (
-        "https://vntracuu.com/search-tracking?search=JNTXB1013176787&operator=jandt"
+    # J&T only shows a timeline to someone who knows the recipient's last four digits, so its
+    # link needs them and there is no useful link without them.
+    assert snapshot.link("jt", "JNTXB0000000001", phone="1234") == (
+        "https://jtexpress.vn/vi/tracking?type=track&billcode=JNTXB0000000001&cellphone=1234"
     )
+    assert snapshot.link("jt", "JNTXB0000000001") is None
     # A carrier the bot tracks but has no page of its own still falls back to 17TRACK.
     assert snapshot.link("ninjavan", "SPEVN000000000001") is None
+    # A template with no placeholder for the digits ignores them.
+    assert snapshot.link("ghtk", "S123.AB", phone="1234") == "https://i.ghtk.vn/S123.AB"
 
 
 @pytest.mark.parametrize(

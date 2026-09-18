@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -509,11 +510,22 @@ def test_parcel_card_shows_title_progress_bar_and_status():
 
 def test_parcel_link_prefers_module_link():
     assert parcel_link(make_parcel()) == ("🧡 SPX", f"https://spx.vn/track?spx_tn={SPX}")
-    # J&T's own page asks for phone digits behind a modal, so the link goes to vntracuu.
-    jt = make_parcel(carrier="jt", candidates=("jt",), tracking_number="JNTXB1013176787")
+    # J&T shows a timeline only to someone who knows the recipient's last four digits, and the
+    # parcel carries its own -- never another parcel's.
+    jt = make_parcel(
+        carrier="jt", candidates=("jt",), tracking_number="JNTXB0000000001", phone_last4="1234"
+    )
     assert parcel_link(jt) == (
         "🔴 J&T",
-        "https://vntracuu.com/search-tracking?search=JNTXB1013176787&operator=jandt",
+        "https://jtexpress.vn/vi/tracking?type=track&billcode=JNTXB0000000001&cellphone=1234",
+    )
+    assert parcel_link(replace(jt, phone_last4="5678"))[1].endswith("cellphone=5678")
+    # Without them the page has nothing to show, so a cross-border code falls back to 17TRACK,
+    # which is what the bot itself reads for those.
+    no_digits = replace(jt, phone_last4=None)
+    assert parcel_link(no_digits) == (
+        "17TRACK",
+        "https://t.17track.net/vi#nums=JNTXB0000000001",
     )
     vnpost = make_parcel(carrier="vnpost", candidates=("vnpost",), tracking_number="EB123456789VN")
     name, url = parcel_link(vnpost)
