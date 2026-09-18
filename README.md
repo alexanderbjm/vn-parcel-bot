@@ -136,11 +136,11 @@ Send `/location` once and tap **📍 Gửi vị trí** on your phone. Telegram D
 
 SPX hubs are read from the status text; other carriers show the location they report, and parcels without one get no map. Hubs are looked up on Photon and drawn on CARTO map tiles, both built on OpenStreetMap data (© OpenStreetMap contributors © CARTO); your location is never sent to them. Set `MAPS_ENABLED=false` in `.env` and restart the bot to turn maps off.
 
-## Carrier stickers
+## Delivery stickers
 
-SPX, J&T, GHN, Ninja Van and Cainiao come with an icon, and the bot sends the carrier's icon silently just before each of that carrier's update messages. Telegram bots cannot create a sticker pack, but they can upload a `.webp` and send it as a sticker on its own, so the first start uploads each icon in `src/vn_parcel_bot/assets/carriers/`, keeps the `file_id` it gets back and deletes the message it went out on; every start after that uploads nothing. Dropping another `<hãng>.webp` into that folder gives that carrier an icon too, and the file name is the carrier code (`spx`, `jt`, `ghn`, `ninjavan`, `cainiao`, `fourpx`, …).
+The bot sends a sticker now and then, silently, just before an update message — chosen by the parcel's **delivery status** rather than its carrier: `moving` (on the way), `near` (out for delivery), `delivered`, `returned`. Telegram bots cannot create a sticker pack, but they can upload a `.webp` and send it as a sticker on its own, so the first start uploads each file in `src/vn_parcel_bot/assets/status/`, keeps the `file_id` it gets back and deletes the message it went out on; every start after that uploads nothing. They are drawn, not sourced: `python scripts/make_status_stickers.py` redraws them, and a new status needs a shape there plus an entry in `STICKER_STATUSES` (`services/stickers.py`) and its Vietnamese meaning in `texts.STICKER_STATUS_TEXT`.
 
-To use a sticker of your own instead, send it from any Telegram pack and reply to it with `/sticker spx` (admin only; any carrier code works, and `/sticker` lists the carriers that have a sticker). Your sticker then wins over the built-in icon. `/sticker spx off` removes your choice and the built-in icon comes back. If the pack owner deletes your sticker, the bot logs it once and skips it until the next restart.
+To use a sticker of your own instead, send it from any Telegram pack and reply to it with `/sticker moving` (admin only; `/sticker` lists the statuses and what each one means). Your sticker then wins over the shipped one. `/sticker moving off` removes your choice and the shipped sticker comes back. If the pack owner deletes your sticker, the bot logs it once and skips it until the next restart.
 
 ## Fixing a carrier while the bot runs
 
@@ -152,7 +152,7 @@ Each carrier is one file in `src/vn_parcel_bot/carriers/modules/` (its code rule
 2. They forward that ID to you.
 3. You send `/allow <id> <tên>`. They get a welcome message.
 
-Admin commands (`/hozk` lists them; only the admin sees them in the command menu): `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sticker <hãng> [off]`.
+Admin commands (`/hozk` lists them; only the admin sees them in the command menu): `/allow <id> [tên]`, `/revoke <id>`, `/users`, `/health`, `/sticker <trạng thái> [off]` (gắn sticker cho trạng thái giao hàng).
 
 ## Operations
 

@@ -202,7 +202,7 @@ def _merge_results(domestic: TrackingResult, overseas: TrackingResult) -> Tracki
 
 class JtCarrier:
     code: CarrierCode = "jt"
-    display_name="🔴 J&T"
+    display_name = "🔴 J&T"
     needs_phone = True
 
     def __init__(self, seventeen_key: str | None = None) -> None:

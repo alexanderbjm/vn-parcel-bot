@@ -198,7 +198,8 @@ ADMIN_HELP = (
     "• /allow &lt;id&gt; [tên] – cấp quyền (người đó nhận thông báo)\n"
     "• /revoke &lt;id&gt; – thu hồi quyền\n"
     "• /health – tình trạng bot và lần kiểm tra gần nhất\n"
-    "• /sticker &lt;hãng&gt; [off] – trả lời một sticker để gắn cho hãng; /sticker để xem\n"
+    "• /sticker &lt;trạng thái&gt; [off] – trả lời một sticker để gắn cho trạng thái giao hàng; "
+    "/sticker để xem\n"
     "• /check – kiểm tra ngay và nhận diện lại hãng các đơn của bạn"
 )
 USAGE_ALLOW = "Cách dùng: /allow &lt;telegram_id&gt; [tên]"
@@ -299,11 +300,18 @@ SELECT_MARK = "☑ {number}"
 SHARE_LINK = "📤 Gửi link này để người khác theo dõi <b>{title}</b>:\n{link}"
 SHARE_OPEN = "📦 Bạn được chia sẻ đơn <b>{title}</b> · {carrier}. Theo dõi đơn này?"
 SHARE_NOT_FOUND = "Link chia sẻ này không còn dùng được."
-STICKER_SET = "🎨 Đã lưu sticker cho {carrier}."
-STICKER_REMOVED = "🎨 Đã xóa sticker của {carrier}."
-STICKER_REMOVED_SHIPPED = "🎨 Đã xóa sticker tùy chỉnh của {carrier}; dùng lại icon có sẵn."
-STICKER_LIST = "🎨 Hãng có sticker: {carriers}"
+STICKER_STATUS_TEXT = {
+    "moving": "đang trên đường",
+    "near": "sắp giao",
+    "delivered": "đã giao",
+    "returned": "hoàn hàng",
+}
+STICKER_SET = "🎨 Đã lưu sticker cho trạng thái {status}."
+STICKER_REMOVED = "🎨 Đã xóa sticker của trạng thái {status}."
+STICKER_REMOVED_SHIPPED = "🎨 Đã xóa sticker tùy chỉnh của {status}; dùng lại sticker có sẵn."
+STICKER_LIST = "🎨 Trạng thái có sticker: {statuses}"
 STICKER_USAGE = (
-    "Cách dùng: trả lời một sticker bằng /sticker &lt;hãng&gt;, hoặc /sticker &lt;hãng&gt; off"
+    "Cách dùng: trả lời một sticker bằng /sticker &lt;trạng thái&gt;, "
+    "hoặc /sticker &lt;trạng thái&gt; off"
 )
-STICKER_UNKNOWN = "Không có hãng này. Các hãng: {carriers}"
+STICKER_UNKNOWN = "Không có trạng thái này. Các trạng thái: {statuses}"

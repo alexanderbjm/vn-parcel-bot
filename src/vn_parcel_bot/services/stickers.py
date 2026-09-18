@@ -1,24 +1,48 @@
-"""The carrier icons sent just before an update.
+"""The delivery-status stickers sent just before an update.
 
 A bot cannot create a sticker pack, but it can upload a .webp and have Telegram send it as a
-sticker on its own, so the logos shipped in ``assets/carriers`` need nothing installed by
-hand: each is uploaded once, the file_id that comes back is cached in ``meta``, and every
-later send reuses it. A sticker the admin mapped with /sticker always wins over a shipped one.
+sticker on its own, so the four drawn in ``assets/status`` need nothing installed by hand: each
+is uploaded once, the file_id that comes back is cached in ``meta``, and every later send
+reuses it. A sticker the admin mapped with /sticker always wins over a shipped one.
+
+They key on the parcel's *status*, not on its carrier: a parcel keeps its carrier for life, so a
+carrier sticker says nothing about the thing that just happened, while the status is exactly
+that — on the way, nearly there, delivered, coming back.
 """
 
 import logging
 from pathlib import Path
 from typing import Protocol
 
+from vn_parcel_bot.constants import OUT_FOR_DELIVERY_PROGRESS
+
 log = logging.getLogger(__name__)
 
-ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "carriers"
+ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "status"
 
-# The admin's own sticker for a carrier, and the shipped icon behind it.
+# The vocabulary, in the order a parcel passes through it. ``icon_statuses`` ships exactly
+# these, and anything not listed here is not a status the bot can talk about.
+STICKER_STATUSES = ("moving", "near", "delivered", "returned")
+
+# The admin's own sticker for a status, and the shipped one behind it.
 MANUAL_KEY = "sticker:"
 SHIPPED_KEY = "sticker-auto:"
-# Written once, after the shipped icons replace the stickers mapped before they existed.
-SEEDED_KEY = "stickers:shipped-icons"
+
+
+def sticker_status(state: str, progress: int | None) -> str:
+    """Which of ``STICKER_STATUSES`` a parcel state calls for.
+
+    Only ever asked about a parcel with something new to say, so the state is in transit,
+    delivered or returned by construction; anything else reads as on the way, which is what an
+    update means.
+    """
+    if state == "delivered":
+        return "delivered"
+    if state == "returned":
+        return "returned"
+    if state == "in_transit" and progress is not None and progress >= OUT_FOR_DELIVERY_PROGRESS:
+        return "near"
+    return "moving"
 
 
 class StickerRepo(Protocol):
@@ -31,53 +55,43 @@ class StickerNotifier(Protocol):
     async def upload_sticker(self, chat_id: int, image: bytes) -> str | None: ...
 
 
-def icon_carriers() -> tuple[str, ...]:
-    """Every carrier with a shipped icon."""
-    return tuple(sorted(path.stem for path in ICON_DIR.glob("*.webp")))
+def icon_statuses() -> tuple[str, ...]:
+    """Every status with a shipped sticker, in the order of the vocabulary."""
+    shipped = {path.stem for path in ICON_DIR.glob("*.webp")}
+    return tuple(status for status in STICKER_STATUSES if status in shipped)
 
 
-async def sticker_for(repo: StickerRepo, carrier: str) -> str | None:
-    """What to send for a carrier: the admin's sticker, else the shipped icon, else nothing."""
-    manual = await repo.get_meta(f"{MANUAL_KEY}{carrier}")
+async def sticker_for(repo: StickerRepo, status: str) -> str | None:
+    """What to send for a status: the admin's sticker, else the shipped one, else nothing."""
+    manual = await repo.get_meta(f"{MANUAL_KEY}{status}")
     if manual:
         return manual
-    return await repo.get_meta(f"{SHIPPED_KEY}{carrier}")
+    return await repo.get_meta(f"{SHIPPED_KEY}{status}")
 
 
 async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id: int) -> int:
-    """Upload every shipped icon Telegram has not been given yet; return how many were added.
+    """Upload every shipped sticker Telegram has not been given yet; return how many were added.
 
     A sticker that belongs to no pack has no file_id until it has been sent once, so the first
     send goes to the admin's own chat and is deleted right away. A failure is logged and
-    skipped: a missing icon must never be a reason for the bot not to start.
+    skipped: a missing sticker must never be a reason for the bot not to start.
     """
-    if await repo.get_meta(SEEDED_KEY) is None:
-        await _drop_stickers_mapped_before_icons(repo)
-        await repo.set_meta(SEEDED_KEY, "1")
     uploaded = 0
-    for carrier in icon_carriers():
-        key = f"{SHIPPED_KEY}{carrier}"
+    for status in icon_statuses():
+        key = f"{SHIPPED_KEY}{status}"
         if await repo.get_meta(key):
             continue
-        image = (ICON_DIR / f"{carrier}.webp").read_bytes()
+        image = (ICON_DIR / f"{status}.webp").read_bytes()
         try:
             file_id = await notifier.upload_sticker(admin_id, image)
         except Exception:
-            log.warning("carrier icon upload raised carrier=%s", carrier, exc_info=True)
+            log.warning("status sticker upload raised status=%s", status, exc_info=True)
             continue
         if not file_id:
-            log.warning("carrier icon upload failed carrier=%s", carrier)
+            log.warning("status sticker upload failed status=%s", status)
             continue
         await repo.set_meta(key, file_id)
         uploaded += 1
     if uploaded:
-        log.info("carrier icons uploaded count=%s", uploaded)
+        log.info("status stickers uploaded count=%s", uploaded)
     return uploaded
-
-
-async def _drop_stickers_mapped_before_icons(repo: StickerRepo) -> None:
-    """Let a shipped icon take over from the sticker mapped for that carrier earlier."""
-    for carrier in icon_carriers():
-        if await repo.get_meta(f"{MANUAL_KEY}{carrier}") is not None:
-            await repo.delete_meta(f"{MANUAL_KEY}{carrier}")
-            log.info("shipped icon replaced the sticker mapped earlier carrier=%s", carrier)

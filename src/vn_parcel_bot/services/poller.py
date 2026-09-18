@@ -45,7 +45,7 @@ from vn_parcel_bot.services.formatting import (
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.scheduling import capped, check_interval
-from vn_parcel_bot.services.stickers import sticker_for
+from vn_parcel_bot.services.stickers import sticker_for, sticker_status
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
@@ -469,7 +469,7 @@ class Poller:
                 )
                 newest = max(new, key=lambda event: event.time) if new else result.latest
                 if newest is not None:
-                    await self._send_sticker(parcel.user_id, result.carrier)
+                    await self._send_sticker(parcel.user_id, sticker_status(state, progress))
                     updates.setdefault(parcel.user_id, []).append(
                         Moved(
                             current or parcel,
@@ -747,10 +747,10 @@ class Poller:
             await self._notify(self._settings.admin_telegram_id, text, report, silent=False)
             await self._repo.set_meta(meta_key, now.isoformat())
 
-    async def _send_sticker(self, chat_id: int, carrier: str) -> None:
-        if carrier in self._broken_stickers:
+    async def _send_sticker(self, chat_id: int, status: str) -> None:
+        if status in self._broken_stickers:
             return
-        file_id = await sticker_for(self._repo, carrier)
+        file_id = await sticker_for(self._repo, status)
         if not file_id:
             return
         try:
@@ -758,8 +758,8 @@ class Poller:
         except Exception:
             ok = False
         if not ok:
-            self._broken_stickers.add(carrier)
-            log.warning("carrier sticker failed carrier=%s", carrier)
+            self._broken_stickers.add(status)
+            log.warning("status sticker failed status=%s", status)
 
     async def _send_updates(self, updates: dict[int, list[Moved]], report: PollReport) -> None:
         """One message per owner: every parcel of theirs that moved, newest scan only.

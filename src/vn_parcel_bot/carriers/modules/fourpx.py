@@ -67,7 +67,7 @@ def parse_fourpx_response(payload: object, tracking_number: str) -> TrackingResu
 
 class FourPxCarrier:
     code: CarrierCode = "fourpx"
-    display_name="📦 4PX"
+    display_name = "📦 4PX"
     needs_phone = False
 
     async def fetch(

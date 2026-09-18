@@ -1,4 +1,4 @@
-<!-- Generated from BUILD_PLAN.md Part 2 (version 2.8). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
+<!-- Generated from BUILD_PLAN.md Part 2 (version 3.0). Do not edit by hand: edit BUILD_PLAN.md and regenerate. -->
 
 # vn-parcel-bot — Specification
 
@@ -62,7 +62,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/users` *(admin)* | – | All users with role and active parcel count. |
 | `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count. |
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
-| `/sticker` *(admin)* | `<code> [off]` | The sticker sent just before a carrier's updates (§9.13). No args → `STICKER_LIST` naming every carrier that has one (a shipped icon counts). Replying to a sticker with `/sticker <code>` stores it as that carrier's choice (`STICKER_SET`); `off` deletes the choice → `STICKER_REMOVED`, or `STICKER_REMOVED_SHIPPED` when a shipped icon still applies. Unknown carrier → `STICKER_UNKNOWN`; no replied sticker → `STICKER_USAGE`. |
+| `/sticker` *(admin)* | `<status> [off]` | The sticker sent just before an update, chosen by the parcel's **delivery status** (§9.13). No args → `STICKER_LIST` naming every status that has one (a shipped sticker counts). Replying to a sticker with `/sticker <status>` stores it as that status's choice (`STICKER_SET`); `off` deletes the choice → `STICKER_REMOVED`, or `STICKER_REMOVED_SHIPPED` when a shipped sticker still applies. Unknown status → `STICKER_UNKNOWN`; no replied sticker → `STICKER_USAGE`. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
 Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): only the four you cannot reach by tapping — start, help, list, location. The rest (track, status, label, remove, phone, check, cancel) stay registered and still work when typed. `/help` follows the same rule and documents only the two with no button equivalent anywhere (`/track`, `/phone`) plus what a pasted code or photo does; everything else is reachable from a card, `/list` or a prompt. The admin's private chat also gets `ADMIN_COMMANDS` (hozk, users, allow, revoke, health, sticker) through `BotCommandScopeChat`; a Telegram error there is logged and ignored.
@@ -481,7 +481,7 @@ vn-parcel-bot/
 │  ├─ texts.py                  all user-facing strings (§17)
 │  ├─ carrier_catalog.py        CarrierCode, CarrierInfo, CATALOG, links
 │  ├─ tracking_codes.py         normalize/detect/extract codes
-│  ├─ assets/carriers/          <hãng>.webp icons sent before an update (§9.13)
+│  ├─ assets/status/            <status>.webp stickers sent before an update (§9.13)
 │  ├─ carriers/
 │  │  ├─ __init__.py            CARRIERS registry, get_carrier
 │  │  ├─ models.py              TrackingEvent, TrackingResult, CarrierError, Carrier protocol
@@ -502,7 +502,7 @@ vn-parcel-bot/
 │  │  ├─ formatting.py          pure message builders
 │  │  ├─ parcels.py             AddOutcome, ParcelService
 │  │  ├─ poller.py              Notifier protocol, FetchKey, PollReport, Poller
-│  │  └─ stickers.py            shipped carrier icons: upload once, look one up
+│  │  └─ stickers.py            shipped status stickers: upload once, look one up
 │  └─ bot/
 │     ├─ __init__.py
 │     ├─ deps.py                Deps, get_deps
@@ -1235,17 +1235,18 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
     ("allow", "Cấp quyền: /allow <id> [tên]"),
     ("revoke", "Thu hồi quyền: /revoke <id>"),
     ("health", "Tình trạng bot"),
-    ("sticker", "Sticker cho hãng: /sticker <hãng> [off]"),
+    ("sticker", "Sticker cho trạng thái: /sticker <trạng thái> [off]"),
 ]
 ```
 
 ### 9.13 `services/stickers.py`
 
 ```python
-ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "carriers"
+ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "status"
+# The vocabulary, in the order a parcel passes through it.
+STICKER_STATUSES = ("moving", "near", "delivered", "returned")
 MANUAL_KEY = "sticker:"            # a sticker the admin mapped with /sticker
-SHIPPED_KEY = "sticker-auto:"      # the icon that ships with the bot, once uploaded
-SEEDED_KEY = "stickers:shipped-icons"
+SHIPPED_KEY = "sticker-auto:"      # the sticker that ships with the bot, once uploaded
 
 
 class StickerRepo(Protocol):
@@ -1258,35 +1259,18 @@ class StickerNotifier(Protocol):
     async def upload_sticker(self, chat_id: int, image: bytes) -> str | None: ...
 
 
-def icon_carriers() -> tuple[str, ...]: ...          # every <code>.webp in ICON_DIR, sorted
-async def sticker_for(repo: StickerRepo, carrier: str) -> str | None: ...
+def sticker_status(state: str, progress: int | None) -> str: ...
+def icon_statuses() -> tuple[str, ...]: ...          # every <status>.webp in ICON_DIR, vocabulary order
+async def sticker_for(repo: StickerRepo, status: str) -> str | None: ...
 async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id: int) -> int: ...
 ```
 
-- One icon per carrier in `assets/carriers/`: 512×512 WEBP with a transparent background, under Telegram's 512 KB sticker limit. The five that ship today are `spx`, `jt`, `ghn`, `ninjavan` and `cainiao`; adding `<code>.webp` to the directory adds that carrier's icon with no code change.
-- `sticker_for` is the only lookup: `sticker:<carrier>` from `/sticker` when the admin set one, else `sticker-auto:<carrier>`, else nothing (no sticker, as before).
-- `register_icons` runs once at startup (§9.12 `_post_init`), after the deps are built. A sticker that belongs to no pack has no `file_id` until it has been sent once, so it sends each icon Telegram has not been given yet to `admin_id`, stores the returned `file_id` as `sticker-auto:<code>` and deletes that message. The second start uploads nothing. A missing icon is never fatal: an upload that returns nothing, raises or is refused is logged (`carrier icon upload failed carrier=…`) and skipped, and so is the whole step when Telegram is unreachable.
-- On the first start after this shipped (meta `SEEDED_KEY` unset) a `sticker:<code>` for a carrier that has an icon is deleted once, so a sticker mapped before the icons existed gives way to the shipped one; `/sticker` afterwards is untouched.
+- One sticker per **delivery status**, not per carrier: a parcel keeps its carrier for life, so a carrier sticker says nothing about what just happened, while the status is exactly the change being announced. `STICKER_STATUSES` is the vocabulary, and one drawn `.webp` per status ships in `assets/status/` — 512×512 with a transparent background, under Telegram's 512 KB sticker limit. `scripts/make_status_stickers.py` draws them, so the art is reproducible and carries no licensed glyph.
+- `sticker_status` maps a parcel onto that vocabulary: `delivered` → `delivered`, `returned` → `returned`, `in_transit` with progress ≥ `OUT_FOR_DELIVERY_PROGRESS` (80) → `near`, anything else → `moving`. It is only asked about a parcel with something new to say, so the state is in transit, delivered or returned by construction.
+- `sticker_for` is the only lookup: `sticker:<status>` from `/sticker` when the admin set one, else `sticker-auto:<status>`, else nothing (no sticker, as before). The poller sends the sticker for the parcel's status before an update (§6.3), and stops trying for the rest of the process once a send fails.
+- `register_icons` runs once at startup (§9.12 `_post_init`), after the deps are built. A sticker that belongs to no pack has no `file_id` until it has been sent once, so it sends each sticker Telegram has not been given yet to `admin_id`, stores the returned `file_id` as `sticker-auto:<status>` and deletes that message. The second start uploads nothing. A missing sticker is never fatal: an upload that returns nothing, raises or is refused is logged (`status sticker upload failed status=…`) and skipped, and so is the whole step when Telegram is unreachable.
 - `TelegramNotifier.upload_sticker` is the Telegram side: `send_sticker(chat_id, sticker=<bytes>, disable_notification=True)`, return `message.sticker.file_id`, delete the message, and return `None` on any `TelegramError`.
-
-### 9.14 `build_info.py`
-
-```python
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MAX_COMMITS = 50
-VI_NOTE = "vi:"
-
-
-def deployed_revision() -> str | None: ...        # "abc1234 · 17/09/2026", or None
-def deployed_revision_sha() -> str | None: ...    # "abc1234", for comparing one start to the last
-def revision_commits(since: str | None) -> list[str]: ...   # one note per commit, newest first
-```
-
-- Git is read with `git -C REPO_ROOT log …`, `subprocess.run(..., encoding="utf-8", errors="replace")`. The console codepage on the bot's PC is cp1252, so a `Vi:` note with Vietnamese diacritics raises inside the reader thread and the call returns nothing at all — which would empty the notice's "Thay đổi" section without an error (§11).
-- `revision_commits` returns one line per commit after `since` up to `HEAD`, newest first, capped at `MAX_COMMITS`; an empty list when `since` is unset, no longer resolvable (a rewritten branch) or git cannot answer.
-- **The notice line is a commit's own wording.** A commit says what changed in plain Vietnamese on a line beginning `Vi:` in its body, and that line — not the English subject — is what the admin reads (e.g. `Vi: Bưu cục ghi trong ngoặc như (HNI) Nguyễn Văn Giáp giờ hiện đúng khoảng cách`). The subject is written for the repository and is usually too technical to send to a person, so it is only a fallback: a commit without a `Vi:` line keeps its subject rather than vanishing from the notice.
-- Write the `Vi:` line for the admin, not for a developer: short, concrete, describing what they will see differently in Telegram. Avoid jargon ("cache", "parse", "pipeline") and commit-speak ("refactor").
-- The async wrappers (`deployed_revision_async`, `deployed_revision_sha_async`, `revision_commits_async`) run these calls off the event loop: the lookup shells out to git and would otherwise block every handler, the poll cycle and the digests for up to the 10 s timeout.
+- Stickers keyed by carrier (`sticker:<carrier>`, `sticker-auto:<carrier>`) and meta `stickers:shipped-icons` are no longer read; the rows are left in `meta` rather than deleted, because the manual ones are the admin's own choice.
 
 ## 10. Configuration
 
@@ -1419,6 +1403,8 @@ See §9.2. They are code constants, not env vars.
 > **2.0 string changes** (the listing below predates them; `src/vn_parcel_bot/texts.py` has the current strings): `CARRIER_NAMES`, `ORDER_NUMBER`, `JT_CROSS_BORDER_HINT` and `LAZADA_CAINIAO_HINT` were removed (names and notes live in carrier modules); `HELP` takes `{tracked}` and `{link_only}`; `LABEL_SET` gains `· <code>{code}</code>` with the masked code and `LABEL_CLEARED` uses the masked code; `REMOVED` uses the name or masked code; new `LABEL_ASK`, `LABEL_AMBIGUOUS`, `LABEL_REPLY_NOT_FOUND`, `REMOVE_CONFIRM` and `MODULE_REJECTED`. 2.1: templates take `{code}`, `{ref}` and `{order_id}` without `<code>` because formatting wraps them in a spoiler; `LIST_ITEM` gains `{bar}`; new `PROGRESS_SUFFIX` and `PROGRESS_BAR_LINE`.
 
 > **2.9 string changes**: new `STICKER_REMOVED_SHIPPED` — `/sticker <hãng> off` on a carrier with a shipped icon (§9.13) removes the admin's own sticker and says the built-in icon applies again.
+
+> **3.0 string changes**: the sticker vocabulary moved from carriers to delivery statuses (§9.13). `STICKER_SET`, `STICKER_REMOVED` and `STICKER_REMOVED_SHIPPED` take `{status}`; `STICKER_LIST` and `STICKER_UNKNOWN` take `{statuses}`; `STICKER_USAGE` asks for a status; new `STICKER_STATUS_TEXT` gives each status its Vietnamese meaning for the `/sticker` list.
 
 > **2.7 string changes**: `LABEL_AMBIGUOUS` became `LABEL_PICK`; `REMOVE_CONFIRM`, `LABEL_ASK` and `ASK_PHONE` no longer tell the user to type `có`, `-` or `/cancel`; new `REMOVE_CONFIRM_MANY`, `REMOVE_ITEM`, `REMOVE_MISSING`, `REMOVED_MANY`, `SELECT_HEADER`, `SELECT_NONE`, `BUTTON_EXPIRED`, `BTN_SELECT_REMOVE`, `BTN_REMOVE_SELECTED`, `BTN_CONFIRM_REMOVE_MANY`, `BTN_CLEAR_LABEL`, `SELECT_MARK`. `texts.py` has the exact wording.
 
@@ -1607,7 +1593,7 @@ ADMIN_HELP = (
     "• /allow &lt;id&gt; [tên] – cấp quyền (người đó nhận thông báo)\n"
     "• /revoke &lt;id&gt; – thu hồi quyền\n"
     "• /health – tình trạng bot và lần kiểm tra gần nhất\n"
-    "• /sticker &lt;hãng&gt; [off] – trả lời một sticker để gắn cho hãng; /sticker để xem\n"
+    "• /sticker &lt;trạng thái&gt; [off] – trả lời một sticker để gắn cho trạng thái giao hàng; /sticker để xem\n"
     "• /check – kiểm tra ngay và nhận diện lại hãng các đơn của bạn"
 )
 

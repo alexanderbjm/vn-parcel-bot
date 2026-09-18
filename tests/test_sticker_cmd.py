@@ -5,6 +5,7 @@ import pytest
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.handlers_admin import sticker_cmd
 from vn_parcel_bot.db.repo import Repository
+from vn_parcel_bot.services.stickers import STICKER_STATUSES
 
 ADMIN = 111
 
@@ -21,7 +22,7 @@ class Msg:
 @pytest.fixture
 async def env(settings):
     repo = await Repository.open(":memory:")
-    deps = SimpleNamespace(repo=repo, settings=settings, registry=None)
+    deps = SimpleNamespace(repo=repo, settings=settings)
     yield SimpleNamespace(repo=repo, deps=deps, settings=settings)
     await repo.close()
 
@@ -43,25 +44,30 @@ def sticker_message(file_id="file-test"):
 
 
 async def test_set_list_and_remove_sticker(env):
-    assert await run(env, ["spx"], reply_to=sticker_message()) == [
-        texts.STICKER_SET.format(carrier="🧡 SPX")
+    assert await run(env, ["moving"], reply_to=sticker_message()) == [
+        texts.STICKER_SET.format(status="moving")
     ]
-    assert await env.repo.get_meta("sticker:spx") == "file-test"
-    assert await run(env, []) == [texts.STICKER_LIST.format(carriers="🧡 SPX")]
-    assert await run(env, ["SPX", "off"]) == [texts.STICKER_REMOVED.format(carrier="🧡 SPX")]
+    assert await env.repo.get_meta("sticker:moving") == "file-test"
+    assert await run(env, []) == [texts.STICKER_LIST.format(statuses="moving (đang trên đường)")]
+    assert await run(env, ["moving", "off"]) == [texts.STICKER_REMOVED.format(status="moving")]
+    assert await env.repo.get_meta("sticker:moving") is None
+    assert await run(env, []) == [texts.STICKER_LIST.format(statuses="—")]
+
+
+async def test_a_carrier_code_is_not_a_status_any_more(env):
+    # The stickers key on the delivery status now, so the old vocabulary is simply unknown.
+    told = await run(env, ["spx"], reply_to=sticker_message())
+    assert told == [texts.STICKER_UNKNOWN.format(statuses=", ".join(STICKER_STATUSES))]
     assert await env.repo.get_meta("sticker:spx") is None
-    assert await run(env, []) == [texts.STICKER_LIST.format(carriers="—")]
 
 
-async def test_sticker_usage_and_unknown_carrier(env):
-    assert await run(env, ["spx"]) == [texts.STICKER_USAGE]
-    assert await run(env, ["spx"], reply_to=SimpleNamespace(sticker=None)) == [texts.STICKER_USAGE]
-    unknown = await run(env, ["dhl"], reply_to=sticker_message())
-    assert unknown[0].startswith("Không có hãng này.")
-    assert "spx" in unknown[0]
-    assert await env.repo.get_meta("sticker:dhl") is None
+async def test_sticker_usage(env):
+    assert await run(env, ["delivered"]) == [texts.STICKER_USAGE]
+    assert await run(env, ["delivered"], reply_to=SimpleNamespace(sticker=None)) == [
+        texts.STICKER_USAGE
+    ]
 
 
 async def test_sticker_is_admin_only(env):
-    assert await run(env, ["spx"], user_id=222, reply_to=sticker_message()) == [texts.ADMIN_ONLY]
-    assert await env.repo.get_meta("sticker:spx") is None
+    assert await run(env, ["moving"], user_id=222, reply_to=sticker_message()) == [texts.ADMIN_ONLY]
+    assert await env.repo.get_meta("sticker:moving") is None

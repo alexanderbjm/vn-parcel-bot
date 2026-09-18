@@ -107,7 +107,7 @@ def parse_ghn_response(payload: object, tracking_number: str) -> TrackingResult:
 
 class GhnCarrier:
     code: CarrierCode = "ghn"
-    display_name="🟠 GHN"
+    display_name = "🟠 GHN"
     needs_phone = True
 
     async def fetch(

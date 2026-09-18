@@ -449,9 +449,9 @@ async def test_progress_only_moves_forward(repo):
 
 
 async def test_delete_meta(repo):
-    await repo.set_meta("sticker:spx", "file-1")
-    await repo.delete_meta("sticker:spx")
-    assert await repo.get_meta("sticker:spx") is None
+    await repo.set_meta("sticker:moving", "file-1")
+    await repo.delete_meta("sticker:moving")
+    assert await repo.get_meta("sticker:moving") is None
     await repo.delete_meta("missing")
 
 

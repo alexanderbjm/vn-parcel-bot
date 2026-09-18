@@ -15,5 +15,5 @@ ADMIN_COMMANDS: list[tuple[str, str]] = [
     ("allow", "Cấp quyền: /allow <id> [tên]"),
     ("revoke", "Thu hồi quyền: /revoke <id>"),
     ("health", "Tình trạng bot"),
-    ("sticker", "Sticker cho hãng: /sticker <hãng> [off]"),
+    ("sticker", "Sticker cho trạng thái: /sticker <trạng thái> [off]"),
 ]

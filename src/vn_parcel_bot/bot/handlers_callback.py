@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes
 from vn_parcel_bot import texts
 from vn_parcel_bot.bot.carrier_scripts import reload_carrier_scripts
 from vn_parcel_bot.bot.deps import get_deps
-from vn_parcel_bot.bot.handlers_admin import sticker_carriers
+from vn_parcel_bot.bot.handlers_admin import sticker_statuses_line
 from vn_parcel_bot.bot.handlers_user import (
     PENDING_LABEL,
     PENDING_LABEL_PICK,
@@ -34,7 +34,6 @@ from vn_parcel_bot.bot.handlers_user import (
     user_data,
 )
 from vn_parcel_bot.build_info import deployed_revision_async
-from vn_parcel_bot.carriers.registry import current_snapshot
 from vn_parcel_bot.constants import CHECK_COOLDOWN, MAX_EVENTS_IN_HISTORY
 from vn_parcel_bot.db.repo import Parcel
 from vn_parcel_bot.keyboards import (
@@ -596,9 +595,8 @@ async def _adm_action(
         await _edit(query, texts.ADMIN_HELP, admin_keyboard())
     elif action == "sticker":
         await query.answer()
-        snapshot = deps.registry.current if deps.registry is not None else current_snapshot()
-        mapped = await sticker_carriers(deps.repo, snapshot)
-        text = texts.STICKER_LIST.format(carriers=mapped or "—")
+        mapped = await sticker_statuses_line(deps.repo)
+        text = texts.STICKER_LIST.format(statuses=mapped or "—")
         await _edit(query, text, admin_sub_keyboard())
     else:
         await query.answer()

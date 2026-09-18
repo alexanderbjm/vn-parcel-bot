@@ -91,7 +91,7 @@ def parse_cainiao_response(payload: object, tracking_number: str) -> TrackingRes
 
 class CainiaoCarrier:
     code: CarrierCode = "cainiao"
-    display_name="🦅 Cainiao"
+    display_name = "🦅 Cainiao"
     needs_phone = False
 
     async def fetch(

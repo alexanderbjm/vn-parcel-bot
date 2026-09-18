@@ -14,11 +14,15 @@ from vn_parcel_bot.bot.auth import admin_only
 from vn_parcel_bot.bot.deps import get_deps
 from vn_parcel_bot.bot.handlers_user import reply
 from vn_parcel_bot.build_info import deployed_revision_async
-from vn_parcel_bot.carriers.registry import CarrierSnapshot, current_snapshot
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.keyboards import admin_keyboard, admin_sub_keyboard
 from vn_parcel_bot.services.formatting import format_health, format_users
-from vn_parcel_bot.services.stickers import MANUAL_KEY, SHIPPED_KEY, sticker_for
+from vn_parcel_bot.services.stickers import (
+    MANUAL_KEY,
+    SHIPPED_KEY,
+    STICKER_STATUSES,
+    sticker_for,
+)
 
 log = logging.getLogger(__name__)
 
@@ -99,45 +103,41 @@ async def health_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 @admin_only
 async def sticker_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     deps = get_deps(context)
-    snapshot = deps.registry.current if deps.registry is not None else current_snapshot()
     args = [arg.casefold() for arg in (context.args or [])]
     if not args:
         await reply(
             update,
-            texts.STICKER_LIST.format(carriers=await sticker_carriers(deps.repo, snapshot) or "—"),
+            texts.STICKER_LIST.format(statuses=await sticker_statuses_line(deps.repo) or "—"),
             reply_markup=admin_sub_keyboard(),
         )
         return
-    module = snapshot.get(args[0])
-    if module is None:
-        codes = ", ".join(item.code for item in snapshot.ordered())
-        await reply(update, texts.STICKER_UNKNOWN.format(carriers=codes))
+    status = args[0]
+    if status not in STICKER_STATUSES:
+        await reply(update, texts.STICKER_UNKNOWN.format(statuses=", ".join(STICKER_STATUSES)))
         return
-    name = escape(module.display_name)
     if len(args) > 1 and args[1] == "off":
-        await deps.repo.delete_meta(f"{MANUAL_KEY}{module.code}")
-        # Carriers with a shipped icon still send one; only the admin's own choice is gone.
-        shipped = await deps.repo.get_meta(f"{SHIPPED_KEY}{module.code}")
+        await deps.repo.delete_meta(f"{MANUAL_KEY}{status}")
+        # A status with a shipped sticker still sends one; only the admin's own choice is gone.
+        shipped = await deps.repo.get_meta(f"{SHIPPED_KEY}{status}")
         told = texts.STICKER_REMOVED_SHIPPED if shipped else texts.STICKER_REMOVED
-        await reply(update, told.format(carrier=name))
+        await reply(update, told.format(status=status))
         return
     replied = getattr(update.effective_message, "reply_to_message", None)
     sticker = getattr(replied, "sticker", None)
     if sticker is None:
         await reply(update, texts.STICKER_USAGE)
         return
-    await deps.repo.set_meta(f"{MANUAL_KEY}{module.code}", sticker.file_id)
-    await reply(update, texts.STICKER_SET.format(carrier=name))
+    await deps.repo.set_meta(f"{MANUAL_KEY}{status}", sticker.file_id)
+    await reply(update, texts.STICKER_SET.format(status=status))
 
 
-async def sticker_carriers(repo: Repository, snapshot: CarrierSnapshot) -> str:
-    """The carriers that would send a sticker, as one escaped line."""
-    names = [
-        escape(module.display_name)
-        for module in snapshot.ordered()
-        if await sticker_for(repo, module.code)
-    ]
-    return ", ".join(names)
+async def sticker_statuses_line(repo: Repository) -> str:
+    """The statuses that would send a sticker, each with what it means, as one line."""
+    listed = []
+    for status in STICKER_STATUSES:
+        if await sticker_for(repo, status):
+            listed.append(f"{status} ({texts.STICKER_STATUS_TEXT[status]})")
+    return ", ".join(listed)
 
 
 @admin_only

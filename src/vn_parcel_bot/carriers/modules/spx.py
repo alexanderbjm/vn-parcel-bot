@@ -122,7 +122,7 @@ def spx_progress(result: TrackingResult) -> int | None:
 
 class SpxCarrier:
     code: CarrierCode = "spx"
-    display_name="🧡 SPX"
+    display_name = "🧡 SPX"
     needs_phone = False
 
     async def fetch(

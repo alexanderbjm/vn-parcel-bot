@@ -661,11 +661,11 @@ async def test_out_for_delivery_and_delivered_ring(poller, repo, fakes, notifier
 async def test_sticker_sent_before_update_and_skipped_after_failure(
     poller, repo, fakes, notifier, clock, caplog
 ):
-    await repo.set_meta("sticker:spx", "file-spx")
+    await repo.set_meta("sticker:moving", "file-moving")
     await add(repo, SPX, "spx")
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
     await poller.run_cycle()
-    assert notifier.stickers == [(USER, "file-spx")]
+    assert notifier.stickers == [(USER, "file-moving")]
     notifier.sticker_ok = False
     clock.advance(timedelta(hours=1))
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"), ev(5, "Rời kho"))
@@ -676,7 +676,7 @@ async def test_sticker_sent_before_update_and_skipped_after_failure(
     )
     await poller.run_cycle()
     assert len(notifier.stickers) == 2
-    assert caplog.text.count("carrier sticker failed carrier=spx") == 1
+    assert caplog.text.count("status sticker failed status=moving") == 1
     assert len(notifier.sent) == 3
 
 
@@ -684,20 +684,20 @@ async def test_a_rescan_of_the_same_moment_is_not_a_second_update(
     poller, repo, fakes, notifier, clock
 ):
     """The owner must not be told the same thing twice because a source re-worded it."""
-    await repo.set_meta("sticker:spx", "file-spx")
+    await repo.set_meta("sticker:moving", "file-moving")
     await add(repo, SPX, "spx")
     scan = TrackingEvent(time=T0, description="Đã đến kho", identity="您的快件已到达")
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, scan)
     await poller.run_cycle()
     assert len(notifier.sent) == 1
-    assert notifier.stickers == [(USER, "file-spx")]
+    assert notifier.stickers == [(USER, "file-moving")]
 
     clock.advance(timedelta(minutes=11))
     resaid = TrackingEvent(time=T0, description="Đã đến kho", identity="快件已到达")
     fakes["spx"].results[(SPX, None)] = found("spx", SPX, resaid)
     await poller.run_cycle()
     assert len(notifier.sent) == 1
-    assert notifier.stickers == [(USER, "file-spx")]
+    assert notifier.stickers == [(USER, "file-moving")]
     stored = await repo.active_parcels_for_user(USER)
     assert await repo.count_events(stored[0].id) == 1
 
