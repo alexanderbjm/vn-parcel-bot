@@ -46,6 +46,11 @@ SINGLE_LINE_MIN_SIZE = 64
 # The band a cover gets along its foot, so the photo above stays visible.
 BAND_MARGIN = 18
 BAND_HEIGHT = 132
+# But not right at the foot of the sticker: a chat draws its message timestamp over the
+# bottom-right corner, and at BAND_MARGIN the words reached down into it and were hidden behind
+# the time. Lifting the band this far clear of the bottom puts the words above the timestamp
+# whatever the phone's font size, while the badge art needs nothing — its words are centred.
+BAND_FOOT = 54
 
 
 def _s(value: float) -> int:
@@ -158,9 +163,10 @@ def render_cover(image_bytes: bytes, status: str) -> Image.Image:
     """
     image = _square(image_bytes)
     draw = ImageDraw.Draw(image)
-    band_top = SIZE - BAND_MARGIN - BAND_HEIGHT
+    band_bottom = SIZE - BAND_FOOT
+    band_top = band_bottom - BAND_HEIGHT
     draw.rounded_rectangle(
-        [_s(BAND_MARGIN), _s(band_top), _s(SIZE - BAND_MARGIN), _s(SIZE - BAND_MARGIN)],
+        [_s(BAND_MARGIN), _s(band_top), _s(SIZE - BAND_MARGIN), _s(band_bottom)],
         radius=_s(36),
         fill=(*COLOURS[status], 255),
     )
