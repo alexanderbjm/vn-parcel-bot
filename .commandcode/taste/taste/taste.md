@@ -1,9 +1,27 @@
 # Taste
 - When presented with a code-review finding list, wants ALL findings addressed — including nit-severity items, not just critical ones. Confidence: 0.65
-- Gives terse, high-trust sign-offs (a bare "go") and expects the agent to proceed autonomously, picking the recommended option and making open design calls itself rather than asking again. Confidence: 0.5
-- Prefers running the agent with permissions skipped (`--yolo` / `--dangerously-skip-permissions`) rather than approving prompts interactively. Confidence: 0.5
-- Prefers user-supplied data be captured once and stored, then automatically reused for future orders/updates rather than re-prompted for repeatedly. Confidence: 0.5
+- Gives terse, high-trust sign-offs (a bare "go" or "yes") and expects the agent to proceed autonomously through the full cycle (implement, test, commit, push, deploy), picking the recommended option and making open design calls itself rather than asking again. Confidence: 0.6
+- Declines heavyweight planning/process scaffolding (e.g. initializing a GSD / `.planning` project flow) and prefers the agent to just implement the task directly in the existing repo. Confidence: 0.45
+- Prefers running the agent with permissions skipped (`--yolo` / `--dangerously-skip-permissions`) rather than approving prompts interactively. Confidence: 0.65
+- Prefers user-supplied data — including media such as a screenshot sent when adding an item — be captured once and stored, then automatically reused for that item's later output/updates rather than re-asked for. Confidence: 0.6
 - Expects changes to be deployed to the live service (restart/reload the running bot) AND pushed to the remote repo — not left as local commits. Confidence: 0.5
 - Keeps runtime configuration and secrets in a live `.env` file (with `.env.example` documenting the keys); deployment/config changes are expected to flow through `.env`. Confidence: 0.4
 - Prefers self-maintaining/automatic metadata over hand-maintained artifacts when given a choice (e.g. chose an auto-derived deployed revision over a manually curated changelog). Confidence: 0.4
 - Wants operational events (e.g. a new deployment/revision going live) pushed to the admin proactively as a Telegram message, rather than only being available on demand behind a command like `/health`. Confidence: 0.45
+- Wants all user-facing output — the bot's messages and the visual assets sent with them (stickers/images) — written in the product's own target language, Vietnamese here, and never leaking the tooling's language (e.g. English commit subjects / CLI wording) into what the user reads. Confidence: 0.8
+- Keeps the agent's own operating language in English — replies to the user and all CLI/tooling output stay English, even in a Vietnamese-language product; do not switch the agent's responses to the product's target language. Confidence: 0.85
+- Wants change/update messages to be precise and plainly understandable to a non-developer: concise, concrete, jargon-free (avoid terms like "cache", "parse", "refactor"), describing what the user will see differently rather than how the code works. Confidence: 0.7
+- Wants the bot's notifications and their visuals driven by the item's actual current state (e.g. delivery status: on the way / out for delivery / delivered / returned) rather than by static branding such as the carrier's logo. Confidence: 0.45
+- When an intentional user-facing change leaves existing tests red, prefers the test expectations be updated to match the new intended output (keeping the full suite green) rather than reverting the change. Confidence: 0.5
+- Keeps tooling/agent-instruction files (e.g. AGENTS.md) English-only; product- or domain-specific conventions belong in the project spec (e.g. SPEC.md), not in the agent-guidelines file. Confidence: 0.45
+- Prefers to preview/validate user-facing output in its real medium rather than as a local artifact — wants the actual rendered result (e.g. a sticker as Telegram displays it) sent to his own admin chat, not just a PNG on disk to open. Confidence: 0.5
+- Shares screenshots by pointing at a local folder path (e.g. "D:\Downloads ... the latest img") and expects the agent to locate the newest image file itself rather than receiving it as an attachment — including re-checking those folders for newly dropped files on a later "recheck on downloads" request. Confidence: 0.55
+- Wants generated imagery of a real subject to stay photorealistic and faithful to the source (the actual cat/photo), explicitly rejecting cartoonizing, stylizing, or turning it into a flat vector mascot. Confidence: 0.6
+- Wants the visual to carry the message and any text kept small and discreet (a corner label about ~8% of the image height), not a large full-width banner doing the shouting. Confidence: 0.6
+- Wants each variant of a visual set to show a distinct, charming gesture/pose rather than near-identical compositions. Confidence: 0.5
+- Reaches for an AI image generator (the `agy` CLI's built-in `generate_image`) to produce bespoke visual assets, rather than relying only on the project's own programmatic renderer. Confidence: 0.45
+- Wants shipped visuals personalized with his own supplied media (e.g. his cat photo) and made to look custom/"cool", not the generic built-in defaults. Confidence: 0.4
+- Expects user-facing art to be judged visually and iterated on (look at the render, flag clipping/misspellings/framing) before it is considered done. Confidence: 0.45
+- Expects transparency/masking in generated image assets to be clean: no dark halo, black speckles, leftover drop-shadow, or fringe on the alpha edge, and the result should be checked on a dark background like the chat theme. Confidence: 0.55
+- Wants text baked into a sticker/visual placed so a chat app's own overlay can never hide it — keep it out of the bottom-right corner (where the message timestamp is drawn) and lift it clear of the very bottom edge / give it its own strip. Confidence: 0.5
+- Prefers playful, silly wording for the labels on fun user-facing assets, rather than plain or literal status text ("make the text more silly"). Confidence: 0.45
