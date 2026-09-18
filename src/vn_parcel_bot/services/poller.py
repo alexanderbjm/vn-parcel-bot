@@ -45,7 +45,12 @@ from vn_parcel_bot.services.formatting import (
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.scheduling import capped, check_interval
-from vn_parcel_bot.services.stickers import sticker_for, sticker_status
+from vn_parcel_bot.services.stickers import (
+    covers_dir,
+    parcel_sticker,
+    sticker_for,
+    sticker_status,
+)
 from vn_parcel_bot.tracking_codes import mask_code
 
 log = logging.getLogger(__name__)
@@ -469,7 +474,9 @@ class Poller:
                 )
                 newest = max(new, key=lambda event: event.time) if new else result.latest
                 if newest is not None:
-                    await self._send_sticker(parcel.user_id, sticker_status(state, progress))
+                    await self._send_sticker(
+                        parcel.user_id, parcel.id, sticker_status(state, progress)
+                    )
                     updates.setdefault(parcel.user_id, []).append(
                         Moved(
                             current or parcel,
@@ -747,18 +754,27 @@ class Poller:
             await self._notify(self._settings.admin_telegram_id, text, report, silent=False)
             await self._repo.set_meta(meta_key, now.isoformat())
 
-    async def _send_sticker(self, chat_id: int, status: str) -> None:
-        if status in self._broken_stickers:
-            return
-        file_id = await sticker_for(self._repo, status)
-        if not file_id:
+    async def _send_sticker(self, chat_id: int, parcel_id: int, status: str) -> None:
+        # A parcel added from a screenshot sends its own cover with the status on it; anything
+        # else sends the shipped sticker for that status.
+        file_id = await parcel_sticker(
+            self._repo,
+            self._notifier,
+            self._settings.admin_telegram_id,
+            covers_dir(self._settings.db_path),
+            parcel_id,
+            status,
+        ) or await sticker_for(self._repo, status)
+        if not file_id or file_id in self._broken_stickers:
             return
         try:
             ok = await self._notifier.send_sticker(chat_id, file_id)
         except Exception:
             ok = False
         if not ok:
-            self._broken_stickers.add(status)
+            # Keyed by the sticker itself: one parcel's refused cover must not mute every
+            # later sticker for that status.
+            self._broken_stickers.add(file_id)
             log.warning("status sticker failed status=%s", status)
 
     async def _send_updates(self, updates: dict[int, list[Moved]], report: PollReport) -> None:

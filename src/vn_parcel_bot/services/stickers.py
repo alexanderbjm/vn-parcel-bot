@@ -10,12 +10,14 @@ carrier sticker says nothing about the thing that just happened, while the statu
 that — on the way, nearly there, delivered, coming back.
 """
 
+import asyncio
 import hashlib
 import logging
 from pathlib import Path
 from typing import Protocol
 
 from vn_parcel_bot.constants import OUT_FOR_DELIVERY_PROGRESS
+from vn_parcel_bot.services.sticker_art import cover_bytes, sticker_bytes
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,18 @@ STICKER_STATUSES = ("moving", "near", "delivered", "returned")
 MANUAL_KEY = "sticker:"
 SHIPPED_KEY = "sticker-auto:"
 ART_KEY = "sticker-art:"
+# A parcel's own cover, and the sticker made from it for one status.
+COVER_DIR_NAME = "covers"
+COVER_KEY = "sticker-cover:"
+
+
+def covers_dir(db_path: Path) -> Path:
+    """Where a parcel's own picture is kept: beside the database, which is gitignored."""
+    return Path(db_path).parent / COVER_DIR_NAME
+
+
+def cover_path(directory: Path, parcel_id: int) -> Path:
+    return Path(directory) / f"{parcel_id}.webp"
 
 
 def sticker_status(state: str, progress: int | None) -> str:
@@ -52,6 +66,7 @@ class StickerRepo(Protocol):
     async def get_meta(self, key: str) -> str | None: ...
     async def set_meta(self, key: str, value: str) -> None: ...
     async def delete_meta(self, key: str) -> None: ...
+    async def get_parcel(self, parcel_id: int) -> object | None: ...
 
 
 class StickerNotifier(Protocol):
@@ -103,3 +118,96 @@ async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id:
     if uploaded:
         log.info("status stickers uploaded count=%s", uploaded)
     return uploaded
+
+
+def save_cover(directory: Path, parcel_id: int, image_bytes: bytes) -> bool:
+    """Keep the picture a parcel was added from, for its own stickers.
+
+    False when the picture cannot be read or written — a parcel simply keeps the shipped
+    stickers then, which is never a reason to fail the add.
+    """
+    try:
+        image = cover_bytes(image_bytes)
+    except Exception:
+        log.warning("cover unreadable parcel=%s", parcel_id, exc_info=True)
+        return False
+    try:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        cover_path(directory, parcel_id).write_bytes(image)
+    except OSError:
+        log.warning("cover not writable parcel=%s", parcel_id, exc_info=True)
+        return False
+    return True
+
+
+async def parcel_sticker(
+    repo: StickerRepo,
+    notifier: StickerNotifier,
+    admin_id: int,
+    directory: Path,
+    parcel_id: int,
+    status: str,
+) -> str | None:
+    """The parcel's own cover with the status written on it, or None when it has no cover.
+
+    The upload is cached like a shipped sticker's, but keyed by the cover as well as the
+    status, so redrawing a cover — or a status gaining new words — makes a new sticker.
+    """
+    path = cover_path(directory, parcel_id)
+    if not path.exists():
+        return None
+    try:
+        cover = path.read_bytes()
+    except OSError:
+        log.warning("cover unreadable parcel=%s", parcel_id, exc_info=True)
+        return None
+    digest = hashlib.sha256(status.encode("utf-8") + cover).hexdigest()
+    key = f"{COVER_KEY}{parcel_id}:{status}"
+    if await repo.get_meta(f"{ART_KEY}{key}") == digest:
+        return await repo.get_meta(key)
+    try:
+        image = sticker_bytes(cover, status)
+        file_id = await notifier.upload_sticker(admin_id, image)
+    except Exception:
+        log.warning("parcel sticker upload raised parcel=%s status=%s", parcel_id, status)
+        return None
+    if not file_id:
+        log.warning("parcel sticker upload failed parcel=%s status=%s", parcel_id, status)
+        return None
+    await repo.set_meta(key, file_id)
+    await repo.set_meta(f"{ART_KEY}{key}", digest)
+    return file_id
+
+
+def cover_paths(directory: Path) -> list[Path]:
+    """The cover files on disk, sorted; empty when nothing has been kept yet."""
+    if not Path(directory).exists():
+        return []
+    return sorted(Path(directory).glob("*.webp"))
+
+
+async def sweep_covers(repo: StickerRepo, directory: Path) -> int:
+    """Forget the cover and the cached stickers of parcels that no longer exist.
+
+    A parcel leaves by being removed or by being purged 30 days after it finished, and neither
+    knows about a file on disk, so the startup sweep is what keeps `covers/` from growing for
+    ever. Returns how many covers were dropped.
+    """
+    paths = await asyncio.to_thread(cover_paths, directory)
+    dropped = 0
+    for path in paths:
+        try:
+            parcel_id = int(path.stem)
+        except ValueError:
+            continue
+        if await repo.get_parcel(parcel_id) is not None:
+            continue
+        path.unlink(missing_ok=True)
+        for status in STICKER_STATUSES:
+            key = f"{COVER_KEY}{parcel_id}:{status}"
+            await repo.delete_meta(key)
+            await repo.delete_meta(f"{ART_KEY}{key}")
+        dropped += 1
+    if dropped:
+        log.info("covers dropped count=%s", dropped)
+    return dropped

@@ -73,7 +73,7 @@ from vn_parcel_bot.services.maps import TileCache
 from vn_parcel_bot.services.parcel_maps import ParcelMaps
 from vn_parcel_bot.services.parcels import ParcelService
 from vn_parcel_bot.services.poller import Poller, build_seventeen
-from vn_parcel_bot.services.stickers import register_icons
+from vn_parcel_bot.services.stickers import covers_dir, register_icons, sweep_covers
 from vn_parcel_bot.services.vision_engines import build_vision_engine
 
 log = logging.getLogger(__name__)
@@ -203,6 +203,7 @@ async def _post_init(app: Application) -> None:
     await announce_update(app.bot_data["deps"])
     await alert_rejections(app.bot_data["deps"], registry.startup_rejections)
     await register_icons(repo, notifier, settings.admin_telegram_id)
+    await sweep_covers(repo, covers_dir(settings.db_path))
     assert app.job_queue is not None, "install python-telegram-bot[job-queue]"
     schedule_jobs(app.job_queue, settings)
     await app.bot.set_my_commands(BOT_COMMANDS)

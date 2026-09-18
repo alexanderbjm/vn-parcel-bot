@@ -1,9 +1,11 @@
 import asyncio
+import io
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from PIL import Image
 
 from tests.fakes import FakeCarrier, FakeClock, FakeNotifier, ev, fake_registry, found
 from vn_parcel_bot import texts
@@ -11,6 +13,7 @@ from vn_parcel_bot.carriers.models import CarrierError, TrackingEvent
 from vn_parcel_bot.constants import MAX_CHECK_GAP
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.services.poller import FetchKey, Poller, fetch_keys
+from vn_parcel_bot.services.stickers import covers_dir, save_cover
 
 T0 = datetime(2026, 9, 1, 5, 0, tzinfo=UTC)
 ADMIN = 111
@@ -18,6 +21,13 @@ USER = 2
 SPX = "SPXVN000000000001"
 JT = "840000000001"
 GEN = "GA0000000001"
+
+
+def photo_png() -> bytes:
+    """A picture to keep as a parcel's cover; the bot squares it and bands the status on."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (600, 400), (120, 90, 200)).save(buffer, "PNG")
+    return buffer.getvalue()
 
 
 @pytest.fixture
@@ -678,6 +688,33 @@ async def test_sticker_sent_before_update_and_skipped_after_failure(
     assert len(notifier.stickers) == 2
     assert caplog.text.count("status sticker failed status=moving") == 1
     assert len(notifier.sent) == 3
+
+
+async def test_a_parcel_added_from_a_photo_sends_its_own_cover(
+    poller, repo, fakes, notifier, settings
+):
+    """A screenshot kept as the parcel's cover is what goes out, not the shipped badge."""
+    parcel = await add(repo, SPX, "spx")
+    assert save_cover(covers_dir(settings.db_path), parcel.id, photo_png())
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
+
+    await poller.run_cycle()
+
+    assert [chat_id for chat_id, _ in notifier.uploads] == [ADMIN], "uploaded once, to the admin"
+    assert notifier.stickers == [(USER, "file-uploaded")]
+
+
+async def test_a_parcel_without_a_cover_sends_the_shipped_sticker(
+    poller, repo, fakes, notifier, settings
+):
+    await repo.set_meta("sticker-auto:moving", "file-shipped")
+    await add(repo, SPX, "spx")
+    fakes["spx"].results[(SPX, None)] = found("spx", SPX, ev(0, "Đã đến kho"))
+
+    await poller.run_cycle()
+
+    assert notifier.uploads == []
+    assert notifier.stickers == [(USER, "file-shipped")]
 
 
 async def test_a_rescan_of_the_same_moment_is_not_a_second_update(

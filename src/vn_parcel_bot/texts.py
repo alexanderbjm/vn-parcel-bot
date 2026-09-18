@@ -307,11 +307,13 @@ STICKER_STATUS_TEXT = {
     "returned": "hoàn hàng",
 }
 STICKER_SET = "🎨 Đã lưu sticker cho trạng thái {status}."
+STICKER_COVER_SET = "🎨 Đã lưu ảnh bìa cho trạng thái {status}, có kèm chữ trạng thái."
+STICKER_COVER_FAILED = "Không đọc được ảnh này. Bạn gửi lại ảnh khác nhé."
 STICKER_REMOVED = "🎨 Đã xóa sticker của trạng thái {status}."
 STICKER_REMOVED_SHIPPED = "🎨 Đã xóa sticker tùy chỉnh của {status}; dùng lại sticker có sẵn."
 STICKER_LIST = "🎨 Trạng thái có sticker: {statuses}"
 STICKER_USAGE = (
-    "Cách dùng: trả lời một sticker bằng /sticker &lt;trạng thái&gt;, "
+    "Cách dùng: trả lời một sticker hoặc một ảnh bằng /sticker &lt;trạng thái&gt;, "
     "hoặc /sticker &lt;trạng thái&gt; off"
 )
 STICKER_UNKNOWN = "Không có trạng thái này. Các trạng thái: {statuses}"

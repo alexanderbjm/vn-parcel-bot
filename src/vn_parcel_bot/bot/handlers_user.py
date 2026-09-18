@@ -67,6 +67,7 @@ from vn_parcel_bot.services.geo import AreaLookupFailed
 from vn_parcel_bot.services.maps import MapError
 from vn_parcel_bot.services.parcels import AddOutcome
 from vn_parcel_bot.services.sharing import shared_parcel
+from vn_parcel_bot.services.stickers import covers_dir, save_cover
 from vn_parcel_bot.services.vision import VisionResult
 from vn_parcel_bot.tracking_codes import is_valid_last4
 
@@ -775,6 +776,7 @@ async def _add_codes_from_photo(
     context: ContextTypes.DEFAULT_TYPE,
     result: VisionResult,
     phone_last4: str | None,
+    image_bytes: bytes,
 ) -> None:
     deps = get_deps(context)
     user = await current_user(update, deps)
@@ -784,6 +786,13 @@ async def _add_codes_from_photo(
     needs_phone: list[str] = []
     for code in result.tracking_codes:
         outcome = await deps.parcels.add(user, code, phone_last4, label=label)
+        if outcome.kind == "added" and outcome.parcel is not None:
+            # The screenshot becomes this parcel's own sticker cover (§9.13), so its updates
+            # carry a picture of the parcel rather than the shipped badge. Drawing is CPU work,
+            # so it stays off the event loop, and a picture that cannot be read is ignored.
+            await asyncio.to_thread(
+                save_cover, covers_dir(deps.settings.db_path), outcome.parcel.id, image_bytes
+            )
         if outcome.kind == "needs_phone" and not single:
             needs_phone.append(outcome.code or code)
             continue
@@ -813,6 +822,7 @@ async def _reply_to_vision_result(
     context: ContextTypes.DEFAULT_TYPE,
     caption: str | None,
     result: VisionResult,
+    image_bytes: bytes,
 ) -> None:
     if result.error == "not_configured":
         await reply(update, texts.VISION_NOT_CONFIGURED)
@@ -828,7 +838,7 @@ async def _reply_to_vision_result(
     )
     phone_last4 = result.phone_last4 or _caption_last4(caption)
     if result.tracking_codes:
-        await _add_codes_from_photo(update, context, result, phone_last4)
+        await _add_codes_from_photo(update, context, result, phone_last4, image_bytes)
         return
     if result.order_ids:
         order_id = result.order_ids[0]
@@ -875,4 +885,4 @@ async def photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await reply(update, texts.VISION_ERROR)
             return
         result = await deps.vision.analyze_image(image_bytes, media_type)
-        await _reply_to_vision_result(update, context, message.caption, result)
+        await _reply_to_vision_result(update, context, message.caption, result, image_bytes)

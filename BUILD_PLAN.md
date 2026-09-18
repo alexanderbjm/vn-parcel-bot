@@ -1,6 +1,6 @@
 # vn-parcel-bot — Build Plan
 
-Version 3.0 · 2026-09-17 · Status: v1 built on branch main; live verification in progress
+Version 3.1 · 2026-09-18 · Status: v1 built on branch main; live verification in progress
 
 One self-contained document for building a Telegram bot that notifies a small allowlisted group about parcels bought online in Vietnam. **SPX, J&T, Cainiao, 4PX, Ninja Van and GHN** parcels are tracked automatically; codes from **BEST Express, YunExpress, GHTK, Viettel Post, VNPost, LEX VN and SF Express** are recognised and answered with tracking links (BEST, SF and cross-border J&T are tracked through 17TRACK when a key is configured). Hand it to any coding agent (Antigravity `agy`, Claude Code, Gemini CLI, Codex, …) running inside the repository.
 
@@ -24,6 +24,11 @@ Citation conventions used everywhere in this file: `§N` = a section of Part 2; 
 - **Phone digits for any carrier that needs them** (J&T and GHN), not only J&T.
 - **SPX correction** (§5.3): the sibling SPX Thailand client signs `sls_tracking_number`; whether SPX Vietnam needs the same is decided with real codes.
 - **Build order**: offline prompts use synthetic fixtures shaped like the researched responses; live verification moved from Prompt 2 to **Prompt 10A**, which gates Prompt 11.
+
+## Changes in 3.1 (2026-09-18)
+
+- **A sticker can carry the parcel's own picture** (§4.1, §6.3, §9.13): the shipped art is a badge with the status written on it, and two things can replace that picture. Replying to `/sticker <trạng thái>` with a **photo** stamps the status onto it and uses that as the status cover (`STICKER_COVER_SET`), so the built-in look is replaced without giving up the bot's own wording; and a parcel **added from a screenshot** keeps that screenshot as its own cover, so its updates carry a picture of the parcel rather than the shipped badge. Both draw through `services/sticker_art.py`, the same renderer that makes the shipped art, and both are cached by a hash of the drawing so nothing is uploaded twice.
+- **Covers are kept on disk**: `data/covers/<parcel_id>.webp`, squared from the middle of the photo, beside the database and so gitignored. A parcel that is removed or purged takes its cover with it through the startup `sweep_covers` (§9.13), and §11 says what is stored.
 
 ## Changes in 3.0 (2026-09-17)
 
@@ -281,7 +286,7 @@ All replies use `parse_mode=HTML`, link previews disabled. Every dynamic value i
 | `/users` *(admin)* | – | All users with role and active parcel count. |
 | `/health` *(admin)* | – | Last poll time and last `PollReport`, active parcel count, user count. |
 | `/hozk` *(admin)* | – | `ADMIN_HELP`: the admin commands. |
-| `/sticker` *(admin)* | `<status> [off]` | The sticker sent just before an update, chosen by the parcel's **delivery status** (§9.13). No args → `STICKER_LIST` naming every status that has one (a shipped sticker counts). Replying to a sticker with `/sticker <status>` stores it as that status's choice (`STICKER_SET`); `off` deletes the choice → `STICKER_REMOVED`, or `STICKER_REMOVED_SHIPPED` when a shipped sticker still applies. Unknown status → `STICKER_UNKNOWN`; no replied sticker → `STICKER_USAGE`. |
+| `/sticker` *(admin)* | `<status> [off]` | The sticker sent just before an update, chosen by the parcel's **delivery status** (§9.13). No args → `STICKER_LIST` naming every status that has one (a shipped sticker counts). Replying to a sticker with `/sticker <status>` stores it as that status's choice (`STICKER_SET`); `off` deletes the choice → `STICKER_REMOVED`, or `STICKER_REMOVED_SHIPPED` when a shipped sticker still applies. Replying to a **photo** instead stamps the status onto that picture and uses it as the status cover (`STICKER_COVER_SET`, `STICKER_COVER_FAILED` when the picture cannot be read). Unknown status → `STICKER_UNKNOWN`; no replied sticker or photo → `STICKER_USAGE`. |
 | unknown `/command` | – | `UNKNOWN_COMMAND`. |
 
 Commands advertised via `set_my_commands` (Vietnamese descriptions, §9.12): start, help, track, list, status, label, remove, phone, check, cancel. The admin's private chat also gets `ADMIN_COMMANDS` (hozk, users, allow, revoke, health, sticker) through `BotCommandScopeChat`; a Telegram error there is logged and ignored.
@@ -1458,38 +1463,77 @@ Pending phone question: `context.user_data["pending_phone"] = {"code": str, "lab
 ]
 ```
 
-### 9.13 `services/stickers.py`
+### 9.13 `services/stickers.py` and `services/sticker_art.py`
 
 ```python
+# services/stickers.py
 ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "status"
 # The vocabulary, in the order a parcel passes through it.
 STICKER_STATUSES = ("moving", "near", "delivered", "returned")
 MANUAL_KEY = "sticker:"            # a sticker the admin mapped with /sticker
 SHIPPED_KEY = "sticker-auto:"      # the sticker that ships with the bot, once uploaded
-ART_KEY = "sticker-art:"           # the drawing `SHIPPED_KEY` was uploaded from, by hash
+ART_KEY = "sticker-art:"           # the drawing an upload came from, by hash
+COVER_DIR_NAME = "covers"          # a parcel's own picture, beside the database
+COVER_KEY = "sticker-cover:"       # "<parcel_id>:<status>" -> the sticker made from its cover
 
 
 class StickerRepo(Protocol):
     async def get_meta(self, key: str) -> str | None: ...
     async def set_meta(self, key: str, value: str) -> None: ...
     async def delete_meta(self, key: str) -> None: ...
+    async def get_parcel(self, parcel_id: int) -> object | None: ...
 
 
 class StickerNotifier(Protocol):
     async def upload_sticker(self, chat_id: int, image: bytes) -> str | None: ...
 
 
+def covers_dir(db_path: Path) -> Path: ...
+def cover_path(directory: Path, parcel_id: int) -> Path: ...
+def cover_paths(directory: Path) -> list[Path]: ...
+
+
 def sticker_status(state: str, progress: int | None) -> str: ...
 def icon_statuses() -> tuple[str, ...]: ...          # every <status>.webp in ICON_DIR, vocabulary order
 async def sticker_for(repo: StickerRepo, status: str) -> str | None: ...
 async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id: int) -> int: ...
+def save_cover(directory: Path, parcel_id: int, image_bytes: bytes) -> bool: ...
+async def parcel_sticker(
+    repo: StickerRepo, notifier: StickerNotifier, admin_id: int,
+    directory: Path, parcel_id: int, status: str,
+) -> str | None: ...
+async def sweep_covers(repo: StickerRepo, directory: Path) -> int: ...
+
+
+# services/sticker_art.py
+SIZE = 512
+SCALE = 4
+COLOURS: dict[str, tuple[int, int, int]]     # one colour per status
+MAX_FONT_SIZE = 120
+TEXT_WIDTH = 372
+TEXT_HEIGHT = 300
+SINGLE_LINE_MIN_SIZE = 64
+BAND_MARGIN = 18
+BAND_HEIGHT = 132
+FONT_CANDIDATES: tuple[Path, ...]            # segoeuib.ttf, then arialbd.ttf
+
+
+def render_status(status: str) -> Image.Image: ...
+def render_cover(image_bytes: bytes, status: str) -> Image.Image: ...
+def status_bytes(status: str) -> bytes: ...
+def sticker_bytes(image_bytes: bytes, status: str) -> bytes: ...
+def cover_bytes(image_bytes: bytes) -> bytes: ...
+def webp_bytes(image: Image.Image) -> bytes: ...
 ```
 
 - One sticker per **delivery status**, not per carrier: a parcel keeps its carrier for life, so a carrier sticker says nothing about what just happened, while the status is exactly the change being announced. `STICKER_STATUSES` is the vocabulary, and one drawn `.webp` per status ships in `assets/status/` — 512×512 with a transparent background, under Telegram's 512 KB sticker limit.
-- Each sticker writes the status in **Vietnamese**, uppercase, from `texts.STICKER_STATUS_TEXT` — the same wording `/sticker` lists, so the drawing and the command cannot drift apart. `scripts/make_status_stickers.py` draws them: a coloured badge, then the words in the largest size that fits, on one line while that stays at least `SINGLE_LINE_MIN_SIZE` and otherwise on the two lines that balance best. Only a system font is read, and only its rendered output ships, so the art stays licence-free and can be recoloured or reworded by rerunning the script.
+- Each sticker writes the status in **Vietnamese**, uppercase, from `texts.STICKER_STATUS_TEXT` — the same wording `/sticker` lists, so the drawing and the command cannot drift apart. `sticker_art.py` draws it for both the shipped art and a cover: a coloured badge, or a band across the foot of a photo, with the words at the largest size that fits — one line while that stays at least `SINGLE_LINE_MIN_SIZE` and otherwise the two lines that balance best. `scripts/make_status_stickers.py` writes the four shipped files; only a system font is read and only its rendered output ships, so the art is licence-free and can be recoloured or reworded by rerunning it.
 - `sticker_status` maps a parcel onto that vocabulary: `delivered` → `delivered`, `returned` → `returned`, `in_transit` with progress ≥ `OUT_FOR_DELIVERY_PROGRESS` (80) → `near`, anything else → `moving`. It is only asked about a parcel with something new to say, so the state is in transit, delivered or returned by construction.
-- `sticker_for` is the only lookup: `sticker:<status>` from `/sticker` when the admin set one, else `sticker-auto:<status>`, else nothing (no sticker, as before). The poller sends the sticker for the parcel's status before an update (§6.3), and stops trying for the rest of the process once a send fails.
-- `register_icons` runs once at startup (§9.12 `_post_init`), after the deps are built. A sticker that belongs to no pack has no `file_id` until it has been sent once, so it uploads each drawing Telegram is not holding to `admin_id`, deletes that message, and stores the returned `file_id` as `sticker-auto:<status>` next to the drawing's SHA-256 as `sticker-art:<status>`. The next start uploads nothing, because the hash still matches — but redrawing a sticker changes the hash and the new picture replaces the old one on the following start, which is why the hash is kept rather than a "was uploaded" flag. A failure is never fatal: an upload that returns nothing, raises or is refused is logged (`status sticker upload failed status=…`) and skipped, and so is the whole step when Telegram is unreachable.
+- **A parcel added from a screenshot keeps that picture** as its cover: `handlers_user._add_codes_from_photo` calls `save_cover(covers_dir(settings.db_path), parcel_id, image_bytes)` for each parcel it added, which squares the middle of the photo and writes `data/covers/<parcel_id>.webp`. Drawing is CPU work and runs through `asyncio.to_thread`; a picture that cannot be read is logged and skipped, never a reason for the add to fail. `covers_dir` is beside `DB_PATH`, so it is gitignored with `data/`.
+- The poller prefers it: `_send_sticker` asks `parcel_sticker` for the parcel's own cover with the status written on it, and falls back to `sticker_for(status)` when the parcel has none (§6.3). That upload is cached as `sticker-cover:<parcel_id>:<status>` next to the SHA-256 of the cover and status as `sticker-art:<key>`, so the same picture is uploaded once per status — and redrawing the cover, or rewording the status, makes a new sticker.
+- `sticker_for` is the only lookup for the shipped side, and `/sticker` still wins over it: `sticker:<status>` when the admin set one, else `sticker-auto:<status>`, else nothing (no sticker). A status with no sticker sends nothing, and a send that fails is remembered by the `file_id` so one parcel's refused cover cannot mute every later sticker for that status.
+- `register_icons` runs once at startup (§9.12 `_post_init`), after the deps are built. A sticker that belongs to no pack has no `file_id` until it has been sent once, so it uploads each drawing Telegram is not holding to `admin_id`, deletes that message, and stores the returned `file_id` as `sticker-auto:<status>` next to the drawing's SHA-256 as `sticker-art:<status>`. The next start uploads nothing, because the hash still matches — but redrawing a sticker changes the hash and the new picture replaces the old one on the following start, which is why the hash is kept rather than a "was uploaded" flag. A failure is never fatal: an upload that returns nothing, raises or is refused is logged and skipped, and so is the whole step when Telegram is unreachable.
+- `sweep_covers` runs at startup beside it: a parcel leaves by being removed or by being purged 30 days after it finished, and neither knows about a file on disk, so the sweep drops the cover and the `sticker-cover`/`sticker-art` rows of every parcel id that no longer exists.
 - `TelegramNotifier.upload_sticker` is the Telegram side: `send_sticker(chat_id, sticker=<bytes>, disable_notification=True)`, return `message.sticker.file_id`, delete the message, and return `None` on any `TelegramError`.
 - Stickers keyed by carrier (`sticker:<carrier>`, `sticker-auto:<carrier>`) and meta `stickers:shipped-icons` are no longer read; the rows are left in `meta` rather than deleted, because the manual ones are the admin's own choice.
 
@@ -1536,6 +1580,10 @@ See §9.2. They are code constants, not env vars.
 - Never log or print the bot token. Enforced by `httpx`/`httpcore` at WARNING and `RedactTokenFilter`.
 - `.env`, `data/`, `logs/`, `tests/fixtures/_raw/`, `probe_codes.local.txt` are gitignored.
 - Only the **last 4 digits** of a phone number are stored.
+- A parcel added from a photo keeps that picture — squared, resized to 512×512 and
+  stored as `data/covers/<parcel_id>.webp` — so its stickers can carry it (§9.13).
+  Nothing else about a screenshot is kept, the file never leaves the PC except as the
+  sticker Telegram is sent, and it is deleted with the parcel.
 - Committed fixtures are sanitized: names, addresses, full phone numbers, courier names/phones, and the real tracking codes are replaced with fake values (`SPXVN000000000001`, `840000000001`, …).
 - Log at INFO: startup/shutdown, each poll cycle summary (counts only), parcel added/removed (masked code: first 5 + `…` + last 3), carrier errors (reason + masked code). Never log message bodies or full tracking histories at INFO.
 - Input handling: codes must match strict regexes; labels trimmed and length-limited; everything escaped before sending as HTML.

@@ -17,6 +17,7 @@ from vn_parcel_bot.build_info import deployed_revision_async
 from vn_parcel_bot.db.repo import Repository
 from vn_parcel_bot.keyboards import admin_keyboard, admin_sub_keyboard
 from vn_parcel_bot.services.formatting import format_health, format_users
+from vn_parcel_bot.services.sticker_art import sticker_bytes
 from vn_parcel_bot.services.stickers import (
     MANUAL_KEY,
     SHIPPED_KEY,
@@ -124,11 +125,40 @@ async def sticker_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     replied = getattr(update.effective_message, "reply_to_message", None)
     sticker = getattr(replied, "sticker", None)
-    if sticker is None:
-        await reply(update, texts.STICKER_USAGE)
+    if sticker is not None:
+        await deps.repo.set_meta(f"{MANUAL_KEY}{status}", sticker.file_id)
+        await reply(update, texts.STICKER_SET.format(status=status))
         return
-    await deps.repo.set_meta(f"{MANUAL_KEY}{status}", sticker.file_id)
-    await reply(update, texts.STICKER_SET.format(status=status))
+    photo = getattr(replied, "photo", None)
+    if photo:
+        await _set_cover(update, context, status, photo[-1].file_id)
+        return
+    await reply(update, texts.STICKER_USAGE)
+
+
+async def _set_cover(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, status: str, photo_file_id: str
+) -> None:
+    """Write the status onto a photo the admin sent and use that as the status's sticker.
+
+    A cover is how the shipped art gets replaced with a picture of choice: the words are still
+    the bot's, so a cover can never say the wrong thing about a parcel.
+    """
+    deps = get_deps(context)
+    file_id = None
+    try:
+        telegram_file = await context.bot.get_file(photo_file_id)
+        image_bytes = bytes(await telegram_file.download_as_bytearray())
+        file_id = await deps.notifier.upload_sticker(
+            deps.settings.admin_telegram_id, sticker_bytes(image_bytes, status)
+        )
+    except Exception:
+        log.warning("sticker cover failed status=%s", status, exc_info=True)
+    if not file_id:
+        await reply(update, texts.STICKER_COVER_FAILED)
+        return
+    await deps.repo.set_meta(f"{MANUAL_KEY}{status}", file_id)
+    await reply(update, texts.STICKER_COVER_SET.format(status=status))
 
 
 async def sticker_statuses_line(repo: Repository) -> str:
