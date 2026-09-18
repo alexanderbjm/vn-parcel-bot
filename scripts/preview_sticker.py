@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Show the sticker the bot would send for a parcel, without going through Telegram.
 
-    python scripts/preview_sticker.py <ref> [<ref> ...] [--out data/preview]
+    python scripts/preview_sticker.py <ref> [<ref> ...] [--out data/preview] [--send]
 
 A ref is a parcel id, a label ("Aula F75") or a tracking code. One PNG per matching parcel is
 written to `--out` (`data/preview` by default, which is gitignored with `data/`), showing the
 picture the bot would upload for it: the parcel's own cover with the status written on it when it
 has one, else the shipped sticker.
+
+`--send` also posts each one to the admin's own chat, as the sticker Telegram will actually show
+rather than as a file to open — that is what makes it a preview of the real thing.
 
 A sticker the admin mapped with `/sticker` is a Telegram `file_id` — nothing to draw — so the
 script says so instead of silently showing something else. The status and the source of the
@@ -20,12 +23,17 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+from telegram import Bot
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from vn_parcel_bot.db.repo import Repository  # noqa: E402
-from vn_parcel_bot.services.sticker_art import render_cover, render_status  # noqa: E402
+from vn_parcel_bot.services.sticker_art import (  # noqa: E402
+    render_cover,
+    render_status,
+    webp_bytes,
+)
 from vn_parcel_bot.services.stickers import (  # noqa: E402
     MANUAL_KEY,
     cover_path,
@@ -58,7 +66,7 @@ def matching(rows: list, ref: str) -> list:
     return found
 
 
-async def preview(repo: Repository, row: object, out: Path, directory: Path) -> None:
+async def preview(repo: Repository, row: object, out: Path, directory: Path, send: bool) -> None:
     parcel_id = int(row["id"])  # type: ignore[index]
     label = row["label"] or row["tracking_number"]  # type: ignore[index]
     status = sticker_status(row["state"], row["progress"])  # type: ignore[index]
@@ -81,9 +89,27 @@ async def preview(repo: Repository, row: object, out: Path, directory: Path) -> 
     path = out / f"parcel-{parcel_id}.png"
     image.save(path, "PNG")
     print(f"{where} -> {status} ({STICKER_STATUS_TEXT[status]}) from {source}")
-    if row["state"] not in ANNOUNCED_STATES:  # type: ignore[index]
+    never_announced = row["state"] not in ANNOUNCED_STATES  # type: ignore[index]
+    if never_announced:
         print(f"   state={row['state']} is never announced, so nothing is sent for it now")  # type: ignore[index]
     print(f"   {path}  {path.stat().st_size} bytes  {image.width}x{image.height}")
+    if send:
+        caption = f"{where} → {status} ({STICKER_STATUS_TEXT[status]}) · {source}"
+        if never_announced:
+            caption += "\n(nothing is sent while it is pending — this is what it would send)"
+        await send_to_admin(webp_bytes(image), caption)
+
+
+async def send_to_admin(image_bytes: bytes, caption: str) -> None:
+    """Post one sticker to the admin's chat, as Telegram will show it rather than as a file."""
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    admin = (os.environ.get("ADMIN_TELEGRAM_ID") or "").strip()
+    if not token or not admin:
+        raise SystemExit("TELEGRAM_BOT_TOKEN and ADMIN_TELEGRAM_ID must be set to use --send")
+    async with Bot(token) as bot:
+        said = await bot.send_message(int(admin), caption)
+        await bot.send_sticker(int(admin), sticker=image_bytes, reply_to_message_id=said.message_id)
+    print(f"   sent to admin ({admin})")
 
 
 async def main() -> int:
@@ -92,6 +118,9 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("refs", nargs="+", help="parcel id, label or tracking code")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help=f"default: {DEFAULT_OUT}")
+    parser.add_argument(
+        "--send", action="store_true", help="also post each sticker to the admin's own chat"
+    )
     args = parser.parse_args()
 
     db_path = Path(os.environ.get("DB_PATH", "data/bot.sqlite3"))
@@ -107,7 +136,7 @@ async def main() -> int:
                 print(f"{ref}: no parcel matches")
                 continue
             for row in found:
-                await preview(repo, row, args.out, covers_dir(db_path))
+                await preview(repo, row, args.out, covers_dir(db_path), args.send)
     finally:
         await repo.close()
     return 0
