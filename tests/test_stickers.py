@@ -7,7 +7,9 @@ from tests.fakes import FakeNotifier
 from vn_parcel_bot import texts
 from vn_parcel_bot.constants import OUT_FOR_DELIVERY_PROGRESS
 from vn_parcel_bot.db.repo import Repository
+from vn_parcel_bot.services import stickers
 from vn_parcel_bot.services.stickers import (
+    ART_KEY,
     ICON_DIR,
     MANUAL_KEY,
     SHIPPED_KEY,
@@ -104,3 +106,20 @@ async def test_the_manual_sticker_wins_over_the_shipped_one(repo):
     await repo.set_meta(f"{MANUAL_KEY}moving", "file-manual")
     assert await sticker_for(repo, "moving") == "file-manual"
     assert await sticker_for(repo, "delivered") is None
+
+
+async def test_a_redrawn_sticker_is_uploaded_again(repo, tmp_path, monkeypatch):
+    """The cached file_id is the upload of a particular drawing, not a permanent answer."""
+    for status in STICKER_STATUSES:
+        (tmp_path / f"{status}.webp").write_bytes((ICON_DIR / f"{status}.webp").read_bytes())
+    monkeypatch.setattr(stickers, "ICON_DIR", tmp_path)
+    notifier = FakeNotifier()
+
+    assert await register_icons(repo, notifier, ADMIN) == 4
+    assert await register_icons(repo, notifier, ADMIN) == 0, "the same drawing is not re-sent"
+
+    # Any change to the file is a new drawing — the fake notifier never reads it.
+    (tmp_path / "moving.webp").write_bytes((ICON_DIR / "moving.webp").read_bytes() + b"redrawn")
+    assert await register_icons(repo, notifier, ADMIN) == 1
+    assert await repo.get_meta(f"{SHIPPED_KEY}moving") == "file-uploaded"
+    assert await repo.get_meta(f"{ART_KEY}moving") is not None

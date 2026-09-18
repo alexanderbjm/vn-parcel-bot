@@ -10,6 +10,7 @@ carrier sticker says nothing about the thing that just happened, while the statu
 that — on the way, nearly there, delivered, coming back.
 """
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import Protocol
@@ -24,9 +25,11 @@ ICON_DIR = Path(__file__).resolve().parent.parent / "assets" / "status"
 # these, and anything not listed here is not a status the bot can talk about.
 STICKER_STATUSES = ("moving", "near", "delivered", "returned")
 
-# The admin's own sticker for a status, and the shipped one behind it.
+# The admin's own sticker for a status, the shipped one behind it, and the drawing that sticker
+# was uploaded from.
 MANUAL_KEY = "sticker:"
 SHIPPED_KEY = "sticker-auto:"
+ART_KEY = "sticker-art:"
 
 
 def sticker_status(state: str, progress: int | None) -> str:
@@ -70,18 +73,22 @@ async def sticker_for(repo: StickerRepo, status: str) -> str | None:
 
 
 async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id: int) -> int:
-    """Upload every shipped sticker Telegram has not been given yet; return how many were added.
+    """Upload every shipped sticker Telegram does not have the current drawing of; return how many.
 
     A sticker that belongs to no pack has no file_id until it has been sent once, so the first
     send goes to the admin's own chat and is deleted right away. A failure is logged and
     skipped: a missing sticker must never be a reason for the bot not to start.
+
+    The uploaded drawing is remembered by its hash, not merely by having been uploaded once: a
+    `file_id` would otherwise keep the bot sending a picture nobody has drawn for months, which
+    is exactly what happened when the carrier logos became status stickers.
     """
     uploaded = 0
     for status in icon_statuses():
-        key = f"{SHIPPED_KEY}{status}"
-        if await repo.get_meta(key):
-            continue
         image = (ICON_DIR / f"{status}.webp").read_bytes()
+        digest = hashlib.sha256(image).hexdigest()
+        if await repo.get_meta(f"{ART_KEY}{status}") == digest:
+            continue
         try:
             file_id = await notifier.upload_sticker(admin_id, image)
         except Exception:
@@ -90,7 +97,8 @@ async def register_icons(repo: StickerRepo, notifier: StickerNotifier, admin_id:
         if not file_id:
             log.warning("status sticker upload failed status=%s", status)
             continue
-        await repo.set_meta(key, file_id)
+        await repo.set_meta(f"{SHIPPED_KEY}{status}", file_id)
+        await repo.set_meta(f"{ART_KEY}{status}", digest)
         uploaded += 1
     if uploaded:
         log.info("status stickers uploaded count=%s", uploaded)
